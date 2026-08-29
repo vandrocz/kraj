@@ -1,4 +1,4 @@
-# Vandro API — Cloudflare Worker (Hono)
+# Vandro API — Cloudflare Worker (Hono  )
 
 Backend pre appku Vandro. Beží na Cloudflare Workers, používa D1 (SQL databáza), R2 (fotky) a KV (rýchly systém lajkov).
 
