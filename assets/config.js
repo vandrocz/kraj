@@ -2,7 +2,7 @@
 const API_BASE_URL = 'https://naskraj-api.vandrocz-contact.workers.dev';
 
 // Adresa mapovej subdomény, do ktorej posielame postMessage signály pre počasie/dopravu
-const MAP_ORIGIN = 'https://vandro.cz';
+const MAP_ORIGIN = 'https://maps.vandro.cz';
 
 function getToken() { return localStorage.getItem('naskraj_token'); }
 function setToken(t) { localStorage.setItem('naskraj_token', t); }
