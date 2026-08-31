@@ -1,4 +1,4 @@
-# Náš kraj / Vandro API — Cloudflare Worker (Hono)
+# Náš kraj / Vandro API — Cloudflare Worker (Hono  )
 
 Kompletný backend pre turisticko-komunitný ekosystém: zbierkový feed s automatickou rotáciou,
 sociálna sieť organizácií (hrady, zámky, múzeá, ZOO...) a sociálne siete pre ubytovanie a gastro.
