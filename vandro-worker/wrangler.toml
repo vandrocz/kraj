@@ -1,0 +1,36 @@
+name = "naskraj-api"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Worker beží na api.[nazov].vandro.cz — nastav si custom domain v
+# Cloudflare Dashboard -> Workers & Pages -> naskraj-api -> Settings -> Triggers.
+# (Aktuálna dev adresa: https://naskraj-api.vandrocz-contact.workers.dev)
+
+[[d1_databases]]
+binding = "DB"
+database_name = "naskraj-db"
+database_id = "23ab1357-4c06-4875-8a57-b1ac0d150c4e"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "naskraj-media"
+
+[[kv_namespaces]]
+binding = "NASKRAJ_LAJKY"
+id = "ad757c112f5b41d39e378dc330529ef9"
+
+# Dva cron triggery:
+#  - každú minútu: rotácia poradovníka zbierok (ochranná lehota / grace po splnení)
+#  - 8:00 UTC: denné strhnutie kreditu a prerozdelenie
+[triggers]
+crons = ["*/1 * * * *", "0 8 * * *"]
+
+# ---- Tajomstvá (NIKDY nedávaj reálne hodnoty sem, len cez `wrangler secret put`) ----
+#   npx wrangler secret put JWT_SECRET
+#   npx wrangler secret put CRON_SECRET
+#   npx wrangler secret put ONESIGNAL_API_KEY
+
+[vars]
+ALLOWED_ORIGIN = "https://naskraj.vandro.cz,https://app.vandro.cz,https://kraj.vandro.cz"
+R2_PUBLIC_BASE = "https://media.vandro.cz"
+ONESIGNAL_APP_ID = ""
