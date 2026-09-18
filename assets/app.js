@@ -2,13 +2,13 @@
 // STAV APLIKÁCIE
 // ============================================================
 const state = {
-  tab: 'collections',              // 'collections' | 'map' | 'organizations' | 'services' | 'account'
-  servicesTab: 'accommodation',    // 'accommodation' | 'gastro'
+  tab: 'collections',
+  servicesTab: 'accommodation',
 
   user: getStoredUser(),
   token: getToken(),
   businesses: getStoredBusinesses(),
-  authView: 'login',               // 'login' | 'register' — keď nie je prihlásený
+  authView: 'login',
 
   collections: { active: null, waiting: [] },
   socialFeeds: {
@@ -17,24 +17,38 @@ const state = {
     gastro: { items: [], search: '', region: '', district: '', type: '', cuisine: '' },
   },
 
-  wallet: null,          // { credit_balance, status, contributions }
-  adminPending: null,    // { organizations, accommodation, restaurants }
+  wallet: null,
+  adminPending: null,          // null = ešte nenačítané, {} = načítané
+  adminPendingLoading: false,
   adminReports: null,
+  adminReportsLoading: false,
 
-  loading: {},           // per-section loading flags
+  loading: {},
 };
 
 function fmt(n) { return Number(n || 0).toLocaleString('cs-CZ'); }
 
+// D1 `datetime('now')` vracia "YYYY-MM-DD HH:MM:SS" (UTC, bez "Z").
+// Prehliadače to parsujú nespoľahlivo — prevedieme na ISO 8601 s "Z".
 function timeAgo(iso) {
   if (!iso) return '';
-  const diff = Date.now() - new Date(iso.includes('Z') ? iso : iso + 'Z').getTime();
+  let normalized = String(iso);
+  if (!/[Zz]|[+-]\d{2}:?\d{2}$/.test(normalized)) {
+    normalized = normalized.replace(' ', 'T') + 'Z';
+  }
+  const t = new Date(normalized).getTime();
+  if (isNaN(t)) return '';
+  const diff = Date.now() - t;
   const min = Math.floor(diff / 60000);
   if (min < 1) return 'práve teraz';
   if (min < 60) return `pred ${min} min`;
   const hours = Math.floor(min / 60);
   if (hours < 24) return `pred ${hours} h`;
-  return `pred ${Math.floor(hours / 24)} d`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `pred ${days} d`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `pred ${weeks} týž.`;
+  return new Date(normalized).toLocaleDateString('cs-CZ');
 }
 
 function isLoggedIn() { return !!(state.token && state.user); }
@@ -157,7 +171,6 @@ function renderApp() {
 function switchTab(tab) {
   state.tab = tab;
   renderApp();
-  // Lenivé (lazy) načítanie dát pri prvom vstupe do sekcie
   if (tab === 'collections' && state.collections.waiting.length === 0 && !state.collections.active) loadCollections();
   if (tab === 'organizations' && state.socialFeeds.organization.items.length === 0) loadSocialFeed('organization');
   if (tab === 'services') {
