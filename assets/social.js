@@ -100,7 +100,8 @@ function renderSocialPostCard(post, feedKey) {
       </div>
       <div class="post-body">
         <p class="post-likes" data-like-count="${post.id}">${fmt(post.likes || 0)} páči sa mi</p>
-        <p class="post-caption"><strong>${escapeHtml(post.business.name)}</strong> ${escapeHtml(post.text || '')}</p>
+        <p class="post-caption"><strong>${escapeHtml(post.business.name)}</strong> <span class="rich-text">${post.html || escapeHtml(post.text || '')}</span></p>
+        ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
         ${post.comment_count > 0 ? `<button class="post-comments-link" data-action="toggle-comments" data-id="${post.id}" data-feed="${feedKey}">Zobrazit všech ${post.comment_count} komentářů</button>` : ''}
         <div class="post-comments" data-comments-list="${post.id}" style="display:none">${commentsHtml}</div>
         <form class="post-comment-form" data-action="submit-social-comment" data-id="${post.id}" data-feed="${feedKey}">
@@ -108,20 +109,17 @@ function renderSocialPostCard(post, feedKey) {
           <button type="submit" class="post-comment-send">Odeslat</button>
         </form>
       </div>
-    </article>
-  `;
+    </article>`;
 }
 
 async function togglePostLike(postId, feedKey, btnEl) {
   if (!isLoggedIn()) { showToast('Pro lajkování se musíš přihlásit.'); switchTab('account'); return; }
   const post = state.socialFeeds[feedKey].items.find((p) => p.id === postId);
   if (!post || post.__liked) return;
-
   post.__liked = true; post.likes = (post.likes || 0) + 1;
   btnEl.classList.add('is-liked'); btnEl.innerHTML = icon('heart', { size: 22, filled: true });
   const likesEl = document.querySelector(`[data-like-count="${postId}"]`);
   if (likesEl) likesEl.textContent = `${fmt(post.likes)} páči sa mi`;
-
   try {
     const data = await apiPost(`/api/feed/${postId}/like`, {});
     post.likes = data.likes;
@@ -137,7 +135,6 @@ async function sharePost(postId, text) {
 }
 
 function renderFeedPage(feedKey, title, typeOptions, showCuisine) {
-  const isSocialTab = ['organizations', 'accommodation', 'gastro'].includes(state.tab);
   return `
     <div class="page-scroll">
       ${renderHeader(title, `
@@ -148,8 +145,7 @@ function renderFeedPage(feedKey, title, typeOptions, showCuisine) {
       ${renderStoriesBar()}
       ${renderFilterBar(feedKey, typeOptions, showCuisine)}
       ${renderSocialFeedBody(feedKey)}
-    </div>
-  `;
+    </div>`;
 }
 
 function renderOrganizationsPage() { return renderFeedPage('organization', 'Organizace', TYPES.organization, false); }
