@@ -9,6 +9,9 @@ import { profileRoutes } from './routes/profile.js';
 import { messagesRoutes } from './routes/messages.js';
 import { groupsRoutes } from './routes/groups.js';
 import { storiesRoutes } from './routes/stories.js';
+import { seoRoutes } from './routes/seo.js';
+import { geoRoutes } from './routes/geo.js';
+import { mentionsRoutes } from './routes/mentions.js';
 import { runDailyDistribution, ensureActiveProjectRotation } from './cron.js';
 import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUISINE_TYPES } from './regions.js';
 
@@ -28,21 +31,16 @@ async function requireAuth(c, next) {
   const h = c.req.header('Authorization') || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return c.json({ error: 'Chýba prihlásenie.' }, 401);
-  try {
-    const payload = await verify(token, c.env.JWT_SECRET, 'HS256');
-    c.set('user', payload);
-    await next();
-  } catch {
-    return c.json({ error: 'Neplatný nebo expirovaný token.' }, 401);
-  }
+  try { const payload = await verify(token, c.env.JWT_SECRET, 'HS256'); c.set('user', payload); await next(); }
+  catch { return c.json({ error: 'Neplatný token.' }, 401); }
 }
 
 app.get('/', (c) => c.json({ ok: true, service: 'naskraj-api' }));
 app.get('/api/meta/regions', (c) => c.json({ regions: REGIONS }));
-app.get('/api/meta/types', (c) => c.json({
-  organization: ORGANIZATION_TYPES, accommodation: ACCOMMODATION_TYPES,
-  restaurant: RESTAURANT_TYPES, cuisine: CUISINE_TYPES,
-}));
+app.get('/api/meta/types', (c) => c.json({ organization: ORGANIZATION_TYPES, accommodation: ACCOMMODATION_TYPES, restaurant: RESTAURANT_TYPES, cuisine: CUISINE_TYPES }));
+
+// SEO (verejné)
+app.route('/api/seo', seoRoutes);
 
 app.route('/api/auth', authRoutes);
 
@@ -69,7 +67,7 @@ app.post('/api/user/wallet/topup', requireAuth, async (c) => {
   return c.json({ credit_balance: row.credit_balance });
 });
 
-// Feed — write endpoints chránené
+// Feed
 app.use('/api/feed/collections/:id/like', requireAuth);
 app.use('/api/feed/:id/comment', requireAuth);
 app.use('/api/feed/:id/report', requireAuth);
@@ -82,7 +80,14 @@ app.route('/api/feed', feedRoutes);
 app.use('/api/posts', requireAuth);
 app.route('/api/posts', postsRoutes);
 
-// Profile — chránené podcesty
+// Geo (save chránené)
+app.post('/api/geo/save', requireAuth);
+app.route('/api/geo', geoRoutes);
+
+// Mentions (search verejný, zvyšok interný)
+app.route('/api/mentions', mentionsRoutes);
+
+// Profile
 app.use('/api/profile/me/*', requireAuth);
 app.use('/api/profile/me', requireAuth);
 app.use('/api/profile/follow', requireAuth);
@@ -114,7 +119,6 @@ app.post('/api/admin/run-distribution-now', async (c) => {
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
   return c.json(await runDailyDistribution(c.env));
 });
-
 app.use('/api/admin/*', requireAuth);
 app.route('/api/admin', adminRoutes);
 
