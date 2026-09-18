@@ -2,11 +2,10 @@
 // SEKCE 5: MŮJ ÚČET
 // ============================================================
 
-// Doplnkový stav len pre formuláre (nepatrí do hlavného `state`, lebo sa nemá ukladať)
 const accountFormState = {
-  registerRole: 'user',            // 'user' | 'organization' | 'hotelier'
-  registerBusinessKind: 'accommodation', // 'accommodation' | 'gastro' (len pre hotelier)
-  postTargetBusiness: null,        // vybraný podnik pri pridávaní príspevku
+  registerRole: 'user',
+  registerBusinessKind: 'accommodation',
+  postTargetBusiness: null,
   formError: '',
   formBusy: false,
 };
@@ -147,8 +146,8 @@ function renderRegisterForm() {
       <div class="form-field" style="display:flex;align-items:flex-start;gap:10px;">
         <input type="checkbox" name="termsAccepted" id="terms-checkbox" required style="margin-top:3px;width:16px;height:16px;flex-shrink:0;" />
         <label for="terms-checkbox" class="form-hint" style="margin-top:0;font-size:12.5px;line-height:1.5;">
-          Souhlasím s <a href="/obchodni-podminky" target="_blank" style="color:var(--c-primary-dark);text-decoration:underline;">obchodními podmínkami</a>
-          a se <a href="/ochrana-osobnich-udaju" target="_blank" style="color:var(--c-primary-dark);text-decoration:underline;">zpracováním osobních údajů</a> (GDPR).
+          Souhlasím s <a href="/obchodni-podminky" target="_blank" rel="noopener" style="color:var(--c-primary-dark);text-decoration:underline;">obchodními podmínkami</a>
+          a se <a href="/ochrana-osobnich-udaju" target="_blank" rel="noopener" style="color:var(--c-primary-dark);text-decoration:underline;">zpracováním osobních údajů</a> (GDPR).
         </label>
       </div>
 
@@ -186,26 +185,41 @@ function onRegionSelectChangeForDistrict(selectEl) {
     : `<option value="">Nejprve vyberte kraj</option>`;
 }
 
+function showFormErrorInPlace(form, message) {
+  let errorEl = form.querySelector('.form-error');
+  if (!errorEl) {
+    errorEl = document.createElement('div');
+    errorEl.className = 'form-error';
+    form.prepend(errorEl);
+  }
+  errorEl.textContent = message;
+}
+
 async function handleLoginSubmit(form) {
   const fd = new FormData(form);
   accountFormState.formError = '';
-  accountFormState.formBusy = true;
-  renderApp();
+  const btn = form.querySelector('button[type="submit"]');
+  const originalLabel = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Přihlašuji…'; }
+
   try {
-    const data = await apiPost('/api/auth/login', { email: fd.get('email'), password: fd.get('password') });
+    const data = await apiPost('/api/auth/login', {
+      email: fd.get('email'),
+      password: fd.get('password'),
+    });
     setToken(data.token);
     setStoredUser(data.user);
     setStoredBusinesses(data.businesses || []);
     state.token = data.token;
     state.user = data.user;
     state.businesses = data.businesses || [];
+    state.wallet = null;
     showToast(`Vítej zpět, ${data.user.display_name}!`);
-    loadWallet();
+    loadWallet(); // aj tak zavolá renderApp() keď dobehne
   } catch (err) {
     accountFormState.formError = err.message;
-  } finally {
-    accountFormState.formBusy = false;
-    renderApp();
+    showFormErrorInPlace(form, err.message);
+    if (btn) { btn.disabled = false; btn.textContent = originalLabel || 'Přihlásit se'; }
   }
 }
 
@@ -213,17 +227,20 @@ async function handleRegisterSubmit(form) {
   const fd = new FormData(form);
   const body = Object.fromEntries(fd.entries());
   accountFormState.formError = '';
-  accountFormState.formBusy = true;
-  renderApp();
+  const btn = form.querySelector('button[type="submit"]');
+  const originalLabel = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Vytvářím účet…'; }
+
   try {
     await apiPost('/api/auth/register', body);
     showToast('Účet vytvořen! Nyní se přihlas.');
     state.authView = 'login';
+    accountFormState.formError = '';
+    renderApp();
   } catch (err) {
     accountFormState.formError = err.message;
-  } finally {
-    accountFormState.formBusy = false;
-    renderApp();
+    showFormErrorInPlace(form, err.message);
+    if (btn) { btn.disabled = false; btn.textContent = originalLabel || 'Vytvořit účet'; }
   }
 }
 
@@ -235,6 +252,8 @@ function handleLogout() {
   state.user = null;
   state.businesses = [];
   state.wallet = null;
+  state.adminPending = null;
+  state.adminReports = null;
   showToast('Byl jsi odhlášen.');
   renderApp();
 }
@@ -317,7 +336,7 @@ async function handleTopup(amount) {
   }
 }
 
-// ---------------- ROLA: ORGANIZATION / HOTELIER (správa profilu + pridanie príspevku) ----------------
+// ---------------- ROLA: ORGANIZATION / HOTELIER ----------------
 
 function renderBusinessDashboard() {
   const businesses = state.businesses || [];
@@ -326,7 +345,7 @@ function renderBusinessDashboard() {
   }
   if (!accountFormState.postTargetBusiness) accountFormState.postTargetBusiness = businesses[0].id;
   const selected = businesses.find((b) => b.id === accountFormState.postTargetBusiness) || businesses[0];
-  const targetFeed = selected.kind; // 'organization' | 'accommodation' | 'gastro'
+  const targetFeed = selected.kind;
 
   return `
     <div class="profile-section">
@@ -352,8 +371,8 @@ function renderBusinessDashboard() {
           <label class="form-label">Text příspěvku</label>
           <textarea class="form-textarea" name="text" placeholder="Co je nového?" required></textarea>
         </div>
-        <button class="form-submit-btn" type="submit" ${accountFormState.formBusy ? 'disabled' : ''}>
-          ${accountFormState.formBusy ? 'Nahrávám…' : 'Zveřejnit ihned'}
+        <button class="form-submit-btn" type="submit">
+          Zveřejnit ihned
         </button>
         <p class="form-hint">Příspěvek se zveřejní okamžitě bez schvalování administrátorem.</p>
       </form>
@@ -382,17 +401,17 @@ async function handleBusinessPostSubmit(form) {
   fd.set('business_id', businessId);
   fd.set('target_feed', targetFeed);
 
-  accountFormState.formBusy = true;
-  renderApp();
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Nahrávám…'; }
+
   try {
     await apiPost('/api/posts', fd);
     showToast('Příspěvek zveřejněn!');
     if (state.socialFeeds[targetFeed]) state.socialFeeds[targetFeed].items = [];
+    renderApp();
   } catch (err) {
     showToast(err.message);
-  } finally {
-    accountFormState.formBusy = false;
-    renderApp();
+    if (btn) { btn.disabled = false; btn.textContent = 'Zveřejnit ihned'; }
   }
 }
 
@@ -402,9 +421,12 @@ async function loadAdminPending() {
   try {
     state.adminPending = await apiGet('/api/admin/pending');
   } catch (err) {
+    state.adminPending = { organizations: [], accommodation: [], restaurants: [], __error: true };
     showToast('Nepodařilo se načíst čekající profily.');
+  } finally {
+    state.adminPendingLoading = false;
+    if (state.tab === 'account') renderApp();
   }
-  if (state.tab === 'account') renderApp();
 }
 
 async function loadAdminReports() {
@@ -412,53 +434,67 @@ async function loadAdminReports() {
     const data = await apiGet('/api/admin/reports');
     state.adminReports = data.reports;
   } catch (err) {
+    state.adminReports = [];
     showToast('Nepodařilo se načíst nahlášení.');
+  } finally {
+    state.adminReportsLoading = false;
+    if (state.tab === 'account') renderApp();
   }
-  if (state.tab === 'account') renderApp();
 }
 
 function renderAdminPanel() {
-  if (!state.adminPending) loadAdminPending();
-  if (!state.adminReports) loadAdminReports();
+  // Bezpečné lazy-načítanie: načíta sa len raz, chráni pred infinite-loopom.
+  if (state.adminPending === null && !state.adminPendingLoading) {
+    state.adminPendingLoading = true;
+    loadAdminPending();
+  }
+  if (state.adminReports === null && !state.adminReportsLoading) {
+    state.adminReportsLoading = true;
+    loadAdminReports();
+  }
 
   const pending = state.adminPending;
   const pendingItems = pending
     ? [
-        ...pending.organizations.map((o) => ({ ...o, kind: 'organizations' })),
-        ...pending.accommodation.map((o) => ({ ...o, kind: 'accommodation' })),
-        ...pending.restaurants.map((o) => ({ ...o, kind: 'restaurants' })),
+        ...(pending.organizations || []).map((o) => ({ ...o, kind: 'organizations' })),
+        ...(pending.accommodation || []).map((o) => ({ ...o, kind: 'accommodation' })),
+        ...(pending.restaurants || []).map((o) => ({ ...o, kind: 'restaurants' })),
       ]
     : [];
 
   return `
     <div class="profile-section">
-      <h3 class="profile-section-title">Čekající na ověření (${pendingItems.length})</h3>
-      ${pendingItems.length === 0
-        ? '<p class="empty-state">Žádné profily nečekají na schválení.</p>'
-        : pendingItems.map((item) => `
-          <div class="admin-list-item">
-            <div class="admin-list-info">
-              <p class="admin-list-title">${item.name}</p>
-              <p class="admin-list-meta">${item.type} · ${item.region}, ${item.district}</p>
+      <h3 class="profile-section-title">Čekající na ověření (${pending ? pendingItems.length : '…'})</h3>
+      ${pending === null
+        ? '<p class="empty-state">Načítám…</p>'
+        : pendingItems.length === 0
+          ? '<p class="empty-state">Žádné profily nečekají na schválení.</p>'
+          : pendingItems.map((item) => `
+            <div class="admin-list-item">
+              <div class="admin-list-info">
+                <p class="admin-list-title">${item.name}</p>
+                <p class="admin-list-meta">${item.type} · ${item.region}, ${item.district}</p>
+              </div>
+              <button class="admin-approve-btn" data-action="verify-business" data-kind="${item.kind}" data-id="${item.id}">Ověřit</button>
             </div>
-            <button class="admin-approve-btn" data-action="verify-business" data-kind="${item.kind}" data-id="${item.id}">Ověřit</button>
-          </div>
-        `).join('')}
+          `).join('')}
     </div>
 
     <div class="profile-section">
       <h3 class="profile-section-title">Nahlášené příspěvky (${state.adminReports ? state.adminReports.length : '…'})</h3>
-      ${state.adminReports && state.adminReports.length === 0
-        ? '<p class="empty-state">Žádná nevyřízená nahlášení.</p>'
-        : (state.adminReports || []).map((r) => `
-          <div class="admin-list-item">
-            <div class="admin-list-info">
-              <p class="admin-list-title">${(r.text_content || '').slice(0, 60) || '(bez textu)'}</p>
-              <p class="admin-list-meta">Nahlásil: ${r.reporter_name || 'uživatel'} · Feed: ${r.target_feed}${r.reason ? ` · Důvod: ${r.reason}` : ''}</p>
+      ${state.adminReports === null
+        ? '<p class="empty-state">Načítám…</p>'
+        : state.adminReports.length === 0
+          ? '<p class="empty-state">Žádná nevyřízená nahlášení.</p>'
+          : state.adminReports.map((r) => `
+            <div class="admin-list-item">
+              <div class="admin-list-info">
+                <p class="admin-list-title">${(r.text_content || '').slice(0, 60) || '(bez textu)'}</p>
+                <p class="admin-list-meta">Nahlásil: ${r.reporter_name || 'uživatel'} · Feed: ${r.target_feed}${r.reason ? ` · Důvod: ${r.reason}` : ''}</p>
+              </div>
+              <button class="admin-delete-btn" data-action="delete-reported-post" data-post-id="${r.post_id}" data-report-id="${r.id}">Smazat</button>
             </div>
-            <button class="admin-delete-btn" data-action="delete-reported-post" data-post-id="${r.post_id}" data-report-id="${r.id}">Smazat</button>
-          </div>
-        `).join('')}
+          `).join('')}
     </div>
   `;
 }
@@ -468,7 +504,8 @@ async function verifyBusiness(kind, id) {
     await apiPost(`/api/admin/verify/${kind}/${id}`, {});
     showToast('Profil byl ověřen.');
     state.adminPending = null;
-    loadAdminPending();
+    state.adminPendingLoading = false;
+    renderApp();
   } catch (err) {
     showToast(err.message);
   }
@@ -480,7 +517,8 @@ async function deleteReportedPost(postId, reportId) {
     await apiDelete(`/api/admin/posts/${postId}`);
     showToast('Příspěvek byl odstraněn.');
     state.adminReports = null;
-    loadAdminReports();
+    state.adminReportsLoading = false;
+    renderApp();
   } catch (err) {
     showToast(err.message);
   }
