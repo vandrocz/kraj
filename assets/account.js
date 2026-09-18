@@ -70,7 +70,6 @@ function renderLoginForm() {
 function renderRegisterForm() {
   const role = accountFormState.registerRole;
   const kind = accountFormState.registerBusinessKind;
-
   const roleFields = role === 'organization' ? `
     <div class="form-field"><label class="form-label">Název organizace</label><input class="form-input" name="orgName" required /></div>
     <div class="form-field"><label class="form-label">Druh</label>
@@ -96,7 +95,6 @@ function renderRegisterForm() {
     ${renderRegionDistrictCityFields('reg')}
     <div class="form-field"><label class="form-label">Popis</label><textarea class="form-textarea" name="description"></textarea></div>
   ` : '';
-
   return `
     <form data-action="submit-register">
       <label class="form-label">Typ účtu</label>
@@ -276,7 +274,6 @@ function renderBusinessDashboard() {
   if (!accountFormState.postTargetBusiness) accountFormState.postTargetBusiness = businesses[0].id;
   const selected = businesses.find((b) => b.id === accountFormState.postTargetBusiness) || businesses[0];
   const targetFeed = selected.kind;
-
   return `
     <div class="profile-section">
       <h3 class="profile-section-title">Tvůj podnik</h3>
@@ -296,7 +293,10 @@ function renderBusinessDashboard() {
           <span id="file-drop-label">${icon('image', { size: 22 })}<br/>Klikni pro výběr 1–4 fotek</span>
         </div>
         <div id="file-preview-grid" class="file-preview-grid"></div>
-        <div class="form-field"><label class="form-label">Text</label><textarea class="form-textarea" name="text" placeholder="Co je nového?"></textarea></div>
+        ${renderRichEditor('text_html', 'Co je nového?')}
+        <div style="display:flex;gap:8px;margin-bottom:14px;">
+          <button type="button" class="profile-action-btn" data-action="attach-geo" data-geo-label>${icon('location', { size: 15 })} Přidat polohu</button>
+        </div>
         <button class="form-submit-btn" type="submit">Zveřejnit</button>
         <p class="form-hint">Fotky se automaticky zmenší. Zveřejní se ihned.</p>
       </form>
@@ -348,7 +348,15 @@ async function handleBusinessPostSubmit(form) {
   files.forEach((f) => fd.append('file', f, f.name));
   fd.set('business_id', businessId);
   fd.set('target_feed', targetFeed);
-  fd.set('text', form.querySelector('textarea[name="text"]')?.value || '');
+  const html = getEditorHtml(form);
+  fd.set('text_html', html);
+  fd.set('text', html.replace(/<[^>]*>/g, ' ').trim());
+  const geoLat = form.dataset.geoLat || '';
+  const geoLng = form.dataset.geoLng || '';
+  const geoPlace = form.dataset.geoPlace || '';
+  if (geoLat) fd.set('geo_lat', geoLat);
+  if (geoLng) fd.set('geo_lng', geoLng);
+  if (geoPlace) fd.set('geo_place', geoPlace);
   const btn = form.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = 'Nahrávám…'; }
   try {
@@ -363,7 +371,6 @@ async function handleBusinessPostSubmit(form) {
   }
 }
 
-// ---- Forgot / reset ----
 function renderForgotPasswordOverlay() {
   return `
     <div class="page-scroll">
@@ -414,7 +421,6 @@ async function resendVerification() {
   catch (err) { showToast(err.message); }
 }
 
-// ---- 2FA modal pri prihlásení ----
 function renderTwoFAOverlay() {
   return `
     <div class="page-scroll">
@@ -437,7 +443,6 @@ async function handleTwoFALogin(form) {
   } catch (err) { showToast(err.message); }
 }
 
-// ---- Admin ----
 async function loadAdminPending() {
   try { state.adminPending = await apiGet('/api/admin/pending'); }
   catch { state.adminPending = { organizations: [], accommodation: [], restaurants: [] }; }
