@@ -6,6 +6,9 @@ import { feedRoutes } from './routes/feed.js';
 import { postsRoutes } from './routes/posts.js';
 import { adminRoutes } from './routes/admin.js';
 import { profileRoutes } from './routes/profile.js';
+import { messagesRoutes } from './routes/messages.js';
+import { groupsRoutes } from './routes/groups.js';
+import { storiesRoutes } from './routes/stories.js';
 import { runDailyDistribution, ensureActiveProjectRotation } from './cron.js';
 import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUISINE_TYPES } from './regions.js';
 
@@ -22,36 +25,32 @@ app.use('*', async (c, next) => {
 });
 
 async function requireAuth(c, next) {
-  const authHeader = c.req.header('Authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const h = c.req.header('Authorization') || '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return c.json({ error: 'Chýba prihlásenie.' }, 401);
   try {
     const payload = await verify(token, c.env.JWT_SECRET, 'HS256');
     c.set('user', payload);
     await next();
   } catch {
-    return c.json({ error: 'Neplatný alebo expirovaný token.' }, 401);
+    return c.json({ error: 'Neplatný nebo expirovaný token.' }, 401);
   }
 }
 
 app.get('/', (c) => c.json({ ok: true, service: 'naskraj-api' }));
-
 app.get('/api/meta/regions', (c) => c.json({ regions: REGIONS }));
-app.get('/api/meta/types', (c) =>
-  c.json({
-    organization: ORGANIZATION_TYPES,
-    accommodation: ACCOMMODATION_TYPES,
-    restaurant: RESTAURANT_TYPES,
-    cuisine: CUISINE_TYPES,
-  }));
+app.get('/api/meta/types', (c) => c.json({
+  organization: ORGANIZATION_TYPES, accommodation: ACCOMMODATION_TYPES,
+  restaurant: RESTAURANT_TYPES, cuisine: CUISINE_TYPES,
+}));
 
 app.route('/api/auth', authRoutes);
 
-// ---- Peňaženka ----
+// Wallet
 app.get('/api/user/wallet', requireAuth, async (c) => {
   const user = c.get('user');
   const row = await c.env.DB.prepare('SELECT credit_balance, status FROM users WHERE id = ?').bind(user.sub).first();
-  if (!row) return c.json({ error: 'Užívateľ nenájdený.' }, 404);
+  if (!row) return c.json({ error: 'Nenájdený.' }, 404);
   const { results: contributions } = await c.env.DB.prepare(
     `SELECT contributions.amount, contributions.created_at, projects.id AS project_id, projects.title
      FROM contributions JOIN projects ON projects.id = contributions.project_id
@@ -70,7 +69,7 @@ app.post('/api/user/wallet/topup', requireAuth, async (c) => {
   return c.json({ credit_balance: row.credit_balance });
 });
 
-// ---- Feed ----
+// Feed — write endpoints chránené
 app.use('/api/feed/collections/:id/like', requireAuth);
 app.use('/api/feed/:id/comment', requireAuth);
 app.use('/api/feed/:id/report', requireAuth);
@@ -79,28 +78,41 @@ app.use('/api/feed/post/:id', requireAuth);
 app.use('/api/feed/comment/:id', requireAuth);
 app.route('/api/feed', feedRoutes);
 
-// ---- Posts (1–4 fotky) ----
+// Posts
 app.use('/api/posts', requireAuth);
 app.route('/api/posts', postsRoutes);
 
-// ---- Profile / Follow / Settings ----
-// Zápis (PATCH/POST) chránený nižšie v module. GET /api/profile/:type/:id je verejný.
+// Profile — chránené podcesty
 app.use('/api/profile/me/*', requireAuth);
-app.use('/api/profile/follow', requireAuth);
-app.route('/api/profile', profileRoutes);
-app.use('/api/profile/me/*', requireAuth);
+app.use('/api/profile/me', requireAuth);
 app.use('/api/profile/follow', requireAuth);
 app.use('/api/profile/follow/*', requireAuth);
 app.use('/api/profile/block/*', requireAuth);
 app.use('/api/profile/search', requireAuth);
 app.route('/api/profile', profileRoutes);
 
-// ---- Admin ----
+// Messages
+app.use('/api/messages/*', requireAuth);
+app.use('/api/messages', requireAuth);
+app.route('/api/messages', messagesRoutes);
+
+// Groups
+app.use('/api/groups/my', requireAuth);
+app.use('/api/groups/discover', requireAuth);
+app.use('/api/groups', requireAuth);
+app.route('/api/groups', groupsRoutes);
+
+// Stories
+app.use('/api/stories/feed', requireAuth);
+app.use('/api/stories/upload', requireAuth);
+app.use('/api/stories', requireAuth);
+app.route('/api/stories', storiesRoutes);
+
+// Admin cron
 app.post('/api/admin/run-distribution-now', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
-  const summary = await runDailyDistribution(c.env);
-  return c.json(summary);
+  return c.json(await runDailyDistribution(c.env));
 });
 
 app.use('/api/admin/*', requireAuth);
