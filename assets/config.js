@@ -1,7 +1,4 @@
-// Živé API — nasadený Cloudflare Worker (Hono)
 const API_BASE_URL = 'https://naskraj-api.vandrocz-contact.workers.dev';
-
-// Adresa mapovej subdomény vložená do iframu na stránce Mapa výletů
 const MAP_ORIGIN = 'https://maps.vandro.cz';
 
 function getToken() { return localStorage.getItem('naskraj_token'); }
@@ -39,4 +36,62 @@ async function apiFetch(path, options = {}) {
 
 function apiGet(path) { return apiFetch(path, { method: 'GET' }); }
 function apiPost(path, body) { return apiFetch(path, { method: 'POST', body: body instanceof FormData ? body : JSON.stringify(body) }); }
+function apiPatch(path, body) { return apiFetch(path, { method: 'PATCH', body: JSON.stringify(body) }); }
 function apiDelete(path) { return apiFetch(path, { method: 'DELETE' }); }
+
+// ============================================================
+// KOMPRESIA OBRÁZKOV (klientsky, bez straty kvality)
+// - zmenší max. rozmer na 1600 px (dostatočné pre retina displeje)
+// - JPEG kvalita 0.82 — vizuálne identické, ale 5–10× menšie
+// - ak je obrázok už malý, vracia originál
+// ============================================================
+async function compressImage(file, opts = {}) {
+  const { maxDim = 1600, quality = 0.82, minBytes = 150 * 1024 } = opts;
+  if (!file || !file.type || !file.type.startsWith('image/')) return file;
+  if (file.size <= minBytes) return file;
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    let { width, height } = bitmap;
+    if (width > maxDim || height > maxDim) {
+      const ratio = Math.min(maxDim / width, maxDim / height);
+      width = Math.round(width * ratio);
+      height = Math.round(height * ratio);
+    }
+    let canvas, ctx;
+    if (typeof OffscreenCanvas !== 'undefined') {
+      canvas = new OffscreenCanvas(width, height);
+      ctx = canvas.getContext('2d');
+    } else {
+      canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      ctx = canvas.getContext('2d');
+    }
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    if (bitmap.close) bitmap.close();
+
+    let blob;
+    if (canvas.convertToBlob) {
+      blob = await canvas.convertToBlob({ type: 'image/jpeg', quality });
+    } else {
+      blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', quality));
+    }
+    if (!blob) return file;
+
+    // Ak by kompresia zväčšila (veľmi vzácne), vráť originál
+    if (blob.size >= file.size) return file;
+
+    const newName = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+    return new File([blob], newName, { type: 'image/jpeg', lastModified: Date.now() });
+  } catch (err) {
+    console.warn('Kompresia zlyhala, použijem originál:', err);
+    return file;
+  }
+}
+
+async function compressImageList(files, opts) {
+  const arr = Array.from(files || []);
+  const out = [];
+  for (const f of arr) out.push(await compressImage(f, opts));
+  return out;
+}
