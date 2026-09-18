@@ -1,3 +1,7 @@
+// ============================================================
+// SEKCE 5: MŮJ ÚČET (s Google Sign-In)
+// ============================================================
+
 const accountFormState = {
   registerRole: 'user',
   registerBusinessKind: 'accommodation',
@@ -9,11 +13,19 @@ const accountFormState = {
 
 function renderAccountPage() {
   if (!isLoggedIn()) {
-    return `
+    const html = `
       <div class="page-scroll">
         ${renderHeader('Můj účet')}
         ${renderAuthCard()}
       </div>`;
+    // Inicializuj Google button až po vložení do DOM
+    setTimeout(() => {
+      const el = document.getElementById('google-signin-container');
+      if (el && el.children.length === 0) {
+        renderGoogleButton(el, handleGoogleCredential);
+      }
+    }, 80);
+    return html;
   }
   return `
     <div class="page-scroll">
@@ -52,7 +64,12 @@ function renderAuthCard() {
         <button class="auth-tab ${state.authView === 'login' ? 'is-active' : ''}" data-action="set-auth-view" data-view="login">Přihlásit se</button>
         <button class="auth-tab ${state.authView === 'register' ? 'is-active' : ''}" data-action="set-auth-view" data-view="register">Registrace</button>
       </div>
+
       ${accountFormState.formError ? `<div class="form-error">${accountFormState.formError}</div>` : ''}
+
+      <div id="google-signin-container" style="display:flex;justify-content:center;margin-bottom:18px;"></div>
+      <div class="auth-divider"><span>nebo</span></div>
+
       ${state.authView === 'login' ? renderLoginForm() : renderRegisterForm()}
       ${state.authView === 'login' ? `<p style="text-align:center;margin-top:14px;font-size:12.5px"><button type="button" data-action="open-forgot" style="color:var(--c-primary-dark);font-weight:600">Zapomněl jsi heslo?</button></p>` : ''}
     </div>`;
@@ -70,6 +87,7 @@ function renderLoginForm() {
 function renderRegisterForm() {
   const role = accountFormState.registerRole;
   const kind = accountFormState.registerBusinessKind;
+
   const roleFields = role === 'organization' ? `
     <div class="form-field"><label class="form-label">Název organizace</label><input class="form-input" name="orgName" required /></div>
     <div class="form-field"><label class="form-label">Druh</label>
@@ -95,6 +113,7 @@ function renderRegisterForm() {
     ${renderRegionDistrictCityFields('reg')}
     <div class="form-field"><label class="form-label">Popis</label><textarea class="form-textarea" name="description"></textarea></div>
   ` : '';
+
   return `
     <form data-action="submit-register">
       <label class="form-label">Typ účtu</label>
@@ -172,11 +191,18 @@ async function handleLoginSubmit(form) {
 }
 
 function finishLogin(data) {
-  setToken(data.token); setStoredUser(data.user); setStoredBusinesses(data.businesses || []);
-  state.token = data.token; state.user = data.user; state.businesses = data.businesses || [];
-  state.wallet = null; state._twofaStage = null; state._twofaToken = null;
+  setToken(data.token);
+  setStoredUser(data.user);
+  setStoredBusinesses(data.businesses || []);
+  state.token = data.token;
+  state.user = data.user;
+  state.businesses = data.businesses || [];
+  state.wallet = null;
+  state._twofaStage = null;
+  state._twofaToken = null;
   showToast(`Vítej zpět, ${data.user.display_name}!`);
-  loadWallet(); loadNotifications();
+  loadWallet();
+  loadNotifications();
 }
 
 async function handleRegisterSubmit(form) {
@@ -199,10 +225,16 @@ async function handleRegisterSubmit(form) {
 
 function handleLogout() {
   apiPost('/api/auth/logout', {}).catch(() => {});
-  clearToken(); clearStoredUser();
-  state.token = null; state.user = null; state.businesses = [];
-  state.wallet = null; state.adminPending = null; state.adminReports = null;
-  state.overlay = null; state.unreadNotifications = 0;
+  clearToken();
+  clearStoredUser();
+  state.token = null;
+  state.user = null;
+  state.businesses = [];
+  state.wallet = null;
+  state.adminPending = null;
+  state.adminReports = null;
+  state.overlay = null;
+  state.unreadNotifications = 0;
   stopThreadPolling();
   showToast('Byl jsi odhlášen.');
   renderApp();
@@ -217,7 +249,10 @@ function renderAccountHeaderCard() {
   return `
     <div class="account-header" data-action="open-profile" data-kind="user" data-id="${state.user.id}" style="cursor:pointer">
       ${avatar}
-      <div style="flex:1"><p class="account-name">${escapeHtml(state.user.display_name)}</p><span class="account-role-chip">${roleLabel}</span></div>
+      <div style="flex:1">
+        <p class="account-name">${escapeHtml(state.user.display_name)}</p>
+        <span class="account-role-chip">${roleLabel}</span>
+      </div>
       ${icon('chevronRight', { size: 18 })}
     </div>`;
 }
@@ -253,7 +288,10 @@ function renderUserWalletSection() {
       ${w && w.contributions && w.contributions.length > 0
         ? w.contributions.map((c) => `
           <div class="contribution-row">
-            <div><p class="contribution-title">${escapeHtml(c.title)}</p><p class="contribution-date">${timeAgo(c.created_at)}</p></div>
+            <div>
+              <p class="contribution-title">${escapeHtml(c.title)}</p>
+              <p class="contribution-date">${timeAgo(c.created_at)}</p>
+            </div>
             <span class="contribution-amount">+${c.amount} Kč</span>
           </div>`).join('')
         : '<p class="empty-state">Zatím žádné příspěvky.</p>'}
@@ -264,7 +302,8 @@ async function handleTopup(amount) {
   try {
     const data = await apiPost('/api/user/wallet/topup', { amount });
     if (state.wallet) state.wallet.credit_balance = data.credit_balance;
-    showToast(`Kredit dobit o ${amount} Kč.`); renderApp();
+    showToast(`Kredit dobit o ${amount} Kč.`);
+    renderApp();
   } catch (err) { showToast(err.message); }
 }
 
@@ -274,6 +313,7 @@ function renderBusinessDashboard() {
   if (!accountFormState.postTargetBusiness) accountFormState.postTargetBusiness = businesses[0].id;
   const selected = businesses.find((b) => b.id === accountFormState.postTargetBusiness) || businesses[0];
   const targetFeed = selected.kind;
+
   return `
     <div class="profile-section">
       <h3 class="profile-section-title">Tvůj podnik</h3>
@@ -285,6 +325,7 @@ function renderBusinessDashboard() {
       </div>
       ${!selected.is_verified ? '<p class="form-hint" style="padding:0 16px 10px">Profil nemá odznak Ověřeno.</p>' : ''}
     </div>
+
     <div class="profile-section">
       <h3 class="profile-section-title">Přidat příspěvek (max. 4 fotky)</h3>
       <form data-action="submit-business-post" data-business-id="${selected.id}" data-target-feed="${targetFeed}">
@@ -303,7 +344,10 @@ function renderBusinessDashboard() {
     </div>`;
 }
 
-function selectBusiness(id) { accountFormState.postTargetBusiness = id; renderApp(); }
+function selectBusiness(id) {
+  accountFormState.postTargetBusiness = id;
+  renderApp();
+}
 
 async function onFilesSelected(inputEl) {
   const files = Array.from(inputEl.files || []).slice(0, 4);
@@ -344,21 +388,26 @@ async function handleBusinessPostSubmit(form) {
   const targetFeed = form.dataset.targetFeed;
   const files = accountFormState.postFiles;
   if (!files || files.length === 0) { showToast('Vyber alespoň jednu fotku.'); return; }
+
   const fd = new FormData();
   files.forEach((f) => fd.append('file', f, f.name));
   fd.set('business_id', businessId);
   fd.set('target_feed', targetFeed);
+
   const html = getEditorHtml(form);
   fd.set('text_html', html);
   fd.set('text', html.replace(/<[^>]*>/g, ' ').trim());
+
   const geoLat = form.dataset.geoLat || '';
   const geoLng = form.dataset.geoLng || '';
   const geoPlace = form.dataset.geoPlace || '';
   if (geoLat) fd.set('geo_lat', geoLat);
   if (geoLng) fd.set('geo_lng', geoLng);
   if (geoPlace) fd.set('geo_place', geoPlace);
+
   const btn = form.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = 'Nahrávám…'; }
+
   try {
     await apiPost('/api/posts', fd);
     showToast('Příspěvek zveřejněn!');
@@ -384,6 +433,7 @@ function renderForgotPasswordOverlay() {
       </div>
     </div>`;
 }
+
 async function handleForgotSubmit(form) {
   const fd = new FormData(form);
   const btn = form.querySelector('button[type="submit"]');
@@ -392,7 +442,10 @@ async function handleForgotSubmit(form) {
     await apiPost('/api/auth/forgot-password', { email: fd.get('email') });
     showToast('Pokud e-mail existuje, dorazí odkaz.');
     closeOverlay();
-  } catch (err) { showToast(err.message); if (btn) { btn.disabled = false; btn.textContent = 'Poslat odkaz'; } }
+  } catch (err) {
+    showToast(err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Poslat odkaz'; }
+  }
 }
 
 function renderResetPasswordOverlay(token) {
@@ -407,18 +460,23 @@ function renderResetPasswordOverlay(token) {
       </div>
     </div>`;
 }
+
 async function handleResetSubmit(form) {
   const fd = new FormData(form);
   try {
     await apiPost('/api/auth/reset-password', { token: form.dataset.token, password: fd.get('password') });
     showToast('Heslo změněno. Přihlas se.');
-    state.overlay = null; state.authView = 'login'; renderApp();
+    state.overlay = null;
+    state.authView = 'login';
+    renderApp();
   } catch (err) { showToast(err.message); }
 }
 
 async function resendVerification() {
-  try { await apiPost('/api/auth/resend-verification', {}); showToast('Poslali jsme nový odkaz.'); }
-  catch (err) { showToast(err.message); }
+  try {
+    await apiPost('/api/auth/resend-verification', {});
+    showToast('Poslali jsme nový odkaz.');
+  } catch (err) { showToast(err.message); }
 }
 
 function renderTwoFAOverlay() {
@@ -448,11 +506,13 @@ async function loadAdminPending() {
   catch { state.adminPending = { organizations: [], accommodation: [], restaurants: [] }; }
   finally { state.adminPendingLoading = false; if (state.tab === 'account') renderApp(); }
 }
+
 async function loadAdminReports() {
   try { const d = await apiGet('/api/admin/reports'); state.adminReports = d.reports; }
   catch { state.adminReports = []; }
   finally { state.adminReportsLoading = false; if (state.tab === 'account') renderApp(); }
 }
+
 function renderAdminPanel() {
   if (state.adminPending === null && !state.adminPendingLoading) { state.adminPendingLoading = true; loadAdminPending(); }
   if (state.adminReports === null && !state.adminReportsLoading) { state.adminReportsLoading = true; loadAdminReports(); }
@@ -469,8 +529,10 @@ function renderAdminPanel() {
         : items.length === 0 ? '<p class="empty-state">Žádné profily nečekají.</p>'
         : items.map((it) => `
           <div class="admin-list-item">
-            <div class="admin-list-info"><p class="admin-list-title">${escapeHtml(it.name)}</p>
-            <p class="admin-list-meta">${it.type} · ${it.city ? `${it.city}, ` : ''}${it.region}</p></div>
+            <div class="admin-list-info">
+              <p class="admin-list-title">${escapeHtml(it.name)}</p>
+              <p class="admin-list-meta">${it.type} · ${it.city ? `${it.city}, ` : ''}${it.region}</p>
+            </div>
             <button class="admin-approve-btn" data-action="verify-business" data-kind="${it.kind}" data-id="${it.id}">Ověřit</button>
           </div>`).join('')}
     </div>
@@ -480,18 +542,32 @@ function renderAdminPanel() {
         : state.adminReports.length === 0 ? '<p class="empty-state">Žádná nahlášení.</p>'
         : state.adminReports.map((r) => `
           <div class="admin-list-item">
-            <div class="admin-list-info"><p class="admin-list-title">${(r.text_content || '').slice(0, 60) || '(bez textu)'}</p>
-            <p class="admin-list-meta">Nahlásil: ${r.reporter_name || 'uživatel'}${r.reason ? ` · ${r.reason}` : ''}</p></div>
+            <div class="admin-list-info">
+              <p class="admin-list-title">${(r.text_content || '').slice(0, 60) || '(bez textu)'}</p>
+              <p class="admin-list-meta">Nahlásil: ${r.reporter_name || 'uživatel'}${r.reason ? ` · ${r.reason}` : ''}</p>
+            </div>
             <button class="admin-delete-btn" data-action="delete-reported-post" data-post-id="${r.post_id}" data-report-id="${r.id}">Smazat</button>
           </div>`).join('')}
     </div>`;
 }
+
 async function verifyBusiness(kind, id) {
-  try { await apiPost(`/api/admin/verify/${kind}/${id}`, {}); showToast('Profil ověřen.'); state.adminPending = null; state.adminPendingLoading = false; renderApp(); }
-  catch (err) { showToast(err.message); }
+  try {
+    await apiPost(`/api/admin/verify/${kind}/${id}`, {});
+    showToast('Profil ověřen.');
+    state.adminPending = null;
+    state.adminPendingLoading = false;
+    renderApp();
+  } catch (err) { showToast(err.message); }
 }
+
 async function deleteReportedPost(postId, reportId) {
   if (!confirm('Skrýt tento příspěvek?')) return;
-  try { await apiDelete(`/api/admin/posts/${postId}`); showToast('Odstraněno.'); state.adminReports = null; state.adminReportsLoading = false; renderApp(); }
-  catch (err) { showToast(err.message); }
+  try {
+    await apiDelete(`/api/admin/posts/${postId}`);
+    showToast('Odstraněno.');
+    state.adminReports = null;
+    state.adminReportsLoading = false;
+    renderApp();
+  } catch (err) { showToast(err.message); }
 }
