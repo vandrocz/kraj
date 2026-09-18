@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { verify } from 'hono/jwt';
 import { authRoutes } from './routes/auth.js';
+import { authGoogleRoutes } from './routes/auth-google.js';
 import { feedRoutes } from './routes/feed.js';
 import { postsRoutes } from './routes/posts.js';
 import { adminRoutes } from './routes/admin.js';
@@ -39,12 +40,13 @@ app.get('/', (c) => c.json({ ok: true, service: 'naskraj-api' }));
 app.get('/api/meta/regions', (c) => c.json({ regions: REGIONS }));
 app.get('/api/meta/types', (c) => c.json({ organization: ORGANIZATION_TYPES, accommodation: ACCOMMODATION_TYPES, restaurant: RESTAURANT_TYPES, cuisine: CUISINE_TYPES }));
 
-// SEO (verejné)
 app.route('/api/seo', seoRoutes);
 
+// ---- AUTH ----
 app.route('/api/auth', authRoutes);
+app.route('/api/auth', authGoogleRoutes);   // <-- Google endpoint
 
-// Wallet
+// ---- WALLET ----
 app.get('/api/user/wallet', requireAuth, async (c) => {
   const user = c.get('user');
   const row = await c.env.DB.prepare('SELECT credit_balance, status FROM users WHERE id = ?').bind(user.sub).first();
@@ -67,7 +69,7 @@ app.post('/api/user/wallet/topup', requireAuth, async (c) => {
   return c.json({ credit_balance: row.credit_balance });
 });
 
-// Feed
+// ---- FEED ----
 app.use('/api/feed/collections/:id/like', requireAuth);
 app.use('/api/feed/:id/comment', requireAuth);
 app.use('/api/feed/:id/report', requireAuth);
@@ -76,18 +78,18 @@ app.use('/api/feed/post/:id', requireAuth);
 app.use('/api/feed/comment/:id', requireAuth);
 app.route('/api/feed', feedRoutes);
 
-// Posts
+// ---- POSTS ----
 app.use('/api/posts', requireAuth);
 app.route('/api/posts', postsRoutes);
 
-// Geo (save chránené)
+// ---- GEO ----
 app.post('/api/geo/save', requireAuth);
 app.route('/api/geo', geoRoutes);
 
-// Mentions (search verejný, zvyšok interný)
+// ---- MENTIONS ----
 app.route('/api/mentions', mentionsRoutes);
 
-// Profile
+// ---- PROFILE ----
 app.use('/api/profile/me/*', requireAuth);
 app.use('/api/profile/me', requireAuth);
 app.use('/api/profile/follow', requireAuth);
@@ -96,24 +98,24 @@ app.use('/api/profile/block/*', requireAuth);
 app.use('/api/profile/search', requireAuth);
 app.route('/api/profile', profileRoutes);
 
-// Messages
+// ---- MESSAGES ----
 app.use('/api/messages/*', requireAuth);
 app.use('/api/messages', requireAuth);
 app.route('/api/messages', messagesRoutes);
 
-// Groups
+// ---- GROUPS ----
 app.use('/api/groups/my', requireAuth);
 app.use('/api/groups/discover', requireAuth);
 app.use('/api/groups', requireAuth);
 app.route('/api/groups', groupsRoutes);
 
-// Stories
+// ---- STORIES ----
 app.use('/api/stories/feed', requireAuth);
 app.use('/api/stories/upload', requireAuth);
 app.use('/api/stories', requireAuth);
 app.route('/api/stories', storiesRoutes);
 
-// Admin cron
+// ---- ADMIN ----
 app.post('/api/admin/run-distribution-now', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
