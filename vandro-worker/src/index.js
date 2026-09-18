@@ -5,27 +5,26 @@ import { authRoutes } from './routes/auth.js';
 import { feedRoutes } from './routes/feed.js';
 import { postsRoutes } from './routes/posts.js';
 import { adminRoutes } from './routes/admin.js';
+import { profileRoutes } from './routes/profile.js';
 import { runDailyDistribution, ensureActiveProjectRotation } from './cron.js';
 import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUISINE_TYPES } from './regions.js';
 
 const app = new Hono();
 
-// ---- CORS: povolené len z klientskej domény appky ----
 app.use('*', async (c, next) => {
   const allowed = (c.env.ALLOWED_ORIGIN || 'https://app.vandro.cz').split(',').map((s) => s.trim());
   return cors({
     origin: [...allowed, 'http://localhost:5173', 'http://localhost:8934'],
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Cron-Secret'],
     credentials: true,
   })(c, next);
 });
 
-// ---- JWT middleware ----
 async function requireAuth(c, next) {
   const authHeader = c.req.header('Authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return c.json({ error: 'Chýba prihlásenie (Authorization header).' }, 401);
+  if (!token) return c.json({ error: 'Chýba prihlásenie.' }, 401);
   try {
     const payload = await verify(token, c.env.JWT_SECRET, 'HS256');
     c.set('user', payload);
@@ -37,7 +36,6 @@ async function requireAuth(c, next) {
 
 app.get('/', (c) => c.json({ ok: true, service: 'naskraj-api' }));
 
-// ---- Číselníky pre front-end filtre ----
 app.get('/api/meta/regions', (c) => c.json({ regions: REGIONS }));
 app.get('/api/meta/types', (c) =>
   c.json({
@@ -47,10 +45,9 @@ app.get('/api/meta/types', (c) =>
     cuisine: CUISINE_TYPES,
   }));
 
-// ---- Auth (register/login/logout sú verejné) ----
 app.route('/api/auth', authRoutes);
 
-// ---- Peňaženka užívateľa ----
+// ---- Peňaženka ----
 app.get('/api/user/wallet', requireAuth, async (c) => {
   const user = c.get('user');
   const row = await c.env.DB.prepare('SELECT credit_balance, status FROM users WHERE id = ?').bind(user.sub).first();
@@ -73,18 +70,24 @@ app.post('/api/user/wallet/topup', requireAuth, async (c) => {
   return c.json({ credit_balance: row.credit_balance });
 });
 
-// ---- Zbierkový feed ----
+// ---- Feed ----
 app.use('/api/feed/collections/:id/like', requireAuth);
 app.use('/api/feed/:id/comment', requireAuth);
 app.use('/api/feed/:id/report', requireAuth);
 app.use('/api/feed/:id/like', requireAuth);
 app.route('/api/feed', feedRoutes);
 
-// ---- Príspevky organizácií/podnikov ----
+// ---- Posts (1–4 fotky) ----
 app.use('/api/posts', requireAuth);
 app.route('/api/posts', postsRoutes);
 
-// ---- Manuálne spustenie cronu (chránené X-Cron-Secret) ----
+// ---- Profile / Follow / Settings ----
+// Zápis (PATCH/POST) chránený nižšie v module. GET /api/profile/:type/:id je verejný.
+app.use('/api/profile/me/*', requireAuth);
+app.use('/api/profile/follow', requireAuth);
+app.route('/api/profile', profileRoutes);
+
+// ---- Admin ----
 app.post('/api/admin/run-distribution-now', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
@@ -92,7 +95,6 @@ app.post('/api/admin/run-distribution-now', async (c) => {
   return c.json(summary);
 });
 
-// ---- Admin ----
 app.use('/api/admin/*', requireAuth);
 app.route('/api/admin', adminRoutes);
 
@@ -105,10 +107,7 @@ app.onError((err, c) => {
 export default {
   fetch: app.fetch,
   async scheduled(event, env, ctx) {
-    if (event.cron === '0 8 * * *') {
-      ctx.waitUntil(runDailyDistribution(env));
-    } else {
-      ctx.waitUntil(ensureActiveProjectRotation(env));
-    }
+    if (event.cron === '0 8 * * *') ctx.waitUntil(runDailyDistribution(env));
+    else ctx.waitUntil(ensureActiveProjectRotation(env));
   },
 };
