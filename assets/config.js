@@ -1,5 +1,6 @@
 const API_BASE_URL = 'https://naskraj-api.vandrocz-contact.workers.dev';
 const MAP_ORIGIN = 'https://maps.vandro.cz';
+const GOOGLE_CLIENT_ID = 'SEM_VLOZ_SVOJ_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
 
 function getToken() { return localStorage.getItem('naskraj_token'); }
 function setToken(t) { localStorage.setItem('naskraj_token', t); }
@@ -34,7 +35,7 @@ function apiPost(path, body) { return apiFetch(path, { method: 'POST', body: bod
 function apiPatch(path, body) { return apiFetch(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) }); }
 function apiDelete(path, body) { return apiFetch(path, { method: 'DELETE', body: body ? JSON.stringify(body) : undefined }); }
 
-// ---- URL params (verify/reset) ----
+// ---- URL params ----
 function getUrlParam(key) { return new URLSearchParams(location.search).get(key); }
 function clearUrlParams() { if (location.search) history.replaceState(null, '', location.pathname); }
 
@@ -74,4 +75,63 @@ async function compressImageList(files, opts) {
   const arr = Array.from(files || []); const out = [];
   for (const f of arr) out.push(await compressImage(f, opts));
   return out;
+}
+
+// ============================================================
+// GOOGLE SIGN-IN
+// ============================================================
+let _googleInitialized = false;
+
+function initGoogleSignIn(onCredential) {
+  if (!window.google?.accounts?.id) {
+    console.warn('Google Identity Services sa ešte nenačítal.');
+    return false;
+  }
+  if (!_googleInitialized) {
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: (response) => {
+        if (response?.credential) onCredential(response.credential);
+      },
+      auto_select: false,
+      cancel_on_tap_outside: true,
+    });
+    _googleInitialized = true;
+  }
+  return true;
+}
+
+function renderGoogleButton(containerEl, onCredential) {
+  if (!initGoogleSignIn(onCredential)) {
+    // Skús znova o sekundu (script sa možno ešte načítava)
+    setTimeout(() => renderGoogleButton(containerEl, onCredential), 1000);
+    return;
+  }
+  window.google.accounts.id.renderButton(containerEl, {
+    theme: 'outline',
+    size: 'large',
+    text: 'signin_with',
+    shape: 'pill',
+    logo_alignment: 'left',
+    width: 320,
+  });
+}
+
+// Handler – pošle Google credential na backend
+async function handleGoogleCredential(credential) {
+  try {
+    const data = await apiPost('/api/auth/google', { credential });
+    setToken(data.token);
+    setStoredUser(data.user);
+    setStoredBusinesses(data.businesses || []);
+    state.token = data.token;
+    state.user = data.user;
+    state.businesses = data.businesses || [];
+    state.wallet = null;
+    showToast(`Vítej, ${data.user.display_name}!`);
+    loadWallet();
+    loadNotifications();
+  } catch (err) {
+    showToast(err.message);
+  }
 }
