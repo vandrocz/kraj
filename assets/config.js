@@ -95,3 +95,26 @@ async function compressImageList(files, opts) {
   for (const f of arr) out.push(await compressImage(f, opts));
   return out;
 }
+
+// ============================================================
+// URL PARAMETRE pre verify / reset flow
+// ============================================================
+function getUrlParam(key) {
+  return new URLSearchParams(location.search).get(key);
+}
+function clearUrlParams() {
+  if (location.search) history.replaceState(null, '', location.pathname);
+}
+
+// Globálny handler 401/403 s email verification hláškou
+async function apiFetchVerified(path, options = {}) {
+  try {
+    return await apiFetch(path, options);
+  } catch (err) {
+    if (err.status === 403 && /ověřit e-mail/i.test(err.message || '')) {
+      showToast('Nejprve ověř svůj e-mail — podívej se do schránky.');
+      if (state.tab !== 'account') switchTab('account');
+    }
+    throw err;
+  }
+}
