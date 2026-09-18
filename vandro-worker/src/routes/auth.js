@@ -6,6 +6,15 @@ export const authRoutes = new Hono();
 
 const VALID_ROLES = ['user', 'organization', 'hotelier'];
 
+function publicUser(u) {
+  return {
+    id: u.id, email: u.email, role: u.role, display_name: u.display_name,
+    bio: u.bio || null, avatar_url: u.avatar_url || null,
+    cover_url: u.cover_url || null, location: u.location || null,
+    website: u.website || null, phone: u.phone || null,
+  };
+}
+
 authRoutes.post('/register', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { email, password, displayName, role = 'user', termsAccepted } = body;
@@ -14,7 +23,7 @@ authRoutes.post('/register', async (c) => {
   if (!VALID_ROLES.includes(role)) return c.json({ error: 'Neplatná rola účtu.' }, 400);
   if (password.length < 6) return c.json({ error: 'Heslo musí mať aspoň 6 znaků.' }, 400);
   if (termsAccepted !== true && termsAccepted !== 'true' && termsAccepted !== 'on') {
-    return c.json({ error: 'Je nutné souhlasit s obchodními podmínkami a zpracováním osobních údajů.' }, 400);
+    return c.json({ error: 'Je nutné souhlasit s obchodními podmínkami.' }, 400);
   }
 
   const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
@@ -30,36 +39,36 @@ authRoutes.post('/register', async (c) => {
   let business = null;
 
   if (role === 'organization') {
-    const { orgName, orgType, region, district, description } = body;
-    if (!orgName || !orgType || !region || !district) {
-      return c.json({ error: 'Pre organizáciu vyžadujeme názov, typ, kraj a okres.' }, 400);
+    const { orgName, orgType, region, district, city, description } = body;
+    if (!orgName || !orgType || !region || !district || !city) {
+      return c.json({ error: 'Pre organizáciu vyžadujeme názov, typ, kraj, okres a obec.' }, 400);
     }
     const orgId = newId('org');
     await c.env.DB.prepare(
-      `INSERT INTO organizations (id, user_id, name, type, region, district, description, is_verified)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-    ).bind(orgId, userId, orgName, orgType, region, district, description || '').run();
+      `INSERT INTO organizations (id, user_id, name, type, region, district, city, description, is_verified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    ).bind(orgId, userId, orgName, orgType, region, district, city, description || '').run();
     business = { id: orgId, kind: 'organization', name: orgName };
   }
 
   if (role === 'hotelier') {
-    const { businessName, businessKind, businessType, cuisineType, region, district, description, capacity } = body;
-    if (!businessName || !businessKind || !businessType || !region || !district) {
-      return c.json({ error: 'Pre podnik vyžadujeme názov, druh (ubytování/gastro), typ, kraj a okres.' }, 400);
+    const { businessName, businessKind, businessType, cuisineType, region, district, city, description, capacity } = body;
+    if (!businessName || !businessKind || !businessType || !region || !district || !city) {
+      return c.json({ error: 'Pre podnik vyžadujeme názov, druh, typ, kraj, okres a obec.' }, 400);
     }
     if (businessKind === 'accommodation') {
       const accId = newId('acc');
       await c.env.DB.prepare(
-        `INSERT INTO accommodation (id, user_id, name, type, region, district, description, capacity, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(accId, userId, businessName, businessType, region, district, description || '', capacity || null).run();
+        `INSERT INTO accommodation (id, user_id, name, type, region, district, city, description, capacity, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(accId, userId, businessName, businessType, region, district, city, description || '', capacity || null).run();
       business = { id: accId, kind: 'accommodation', name: businessName };
     } else if (businessKind === 'gastro') {
       const restId = newId('rest');
       await c.env.DB.prepare(
-        `INSERT INTO restaurants (id, user_id, name, type, cuisine_type, region, district, description, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(restId, userId, businessName, businessType, cuisineType || null, region, district, description || '').run();
+        `INSERT INTO restaurants (id, user_id, name, type, cuisine_type, region, district, city, description, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(restId, userId, businessName, businessType, cuisineType || null, region, district, city, description || '').run();
       business = { id: restId, kind: 'gastro', name: businessName };
     } else {
       return c.json({ error: 'businessKind musí byť "accommodation" alebo "gastro".' }, 400);
@@ -81,18 +90,12 @@ authRoutes.post('/login', async (c) => {
   if (!valid) return c.json({ error: 'Nesprávny email alebo heslo.' }, 401);
   if (user.status !== 'active') return c.json({ error: 'Tento účet je pozastavený.' }, 403);
 
-  if (!c.env.JWT_SECRET) {
-    console.error('JWT_SECRET nie je nastavený (chýba `wrangler secret put JWT_SECRET`).');
-    return c.json({ error: 'Server nie je správne nakonfigurovaný (chýba JWT_SECRET). Kontaktuj administrátora.' }, 500);
-  }
-
   const token = await sign(
     { sub: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 },
     c.env.JWT_SECRET,
     'HS256',
   );
 
-  // Ak je to organizácia/hotelier, dotiahneme jeho podnik(y), nech si ich front-end rovno prednastaví
   let businesses = [];
   if (user.role === 'organization') {
     const { results } = await c.env.DB.prepare('SELECT id, name, is_verified FROM organizations WHERE user_id = ?').bind(user.id).all();
@@ -106,13 +109,7 @@ authRoutes.post('/login', async (c) => {
     ];
   }
 
-  return c.json({
-    token,
-    user: { id: user.id, email: user.email, role: user.role, display_name: user.display_name },
-    businesses,
-  });
+  return c.json({ token, user: publicUser(user), businesses });
 });
 
-// Stateless JWT nemá čo na serveri invalidovať — endpoint existuje kvôli konzistentnému API,
-// front-end si po zavolaní tejto routy zmaže token z localStorage.
 authRoutes.post('/logout', (c) => c.json({ ok: true }));
