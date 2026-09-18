@@ -377,3 +377,156 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   opacity: 0; pointer-events: none; transition: opacity .2s ease;
 }
 .toast.is-visible { opacity: 1; }
+
+
+/* ============================================================
+   ROZŠÍRENIA — sociálna sieť (profily, carousel, settings)
+   ============================================================ */
+
+/* --- Bottom nav so 6 tlačidlami --- */
+.bottom-nav { width: min(96vw, 500px); padding: 5px; gap: 2px; }
+.bottom-nav-btn { width: 42px; height: 42px; }
+
+/* --- Carousel (1–4 fotky v príspevku) --- */
+.post-carousel { position: relative; width: 100%; background: var(--c-border); }
+.post-carousel-track {
+  display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+  scrollbar-width: none; aspect-ratio: 4/3;
+}
+.post-carousel-track::-webkit-scrollbar { display: none; }
+.post-carousel-slide {
+  flex: 0 0 100%; scroll-snap-align: start; padding: 0; border: none; background: transparent;
+  overflow: hidden;
+}
+.post-carousel-slide .post-image { width: 100%; height: 100%; object-fit: cover; }
+.post-carousel-dots {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 5px; padding: 5px 9px; background: rgba(0,0,0,0.35); border-radius: 999px;
+}
+.post-carousel-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.5);
+  transition: background .2s, transform .2s;
+}
+.post-carousel-dot.is-active { background: white; transform: scale(1.3); }
+
+/* --- Profil (user) --- */
+.profile-hero { text-align: center; padding: 8px 20px 22px; }
+.profile-avatar-wrap { position: relative; display: inline-block; margin-bottom: 12px; }
+.profile-avatar-img {
+  width: 92px; height: 92px; border-radius: 50%; object-fit: cover;
+  border: 3px solid var(--c-primary-light);
+}
+.profile-avatar-initial {
+  width: 92px; height: 92px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(155deg, var(--c-primary-dark), var(--c-primary));
+  color: white; font-family: var(--font-display); font-size: 36px; font-weight: 800;
+  border: 3px solid var(--c-primary-light);
+}
+.profile-avatar-edit {
+  position: absolute; right: 0; bottom: 0;
+  width: 30px; height: 30px; border-radius: 50%; background: var(--c-primary); color: white;
+  display: flex; align-items: center; justify-content: center;
+  border: 2.5px solid var(--c-surface); box-shadow: var(--c-shadow);
+}
+.profile-name { font-family: var(--font-display); font-size: 20px; font-weight: 800; margin-top: 6px; }
+.profile-bio { font-size: 13.5px; line-height: 1.55; margin-top: 10px; max-width: 420px; margin-left: auto; margin-right: auto; }
+.profile-meta {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 16px;
+  margin-top: 12px; font-size: 12.5px; color: var(--c-text-muted);
+}
+.profile-meta span, .profile-meta a { display: inline-flex; align-items: center; gap: 5px; }
+.profile-meta a { color: var(--c-primary-dark); }
+.profile-stats-row { display: flex; justify-content: center; gap: 22px; margin-top: 16px; }
+.profile-stat { display: flex; flex-direction: column; align-items: center; font-size: 11.5px; color: var(--c-text-muted); }
+.profile-stat strong { font-size: 16px; color: var(--c-text); font-family: var(--font-display); }
+.profile-actions { display: flex; justify-content: center; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.profile-action-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 16px; border-radius: var(--radius-round);
+  background: var(--c-surface); border: 1px solid var(--c-border);
+  font-size: 13px; font-weight: 600; color: var(--c-text);
+}
+.profile-action-btn.is-following { background: var(--c-primary-light); color: var(--c-primary-dark); border-color: var(--c-primary); }
+
+.profile-biz-chip {
+  display: flex; flex-direction: column; align-items: flex-start;
+  padding: 12px 14px; background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: var(--radius-md); margin-bottom: 8px; width: 100%; text-align: left;
+}
+.profile-biz-chip small { font-size: 11.5px; color: var(--c-text-muted); margin-top: 2px; }
+.profile-biz-list { padding: 0 16px; }
+
+/* --- Business profile --- */
+.profile-biz-page { padding-bottom: 100px; }
+.profile-cover {
+  position: relative; height: 150px; background: linear-gradient(155deg, var(--c-primary-dark), var(--c-primary));
+  background-size: cover; background-position: center;
+}
+.profile-cover-back {
+  position: absolute; top: 12px; left: 12px;
+  background: rgba(0,0,0,0.35); color: white;
+}
+.profile-cover-edit {
+  position: absolute; top: 12px; right: 12px;
+  background: rgba(0,0,0,0.35); color: white;
+}
+.profile-biz-head {
+  display: flex; align-items: flex-end; gap: 14px;
+  padding: 0 20px; margin-top: -42px; position: relative;
+}
+.profile-biz-avatar-wrap { position: relative; }
+.profile-biz-avatar {
+  width: 84px; height: 84px; border-radius: 20px; object-fit: cover;
+  border: 3px solid var(--c-surface); background: var(--c-surface);
+}
+.profile-biz-avatar-initial {
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(155deg, var(--c-primary-dark), var(--c-primary));
+  color: white; font-family: var(--font-display); font-size: 32px; font-weight: 800;
+}
+.profile-biz-info { padding-bottom: 6px; flex: 1; min-width: 0; }
+.profile-biz-type { font-size: 12.5px; color: var(--c-text-muted); margin-top: 3px; }
+.profile-biz-loc { font-size: 12px; color: var(--c-text-muted); margin-top: 2px; }
+.profile-biz-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 20px 0; }
+.profile-biz-desc { font-size: 13.5px; line-height: 1.6; padding: 0 20px; }
+
+/* --- Profile grid (príspevky) --- */
+.profile-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px;
+  padding: 0 12px;
+}
+.profile-grid-item {
+  position: relative; aspect-ratio: 1/1; overflow: hidden; border-radius: 4px;
+  background: var(--c-border); padding: 0; border: none;
+}
+.profile-grid-item img { width: 100%; height: 100%; object-fit: cover; }
+.profile-grid-count {
+  position: absolute; top: 4px; right: 4px;
+  display: flex; align-items: center; gap: 2px;
+  padding: 2px 6px; background: rgba(0,0,0,0.5); color: white;
+  border-radius: 999px; font-size: 10px; font-weight: 700;
+}
+
+/* --- Edit profile form --- */
+.edit-profile-form { padding: 0 16px 24px; }
+
+/* --- Settings --- */
+.settings-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 14px; background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: var(--radius-md); margin-bottom: 8px; font-size: 13.5px;
+}
+.settings-toggle input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--c-primary); }
+
+/* --- File preview grid (pridávanie 1–4 fotiek) --- */
+.file-preview-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 14px;
+}
+.file-preview-grid:empty { display: none; }
+.file-preview-item { position: relative; aspect-ratio: 1/1; border-radius: var(--radius-sm); overflow: hidden; background: var(--c-border); }
+.file-preview-item img { width: 100%; height: 100%; object-fit: cover; }
+.file-preview-remove {
+  position: absolute; top: 3px; right: 3px;
+  width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.6); color: white;
+  display: flex; align-items: center; justify-content: center;
+}
