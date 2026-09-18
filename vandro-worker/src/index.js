@@ -10,6 +10,20 @@ import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUI
 
 const app = new Hono();
 
+// --- DOČASNÁ DIAGNOSTICKÁ ROUTA (odstrániť po vyriešení JWT) ---
+app.get('/api/debug/env', (c) => c.json({
+  jwt_secret_set: !!c.env.JWT_SECRET,
+  cron_secret_set: !!c.env.CRON_SECRET,
+  allowed_origin: c.env.ALLOWED_ORIGIN || null,
+  has_db: !!c.env.DB,
+  has_kv: !!c.env.NASKRAJ_LAJKY,
+  has_r2: !!c.env.MEDIA,
+  // bonus — odhalí, či beží preview alebo produkčný worker
+  cf_ray: c.req.header('cf-ray') || null,
+  worker_env_hint: c.env.ENVIRONMENT || null,
+}));
+// --- KONIEC DIAGNOSTICKEJ ROUTY ---
+
 // ---- CORS: povolené len z klientskej domény appky ----
 app.use('*', async (c, next) => {
   const allowed = (c.env.ALLOWED_ORIGIN || 'https://app.vandro.cz').split(',').map((s) => s.trim());
