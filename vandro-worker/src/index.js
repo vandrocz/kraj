@@ -10,20 +10,6 @@ import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUI
 
 const app = new Hono();
 
-// --- DOČASNÁ DIAGNOSTICKÁ ROUTA (odstrániť po vyriešení JWT) ---
-app.get('/api/debug/env', (c) => c.json({
-  jwt_secret_set: !!c.env.JWT_SECRET,
-  cron_secret_set: !!c.env.CRON_SECRET,
-  allowed_origin: c.env.ALLOWED_ORIGIN || null,
-  has_db: !!c.env.DB,
-  has_kv: !!c.env.NASKRAJ_LAJKY,
-  has_r2: !!c.env.MEDIA,
-  // bonus — odhalí, či beží preview alebo produkčný worker
-  cf_ray: c.req.header('cf-ray') || null,
-  worker_env_hint: c.env.ENVIRONMENT || null,
-}));
-// --- KONIEC DIAGNOSTICKEJ ROUTY ---
-
 // ---- CORS: povolené len z klientskej domény appky ----
 app.use('*', async (c, next) => {
   const allowed = (c.env.ALLOWED_ORIGIN || 'https://app.vandro.cz').split(',').map((s) => s.trim());
@@ -36,8 +22,6 @@ app.use('*', async (c, next) => {
 });
 
 // ---- JWT middleware ----
-// Nastaví c.set('user', payload). Vďaka app.route() zdieľajú vnorené routy ten istý
-// Context objekt ako hlavná appka, takže c.get('user') v modules/*.js funguje bez ďalších trikov.
 async function requireAuth(c, next) {
   const authHeader = c.req.header('Authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -53,7 +37,7 @@ async function requireAuth(c, next) {
 
 app.get('/', (c) => c.json({ ok: true, service: 'naskraj-api' }));
 
-// ---- Číselníky pre front-end filtre (kraje/okresy/typy) ----
+// ---- Číselníky pre front-end filtre ----
 app.get('/api/meta/regions', (c) => c.json({ regions: REGIONS }));
 app.get('/api/meta/types', (c) =>
   c.json({
@@ -80,7 +64,6 @@ app.get('/api/user/wallet', requireAuth, async (c) => {
 });
 
 app.post('/api/user/wallet/topup', requireAuth, async (c) => {
-  // Fiktívne dobitie kreditu (bez reálnej platobnej brány) — pripočíta zvolenú sumu.
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
   const amount = parseInt(body.amount, 10);
@@ -92,7 +75,6 @@ app.post('/api/user/wallet/topup', requireAuth, async (c) => {
 
 // ---- Zbierkový feed ----
 app.use('/api/feed/collections/:id/like', requireAuth);
-// ---- Komentáre, nahlásenia a lajky príspevkov vyžadujú prihlásenie na zápis (GET je verejný) ----
 app.use('/api/feed/:id/comment', requireAuth);
 app.use('/api/feed/:id/report', requireAuth);
 app.use('/api/feed/:id/like', requireAuth);
@@ -102,9 +84,7 @@ app.route('/api/feed', feedRoutes);
 app.use('/api/posts', requireAuth);
 app.route('/api/posts', postsRoutes);
 
-// ---- Manuálne spustenie cronu (chránené vlastným tajným kľúčom, nie JWT — pohodlné z CLI) ----
-// Musí byť zaregistrované PRED app.use('/api/admin/*', requireAuth), inak by mu JWT middleware
-// zbytočne vyžadoval Bearer token.
+// ---- Manuálne spustenie cronu (chránené X-Cron-Secret) ----
 app.post('/api/admin/run-distribution-now', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
@@ -112,7 +92,7 @@ app.post('/api/admin/run-distribution-now', async (c) => {
   return c.json(summary);
 });
 
-// ---- Admin (JWT + role 'admin' kontrolovaná vnútri modulu) ----
+// ---- Admin ----
 app.use('/api/admin/*', requireAuth);
 app.route('/api/admin', adminRoutes);
 
@@ -128,7 +108,6 @@ export default {
     if (event.cron === '0 8 * * *') {
       ctx.waitUntil(runDailyDistribution(env));
     } else {
-      // Minútový tik: len rieši rotáciu poradovníka (ochranná/grace lehota), žiadne peniaze.
       ctx.waitUntil(ensureActiveProjectRotation(env));
     }
   },
