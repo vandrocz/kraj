@@ -5,7 +5,6 @@ document.addEventListener('click', (e) => {
 
   switch (action) {
     case 'set-tab': switchTab(el.dataset.tab); break;
-
     case 'open-lightbox': {
       e.preventDefault();
       const img = el.dataset.img, caption = el.dataset.caption;
@@ -22,7 +21,6 @@ document.addEventListener('click', (e) => {
       document.getElementById('lightbox')?.classList.remove('is-open');
       document.body.style.overflow = '';
       break;
-
     case 'open-detail': {
       const id = el.dataset.id, source = el.dataset.source;
       const project = source === 'active' ? state.collections.active : state.collections.waiting.find((p) => p.id === id);
@@ -36,13 +34,11 @@ document.addEventListener('click', (e) => {
       document.getElementById('detail-modal')?.classList.remove('is-open');
       document.body.style.overflow = '';
       break;
-
     case 'like-collection': likeCollection(el.dataset.id, el); break;
     case 'toggle-comments': toggleSocialComments(el.dataset.id, el.dataset.feed); break;
     case 'toggle-post-like': togglePostLike(el.dataset.id, el.dataset.feed, el); break;
     case 'share-post': sharePost(el.dataset.id, el.dataset.text); break;
     case 'report-post': reportPost(el.dataset.id); break;
-
     case 'open-profile': if (el.dataset.id) openProfile(el.dataset.kind, el.dataset.id); break;
     case 'close-overlay': closeOverlay(); break;
     case 'clear-overlay': clearOverlay(); break;
@@ -72,12 +68,10 @@ document.addEventListener('click', (e) => {
     case 'resend-verification': resendVerification(); break;
     case 'delete-account': promptDeleteAccount(); break;
     case 'export-data': exportMyData(); break;
-
     case 'edit-profile':
       state.overlay = { type: 'profile', kind: el.dataset.kind, id: el.dataset.id, edit: true, editKind: el.dataset.kind, editId: el.dataset.id };
       renderApp(); break;
     case 'upload-avatar': uploadProfileImage(el.dataset.target, el.dataset.targetId, el.dataset.field); break;
-
     case 'set-auth-view': state.authView = el.dataset.view; accountFormState.formError = ''; renderApp(); break;
     case 'set-register-role': accountFormState.registerRole = el.dataset.role; renderApp(); break;
     case 'set-business-kind': accountFormState.registerBusinessKind = el.dataset.kind; renderApp(); break;
@@ -88,10 +82,8 @@ document.addEventListener('click', (e) => {
     case 'remove-post-file': removePostFile(el.dataset.name); break;
     case 'verify-business': verifyBusiness(el.dataset.kind, el.dataset.id); break;
     case 'delete-reported-post': deleteReportedPost(el.dataset.postId, el.dataset.reportId); break;
-
     case 'start-2fa-setup': start2FASetup(); break;
     case 'finish-2fa-setup': finish2FASetup(); break;
-
     case 'dm-user': openThreadWith(el.dataset.id); break;
     case 'dm-business-owner':
       (async () => {
@@ -102,13 +94,29 @@ document.addEventListener('click', (e) => {
         } catch (err) { showToast('Nepodařilo se otevřít konverzaci.'); }
       })();
       break;
-
     case 'open-story-viewer': openStoryViewer(el.dataset.groupKey); break;
     case 'open-create-story': openCreateStory(); break;
     case 'close-story-viewer': closeStoryViewer(); break;
     case 'story-next': storyNext(); break;
     case 'story-prev': storyPrev(); break;
     case 'trigger-story-file': document.getElementById('story-file-input')?.click(); break;
+    case 'rich-cmd': richCmd(el.dataset.cmd); break;
+    case 'rich-link': richLink(); break;
+    case 'rich-emoji': richEmoji(); break;
+    case 'close-emoji': closeEmojiPicker(); break;
+    case 'insert-emoji': insertEmoji(el.dataset.emoji); break;
+    case 'insert-mention': insertMention(el.dataset.name); break;
+    case 'attach-geo':
+      (async () => {
+        const loc = await attachLocationToPost();
+        if (loc) {
+          const f = document.querySelector('[data-action="submit-business-post"]');
+          if (f) { f.dataset.geoLat = loc.lat; f.dataset.geoLng = loc.lng; f.dataset.geoPlace = loc.place; }
+          const btn = document.querySelector('[data-geo-label]');
+          if (btn) btn.textContent = `📍 ${loc.place}`;
+        }
+      })();
+      break;
   }
 });
 
