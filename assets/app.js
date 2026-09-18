@@ -25,20 +25,13 @@ const state = {
   unreadNotifications: 0,
   unreadDMs: 0,
 
-  _settings: null,
-  _blocks: null,
-  _followers: null,
-  _following: null,
-  _searchQuery: '',
-  _searchResults: null,
+  _settings: null, _blocks: null, _followers: null, _following: null,
+  _searchQuery: '', _searchResults: null,
+  _totpSetup: null, _loginLogs: null,
+  _twofaToken: null, _twofaStage: null,
 
-  threads: null,
-  threadCurrent: null,
-  threadMessages: null,
-
-  groupsMy: null,
-  groupsDiscover: null,
-  groupCurrent: null,
+  threads: null, threadCurrent: null, threadMessages: null,
+  groupsMy: null, groupsDiscover: null, groupCurrent: null,
 
   loading: {},
 };
@@ -81,8 +74,7 @@ function renderHeader(title, rightHtml) {
     <header class="app-header">
       <h1 class="app-header-title">${title}</h1>
       <div class="app-header-right">${rightHtml || ''}</div>
-    </header>
-  `;
+    </header>`;
 }
 
 function renderBackHeader(title, rightHtml) {
@@ -91,8 +83,7 @@ function renderBackHeader(title, rightHtml) {
       <button class="header-icon-btn" data-action="close-overlay" aria-label="Zpět">${icon('arrowLeft', { size: 20 })}</button>
       <h1 class="app-header-title" style="margin-left:4px">${title || ''}</h1>
       <div class="app-header-right">${rightHtml || ''}</div>
-    </header>
-  `;
+    </header>`;
 }
 
 const TABS = [
@@ -155,12 +146,10 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
     <div class="filter-bar">
       <div class="search-input-wrap">
         ${icon('search', { size: 17 })}
-        <input class="search-input" type="search" placeholder="Hledat podle názvu…" value="${f.search}"
-               data-action="search-change" data-feed="${feedKey}" />
+        <input class="search-input" type="search" placeholder="Hledat podle názvu…" value="${f.search}" data-action="search-change" data-feed="${feedKey}" />
       </div>
       <div class="filter-row">${regionSelect}${districtSelect}${typeSelect}${cuisineSelect}${sortSelect}</div>
-    </div>
-  `;
+    </div>`;
 }
 
 function renderApp() {
@@ -199,8 +188,34 @@ function renderApp() {
       ${renderBottomNav()}
       ${hideChrome ? '' : renderLightbox()}
       ${hideChrome ? '' : renderDetailModal()}
-    </div>
-  `;
+    </div>`;
+
+  applySeo();
+}
+
+async function applySeo() {
+  try {
+    let og = {
+      title: 'Náš kraj — regionální platforma',
+      description: 'Objevuj hrady, zámky, ubytování a gastro v Česku.',
+      image: 'https://naskraj.vandro.cz/assets/og-default.jpg',
+      url: 'https://naskraj.vandro.cz/',
+    };
+    if (state.overlay?.type === 'profile') {
+      const d = state.profiles[`${state.overlay.kind}:${state.overlay.id}`];
+      if (d?.profile) {
+        og.title = `${d.profile.name || d.profile.display_name} — Náš kraj`;
+        og.description = (d.profile.description || d.profile.bio || 'Profil na Náš kraj').slice(0, 160);
+        og.image = d.profile.cover_url || d.profile.logo_url || d.profile.image_url || d.profile.avatar_url || og.image;
+      }
+    }
+    document.getElementById('og-title')?.setAttribute('content', og.title);
+    document.getElementById('og-desc')?.setAttribute('content', og.description);
+    document.getElementById('og-image')?.setAttribute('content', og.image);
+    document.getElementById('og-url')?.setAttribute('content', og.url);
+    document.getElementById('meta-desc')?.setAttribute('content', og.description);
+    document.title = og.title;
+  } catch {}
 }
 
 function openProfile(kind, id) {
