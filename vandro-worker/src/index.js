@@ -75,6 +75,8 @@ app.use('/api/feed/collections/:id/like', requireAuth);
 app.use('/api/feed/:id/comment', requireAuth);
 app.use('/api/feed/:id/report', requireAuth);
 app.use('/api/feed/:id/like', requireAuth);
+app.use('/api/feed/post/:id', requireAuth);
+app.use('/api/feed/comment/:id', requireAuth);
 app.route('/api/feed', feedRoutes);
 
 // ---- Posts (1–4 fotky) ----
@@ -85,6 +87,12 @@ app.route('/api/posts', postsRoutes);
 // Zápis (PATCH/POST) chránený nižšie v module. GET /api/profile/:type/:id je verejný.
 app.use('/api/profile/me/*', requireAuth);
 app.use('/api/profile/follow', requireAuth);
+app.route('/api/profile', profileRoutes);
+app.use('/api/profile/me/*', requireAuth);
+app.use('/api/profile/follow', requireAuth);
+app.use('/api/profile/follow/*', requireAuth);
+app.use('/api/profile/block/*', requireAuth);
+app.use('/api/profile/search', requireAuth);
 app.route('/api/profile', profileRoutes);
 
 // ---- Admin ----
