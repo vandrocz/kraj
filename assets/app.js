@@ -3,7 +3,7 @@
 // ============================================================
 const state = {
   tab: 'collections',
-  servicesTab: 'accommodation',
+  overlay: null, // null | { type: 'profile', kind, id } | { type: 'settings' }
 
   user: getStoredUser(),
   token: getToken(),
@@ -16,9 +16,10 @@ const state = {
     accommodation: { items: [], search: '', region: '', district: '', type: '' },
     gastro: { items: [], search: '', region: '', district: '', type: '', cuisine: '' },
   },
+  profiles: {}, // cache: { 'user:id' | 'organizations:id' ...: data }
 
   wallet: null,
-  adminPending: null,          // null = ešte nenačítané, {} = načítané
+  adminPending: null,
   adminPendingLoading: false,
   adminReports: null,
   adminReportsLoading: false,
@@ -28,27 +29,23 @@ const state = {
 
 function fmt(n) { return Number(n || 0).toLocaleString('cs-CZ'); }
 
-// D1 `datetime('now')` vracia "YYYY-MM-DD HH:MM:SS" (UTC, bez "Z").
-// Prehliadače to parsujú nespoľahlivo — prevedieme na ISO 8601 s "Z".
 function timeAgo(iso) {
   if (!iso) return '';
-  let normalized = String(iso);
-  if (!/[Zz]|[+-]\d{2}:?\d{2}$/.test(normalized)) {
-    normalized = normalized.replace(' ', 'T') + 'Z';
-  }
-  const t = new Date(normalized).getTime();
+  let n = String(iso);
+  if (!/[Zz]|[+-]\d{2}:?\d{2}$/.test(n)) n = n.replace(' ', 'T') + 'Z';
+  const t = new Date(n).getTime();
   if (isNaN(t)) return '';
   const diff = Date.now() - t;
   const min = Math.floor(diff / 60000);
   if (min < 1) return 'práve teraz';
   if (min < 60) return `pred ${min} min`;
-  const hours = Math.floor(min / 60);
-  if (hours < 24) return `pred ${hours} h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `pred ${days} d`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `pred ${weeks} týž.`;
-  return new Date(normalized).toLocaleDateString('cs-CZ');
+  const h = Math.floor(min / 60);
+  if (h < 24) return `pred ${h} h`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `pred ${d} d`;
+  const w = Math.floor(d / 7);
+  if (w < 5) return `pred ${w} týž.`;
+  return new Date(n).toLocaleDateString('cs-CZ');
 }
 
 function isLoggedIn() { return !!(state.token && state.user); }
@@ -83,21 +80,32 @@ function renderHeader(title, rightHtml) {
   `;
 }
 
+function renderBackHeader(title, rightHtml) {
+  return `
+    <header class="app-header">
+      <button class="header-icon-btn" data-action="close-overlay" aria-label="Zpět">${icon('arrowLeft', { size: 20 })}</button>
+      <h1 class="app-header-title" style="margin-left:4px">${title || ''}</h1>
+      <div class="app-header-right">${rightHtml || ''}</div>
+    </header>
+  `;
+}
+
 // ============================================================
-// SPODNÁ NAVIGÁCIA (5 tlačidiel)
+// SPODNÁ NAVIGÁCIA — 6 tlačidiel
 // ============================================================
 const TABS = [
-  { key: 'collections', icon: 'heart', label: 'Zbierky' },
-  { key: 'map', icon: 'compass', label: 'Mapa výletov' },
-  { key: 'organizations', icon: 'castle', label: 'Organizace' },
-  { key: 'services', icon: 'utensils', label: 'Služby' },
-  { key: 'account', icon: 'userCog', label: 'Můj účet' },
+  { key: 'collections', icon: 'piggy', label: 'Sbírky' },
+  { key: 'map', icon: 'mapPin', label: 'Mapa' },
+  { key: 'organizations', icon: 'landmark', label: 'Organizace' },
+  { key: 'accommodation', icon: 'bed', label: 'Ubytování' },
+  { key: 'gastro', icon: 'coffee', label: 'Gastro' },
+  { key: 'account', icon: 'user', label: 'Účet' },
 ];
 
 function renderBottomNav() {
   const btns = TABS.map((t) => `
-    <button class="bottom-nav-btn ${state.tab === t.key ? 'is-active' : ''}" data-action="set-tab" data-tab="${t.key}">
-      ${icon(t.icon, { size: state.tab === t.key ? 21 : 19 })}
+    <button class="bottom-nav-btn ${state.tab === t.key && !state.overlay ? 'is-active' : ''}" data-action="set-tab" data-tab="${t.key}">
+      ${icon(t.icon, { size: state.tab === t.key && !state.overlay ? 20 : 18 })}
       <span class="visually-hidden">${t.label}</span>
     </button>
   `).join('');
@@ -105,7 +113,7 @@ function renderBottomNav() {
 }
 
 // ============================================================
-// FILTER BAR (znovupoužiteľný pre 3 sociálne feedy)
+// FILTER BAR
 // ============================================================
 function renderFilterBar(feedKey, typeOptions, showCuisine) {
   const f = state.socialFeeds[feedKey];
@@ -144,38 +152,69 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
 }
 
 // ============================================================
-// HLAVNÝ RENDER
+// RENDER
 // ============================================================
 function renderApp() {
   const root = document.getElementById('root');
   let pageHtml = '';
 
-  if (state.tab === 'collections') pageHtml = renderCollectionsPage();
-  else if (state.tab === 'map') pageHtml = renderMapPage();
-  else if (state.tab === 'organizations') pageHtml = renderOrganizationsPage();
-  else if (state.tab === 'services') pageHtml = renderServicesPage();
-  else if (state.tab === 'account') pageHtml = renderAccountPage();
+  if (state.overlay?.type === 'profile') {
+    pageHtml = renderProfileOverlay();
+  } else if (state.overlay?.type === 'settings') {
+    pageHtml = renderSettingsOverlay();
+  } else if (state.tab === 'collections') {
+    pageHtml = renderCollectionsPage();
+  } else if (state.tab === 'map') {
+    pageHtml = renderMapPage();
+  } else if (state.tab === 'organizations') {
+    pageHtml = renderFeedPage('organization', 'Organizace', TYPES.organization, false);
+  } else if (state.tab === 'accommodation') {
+    pageHtml = renderFeedPage('accommodation', 'Ubytování', TYPES.accommodation, false);
+  } else if (state.tab === 'gastro') {
+    pageHtml = renderFeedPage('gastro', 'Gastro', TYPES.restaurant, true);
+  } else if (state.tab === 'account') {
+    pageHtml = renderAccountPage();
+  }
 
-  const isMap = state.tab === 'map';
+  const hideChrome = state.tab === 'map' && !state.overlay;
 
   root.innerHTML = `
     <div class="app-shell">
       ${pageHtml}
       ${renderBottomNav()}
-      ${isMap ? '' : renderLightbox()}
-      ${isMap ? '' : renderDetailModal()}
+      ${hideChrome ? '' : renderLightbox()}
+      ${hideChrome ? '' : renderDetailModal()}
     </div>
   `;
 }
 
+function openProfile(kind, id) {
+  // kind: 'user' | 'organizations' | 'organization' | 'accommodation' | 'restaurants' | 'gastro'
+  let normalizedKind = kind;
+  if (kind === 'organization') normalizedKind = 'organizations';
+  if (kind === 'gastro') normalizedKind = 'restaurants';
+  state.overlay = { type: 'profile', kind: normalizedKind, id };
+  renderApp();
+  window.scrollTo(0, 0);
+}
+
+function closeOverlay() {
+  state.overlay = null;
+  renderApp();
+}
+
+function openSettings() {
+  state.overlay = { type: 'settings' };
+  renderApp();
+}
+
 function switchTab(tab) {
+  state.overlay = null;
   state.tab = tab;
   renderApp();
   if (tab === 'collections' && state.collections.waiting.length === 0 && !state.collections.active) loadCollections();
   if (tab === 'organizations' && state.socialFeeds.organization.items.length === 0) loadSocialFeed('organization');
-  if (tab === 'services') {
-    const key = state.servicesTab;
-    if (state.socialFeeds[key].items.length === 0) loadSocialFeed(key);
-  }
+  if (tab === 'accommodation' && state.socialFeeds.accommodation.items.length === 0) loadSocialFeed('accommodation');
+  if (tab === 'gastro' && state.socialFeeds.gastro.items.length === 0) loadSocialFeed('gastro');
   if (tab === 'account' && isLoggedIn() && !state.wallet) loadWallet();
 }
