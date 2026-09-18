@@ -40,6 +40,16 @@ const ICON_PATHS = {
   userCog: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M4 20c0-3 2.5-5 5.5-5 M17 14v1 M17 19v1 M13.5 16.5l.9.5 M19.6 20l.9.5 M13.5 20.5l.9-.5 M19.6 16.5l.9-.5 M19.5 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',
   cloud: 'M7 18a4 4 0 0 1-1-7.9 5 5 0 0 1 9.6-1.9A4.5 4.5 0 0 1 17 18H7Z',
   traffic: 'M9 3h6v3H9Z M9 18h6v3H9Z M8 6h8v12H8Z M11 9h.01 M11 15h.01',
+  mail: 'M4 6h16v12H4Z M4 6l8 7 8-7',
+  mailCheck: 'M4 6h16v12H4Z M4 6l8 7 5-4 M16 18l2 2 4-4',
+  bell: 'M12 22a2 2 0 0 0 2-2H10a2 2 0 0 0 2 2Z M6 8a6 6 0 1 1 12 0c0 5 2 7 2 7H4s2-2 2-7Z',
+  shield: 'M12 22s-8-4-8-10V6l8-3 8 3v6c0 6-8 10-8 10Z M9 12l2 2 4-4',
+  trash: 'M4 7h16 M9 7V5h6v2 M6 7l1 13h10l1-13 M10 11v6 M14 11v6',
+  download: 'M12 4v12 M8 12l4 4 4-4 M4 20h16',
+  ban: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z M5.6 5.6l12.8 12.8',
+  lock: 'M5 11h14v10H5Z M8 11V8a4 4 0 1 1 8 0v3',
+  search2: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z M20 20l-4.3-4.3',
+  dot: 'M12 12h.01',
 };
 
 function icon(name, { size = 22, strokeWidth = 1.8, filled = false, className = '' } = {}) {
