@@ -8,14 +8,11 @@ document.addEventListener('click', (e) => {
   const action = el.dataset.action;
 
   switch (action) {
-    case 'set-tab':
-      switchTab(el.dataset.tab);
-      break;
+    case 'set-tab': switchTab(el.dataset.tab); break;
 
     case 'open-lightbox': {
       e.preventDefault();
-      const img = el.dataset.img;
-      const caption = el.dataset.caption;
+      const img = el.dataset.img, caption = el.dataset.caption;
       const lb = document.getElementById('lightbox');
       if (!lb) break;
       document.getElementById('lightbox-img').src = img;
@@ -45,113 +42,100 @@ document.addEventListener('click', (e) => {
       document.body.style.overflow = '';
       break;
 
-    case 'like-collection':
-      likeCollection(el.dataset.id, el);
-      break;
+    case 'like-collection': likeCollection(el.dataset.id, el); break;
+    case 'toggle-comments': toggleSocialComments(el.dataset.id, el.dataset.feed); break;
+    case 'toggle-post-like': togglePostLike(el.dataset.id, el.dataset.feed, el); break;
+    case 'share-post': sharePost(el.dataset.id, el.dataset.text); break;
+    case 'report-post': reportPost(el.dataset.id); break;
 
-    case 'toggle-comments':
-      toggleSocialComments(el.dataset.id, el.dataset.feed);
+    // Profily
+    case 'open-profile':
+      if (el.dataset.id) openProfile(el.dataset.kind, el.dataset.id);
       break;
-    case 'toggle-post-like':
-      togglePostLike(el.dataset.id, el.dataset.feed, el);
-      break;
-    case 'share-post':
-      sharePost(el.dataset.id, el.dataset.text);
-      break;
-    case 'open-business-profile':
-      openBusinessProfile(el.dataset.kind, el.dataset.id);
-      break;
-    case 'report-post':
-      reportPost(el.dataset.id);
-      break;
+    case 'close-overlay': closeOverlay(); break;
+    case 'open-settings': openSettings(); break;
+    case 'open-post': openPostFromProfile(el.dataset.postId, el.dataset.kind, el.dataset.id); break;
+    case 'toggle-follow': toggleFollow(el.dataset.kind === 'user' ? 'user' : el.dataset.kind, el.dataset.id); break;
 
-    case 'set-services-tab':
-      setServicesTab(el.dataset.servicesTab);
-      break;
-
-    case 'set-auth-view':
-      state.authView = el.dataset.view;
-      accountFormState.formError = '';
+    case 'edit-profile':
+      state.overlay = { type: 'profile', kind: el.dataset.kind, id: el.dataset.id, edit: true, editKind: el.dataset.kind, editId: el.dataset.id };
       renderApp();
       break;
-    case 'set-register-role':
-      accountFormState.registerRole = el.dataset.role;
+    case 'cancel-edit':
+      state.overlay = { type: 'profile', kind: el.dataset.kind, id: el.dataset.id };
       renderApp();
       break;
-    case 'set-business-kind':
-      accountFormState.registerBusinessKind = el.dataset.kind;
-      renderApp();
+    case 'upload-avatar':
+      uploadProfileImage(el.dataset.target, el.dataset.targetId, el.dataset.field);
       break;
-    case 'logout':
-      handleLogout();
-      break;
-    case 'topup':
-      handleTopup(parseInt(el.dataset.amount, 10));
-      break;
-    case 'select-business':
-      selectBusiness(el.dataset.id);
-      break;
-    case 'trigger-file-input':
-      document.getElementById('post-file-input')?.click();
-      break;
-    case 'verify-business':
-      verifyBusiness(el.dataset.kind, el.dataset.id);
-      break;
-    case 'delete-reported-post':
-      deleteReportedPost(el.dataset.postId, el.dataset.reportId);
-      break;
+
+    // Auth / account
+    case 'set-auth-view': state.authView = el.dataset.view; accountFormState.formError = ''; renderApp(); break;
+    case 'set-register-role': accountFormState.registerRole = el.dataset.role; renderApp(); break;
+    case 'set-business-kind': accountFormState.registerBusinessKind = el.dataset.kind; renderApp(); break;
+    case 'logout': handleLogout(); break;
+    case 'topup': handleTopup(parseInt(el.dataset.amount, 10)); break;
+    case 'select-business': selectBusiness(el.dataset.id); break;
+    case 'trigger-file-input': document.getElementById('post-file-input')?.click(); break;
+    case 'remove-post-file': removePostFile(el.dataset.name); break;
+    case 'verify-business': verifyBusiness(el.dataset.kind, el.dataset.id); break;
+    case 'delete-reported-post': deleteReportedPost(el.dataset.postId, el.dataset.reportId); break;
   }
 });
 
-// Zatváranie detail modalu kliknutím mimo obsahu
 document.addEventListener('click', (e) => {
-  if (e.target.id === 'detail-modal') {
-    e.target.classList.remove('is-open');
-    document.body.style.overflow = '';
-  }
+  if (e.target.id === 'detail-modal') { e.target.classList.remove('is-open'); document.body.style.overflow = ''; }
 });
 
-// Zmena select/input filtrov (nie click, ale change)
+// Carousel: aktualizácia bodiek pri scrollovaní
+document.addEventListener('scroll', (e) => {
+  const track = e.target.closest?.('[data-carousel-track]');
+  if (!track) return;
+  const carousel = track.closest('[data-post-carousel]');
+  if (!carousel) return;
+  const idx = Math.round(track.scrollLeft / track.clientWidth);
+  carousel.querySelectorAll('.post-carousel-dot').forEach((d, i) => d.classList.toggle('is-active', i === idx));
+}, true);
+
 document.addEventListener('change', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
-  const action = el.dataset.action;
-
-  if (action === 'filter-change') {
-    onFilterChange(el.dataset.feed, el.dataset.field, el.value);
-  } else if (action === 'region-select-change') {
-    onRegionSelectChangeForDistrict(el);
-  } else if (action === 'file-selected') {
-    onFileSelected(el);
+  const a = el.dataset.action;
+  if (a === 'filter-change') onFilterChange(el.dataset.feed, el.dataset.field, el.value);
+  else if (a === 'region-select-change') onRegionSelectChangeForDistrict(el);
+  else if (a === 'edit-region-change') {
+    const form = el.closest('form');
+    const dist = form.querySelector('select[name="district"]');
+    const opts = REGIONS[el.value] || [];
+    dist.innerHTML = opts.map((d) => `<option value="${d}">${d}</option>`).join('');
   }
+  else if (a === 'files-selected') onFilesSelected(el);
+  else if (a === 'file-selected') onFileSelected(el);
+  else if (a === 'setting-toggle') toggleSetting(el.dataset.key, el.checked);
 });
 
-// Vyhľadávacie polia — debounced, bez re-renderu na každý stlačený znak
 document.addEventListener('input', (e) => {
   const el = e.target.closest('[data-action="search-change"]');
   if (!el) return;
   onSearchChange(el.dataset.feed, el.value);
 });
 
-// Odosielanie formulárov
 document.addEventListener('submit', (e) => {
   const form = e.target.closest('[data-action]');
   if (!form) return;
   e.preventDefault();
-  const action = form.dataset.action;
-
-  if (action === 'submit-login') handleLoginSubmit(form);
-  else if (action === 'submit-register') handleRegisterSubmit(form);
-  else if (action === 'submit-business-post') handleBusinessPostSubmit(form);
-  else if (action === 'submit-social-comment') {
-    const id = form.dataset.id;
-    const feed = form.dataset.feed;
+  const a = form.dataset.action;
+  if (a === 'submit-login') handleLoginSubmit(form);
+  else if (a === 'submit-register') handleRegisterSubmit(form);
+  else if (a === 'submit-business-post') handleBusinessPostSubmit(form);
+  else if (a === 'submit-edit-profile') handleEditProfileSubmit(form);
+  else if (a === 'submit-social-comment') {
+    const id = form.dataset.id, feed = form.dataset.feed;
     const input = form.querySelector(`[data-comment-input="${id}"]`);
     submitSocialComment(id, feed, input.value, input);
   }
 });
 
-// Klávesa Escape zatvára modály
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   document.getElementById('lightbox')?.classList.remove('is-open');
@@ -160,10 +144,10 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ============================================================
-// ŠTART APLIKÁCIE
+// BOOTSTRAP
 // ============================================================
 async function bootstrap() {
-  renderApp(); // okamžité prvé vykreslenie s fallback číselníkmi, nech appka nie je prázdna
+  renderApp();
   await loadMetaFromApi();
   renderApp();
   loadCollections();
