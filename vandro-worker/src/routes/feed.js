@@ -176,6 +176,28 @@ feedRoutes.post('/:id/like', async (c) => {
   return c.json({ liked: true, likes: newCount }, 201);
 });
 
+// ---- Zmazanie vlastného príspevku (autor alebo admin) ----
+feedRoutes.delete('/post/:id', async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  const post = await c.env.DB.prepare('SELECT id, user_id FROM posts WHERE id = ?').bind(id).first();
+  if (!post) return c.json({ error: 'Nenájdené.' }, 404);
+  if (post.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
+  await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE id = ?`).bind(id).run();
+  return c.json({ ok: true });
+});
+
+// ---- Zmazanie vlastného komentáru ----
+feedRoutes.delete('/comment/:id', async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare('SELECT id, user_id FROM comments WHERE id = ?').bind(id).first();
+  if (!row) return c.json({ error: 'Nenájdené.' }, 404);
+  if (row.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
+  await c.env.DB.prepare('DELETE FROM comments WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
 // Business profile feed (post list) — používá se v /api/profile
 feedRoutes.get('/business/:kind/:id', async (c) => {
   const kind = c.req.param('kind');
