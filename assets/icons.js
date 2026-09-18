@@ -29,7 +29,6 @@ const ICON_PATHS = {
   grid: 'M4 4h7v7H4V4Z M13 4h7v7h-7V4Z M4 13h7v7H4v-7Z M13 13h7v7h-7v-7Z',
   user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1',
   users: 'M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M3 21v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1 M17 4a4 4 0 0 1 0 8 M21 21v-1a5 5 0 0 0-3-4.6',
-  // ---- Bottom nav ----
   piggy: 'M4 12a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v4a2 2 0 0 1-2 2h-1v2h-2v-2h-4v2H9v-2H6a2 2 0 0 1-2-2v-4Z M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M16 12h.01',
   mapPin: 'M12 22s-8-8-8-13a8 8 0 0 1 16 0c0 5-8 13-8 13Z M12 11a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
   landmark: 'M3 22h18 M5 22V11 M9 22V11 M15 22V11 M19 22V11 M12 2l9 6H3l9-6Z',
@@ -48,13 +47,16 @@ const ICON_PATHS = {
   download: 'M12 4v12 M8 12l4 4 4-4 M4 20h16',
   ban: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z M5.6 5.6l12.8 12.8',
   lock: 'M5 11h14v10H5Z M8 11V8a4 4 0 1 1 8 0v3',
-  search2: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z M20 20l-4.3-4.3',
-  dot: 'M12 12h.01',
+  chat: 'M4 5h16v11H8l-4 4V5Z M8 9h8 M8 13h5',
+  send: 'M4 12 20 4 12 20 11 13 4 12Z',
+  story: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z M12 8v8 M8 12h8',
+  group: 'M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M3 21v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1 M17 4a4 4 0 0 1 0 8 M21 21v-1a5 5 0 0 0-3-4.6',
+  key: 'M15 7a4 4 0 1 1-3.5 5.9L9 15H6v3H3v-3l7-7A4 4 0 0 1 15 7Z M15 10h.01',
+  alert: 'M12 3 2 20h20L12 3Z M12 10v4 M12 17v.01',
 };
 
 function icon(name, { size = 22, strokeWidth = 1.8, filled = false, className = '' } = {}) {
   const d = ICON_PATHS[name] || ICON_PATHS.help;
-  const paths = d.split(' M').map((seg, i) => (i === 0 ? seg : 'M' + seg))
-    .map((seg) => `<path d="${seg}"/>`).join('');
+  const paths = d.split(' M').map((seg, i) => (i === 0 ? seg : 'M' + seg)).map((seg) => `<path d="${seg}"/>`).join('');
   return `<svg class="${className}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 }
