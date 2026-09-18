@@ -8,11 +8,10 @@ const PROTECTION_MS = 30 * 60 * 1000;
 
 function projectPhase(project) {
   if (project.status === 'waiting') return 'waiting';
-  if (project.status === 'completed') return 'completed'; // "Splněno / Úspěch"
-  // status === 'active'
+  if (project.status === 'completed') return 'completed';
   if (!project.activated_at) return 'preparing';
   const activatedMs = new Date(project.activated_at + 'Z').getTime();
-  return Date.now() - activatedMs < PROTECTION_MS ? 'preparing' : 'running'; // "Příprava" vs bežná
+  return Date.now() - activatedMs < PROTECTION_MS ? 'preparing' : 'running';
 }
 
 async function attachLikes(env, projects) {
@@ -24,7 +23,20 @@ async function attachLikes(env, projects) {
   );
 }
 
-// ---- ZBIERKOVÝ FEED ----
+async function fetchMediaForPosts(env, postIds) {
+  if (postIds.length === 0) return {};
+  const placeholders = postIds.map(() => '?').join(',');
+  const { results } = await env.DB.prepare(
+    `SELECT post_id, image_url FROM post_media WHERE post_id IN (${placeholders}) ORDER BY sort_order ASC`,
+  ).bind(...postIds).all();
+  const map = {};
+  for (const r of results) {
+    if (!map[r.post_id]) map[r.post_id] = [];
+    map[r.post_id].push(r.image_url);
+  }
+  return map;
+}
+
 feedRoutes.get('/collections', async (c) => {
   await ensureActiveProjectRotation(c.env);
 
@@ -62,13 +74,10 @@ feedRoutes.post('/collections/:id/like', async (c) => {
 
   const project = await c.env.DB.prepare('SELECT id, status FROM projects WHERE id = ?').bind(projectId).first();
   if (!project) return c.json({ error: 'Projekt nenájdený.' }, 404);
-  if (project.status !== 'waiting') {
-    return c.json({ error: 'Lajkovať sa dá len projekt čakajúci v poradovníku.' }, 400);
-  }
+  if (project.status !== 'waiting') return c.json({ error: 'Lajkovať sa dá len projekt čakajúci v poradovníku.' }, 400);
 
   const likeKey = `like:${projectId}:${user.sub}`;
-  const already = await c.env.NASKRAJ_LAJKY.get(likeKey);
-  if (already) return c.json({ liked: true, message: 'Už si lajkol.' });
+  if (await c.env.NASKRAJ_LAJKY.get(likeKey)) return c.json({ liked: true, message: 'Už si lajkol.' });
 
   await c.env.NASKRAJ_LAJKY.put(likeKey, '1');
   const countKey = `likecount:${projectId}`;
@@ -79,7 +88,6 @@ feedRoutes.post('/collections/:id/like', async (c) => {
   return c.json({ liked: true, likes: newCount }, 201);
 });
 
-// ---- GENERICKÝ NAČÍTAVAČ SOCIÁLNYCH FEEDOV (organization / accommodation / gastro) ----
 async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
   const search = (c.req.query('search') || '').trim();
   const region = c.req.query('region') || '';
@@ -91,35 +99,19 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
   const conditions = [`posts.target_feed = ?`, `posts.status = 'published'`];
   const params = [targetFeed];
 
-  if (businessId) {
-    conditions.push(`posts.business_id = ?`);
-    params.push(businessId);
-  }
-  if (search) {
-    conditions.push(`${table}.name LIKE ?`);
-    params.push(`%${search}%`);
-  }
-  if (region) {
-    conditions.push(`${table}.region = ?`);
-    params.push(region);
-  }
-  if (district) {
-    conditions.push(`${table}.district = ?`);
-    params.push(district);
-  }
-  if (type) {
-    conditions.push(`${table}.type = ?`);
-    params.push(type);
-  }
+  if (businessId) { conditions.push(`posts.business_id = ?`); params.push(businessId); }
+  if (search) { conditions.push(`${table}.name LIKE ?`); params.push(`%${search}%`); }
+  if (region) { conditions.push(`${table}.region = ?`); params.push(region); }
+  if (district) { conditions.push(`${table}.district = ?`); params.push(district); }
+  if (type) { conditions.push(`${table}.type = ?`); params.push(type); }
   if (cuisine && extraFilterCols?.includes('cuisine_type')) {
-    conditions.push(`${table}.cuisine_type = ?`);
-    params.push(cuisine);
+    conditions.push(`${table}.cuisine_type = ?`); params.push(cuisine);
   }
 
   const sql = `
     SELECT posts.id, posts.text_content, posts.image_url, posts.created_at,
            ${table}.id AS business_id, ${table}.name AS business_name, ${table}.type AS business_type,
-           ${table}.region, ${table}.district, ${table}.is_verified
+           ${table}.region, ${table}.district, ${table}.city, ${table}.is_verified
            ${extraFilterCols?.includes('cuisine_type') ? `, ${table}.cuisine_type` : ''}
     FROM posts
     JOIN ${table} ON ${table}.id = posts.business_id
@@ -130,18 +122,20 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
 
   const { results } = await c.env.DB.prepare(sql).bind(...params).all();
 
+  const mediaMap = await fetchMediaForPosts(c.env, results.map((r) => r.id));
+
   const withComments = await Promise.all(
     results.map(async (post) => {
-      const commentCountRow = await c.env.DB.prepare('SELECT COUNT(*) as n FROM comments WHERE post_id = ?')
-        .bind(post.id)
-        .first();
+      const cc = await c.env.DB.prepare('SELECT COUNT(*) as n FROM comments WHERE post_id = ?').bind(post.id).first();
       const likesRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${post.id}`);
+      const media = mediaMap[post.id] || (post.image_url ? [post.image_url] : []);
       return {
         id: post.id,
         text: post.text_content,
         image_url: post.image_url,
+        media,
         created_at: post.created_at,
-        comment_count: commentCountRow?.n || 0,
+        comment_count: cc?.n || 0,
         likes: likesRaw ? parseInt(likesRaw, 10) : 0,
         business: {
           id: post.business_id,
@@ -149,6 +143,7 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
           type: post.business_type,
           region: post.region,
           district: post.district,
+          city: post.city,
           is_verified: !!post.is_verified,
           cuisine_type: post.cuisine_type || null,
         },
@@ -159,7 +154,6 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
   return c.json({ feed: withComments });
 }
 
-// Lajk príspevku (organizace/služby feed) — rovnaká KV logika ako u zbierok, len iný kľúčový priestor
 feedRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const postId = c.req.param('id');
@@ -168,8 +162,7 @@ feedRoutes.post('/:id/like', async (c) => {
   if (!post) return c.json({ error: 'Příspěvek nenalezen.' }, 404);
 
   const likeKey = `like:post:${postId}:${user.sub}`;
-  const already = await c.env.NASKRAJ_LAJKY.get(likeKey);
-  if (already) {
+  if (await c.env.NASKRAJ_LAJKY.get(likeKey)) {
     const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${postId}`);
     return c.json({ liked: true, likes: raw ? parseInt(raw, 10) : 0 });
   }
@@ -183,9 +176,9 @@ feedRoutes.post('/:id/like', async (c) => {
   return c.json({ liked: true, likes: newCount }, 201);
 });
 
-// Profil podniku — detail + jeho príspevky (pre kliknutie na avatar/meno v poste)
+// Business profile feed (post list) — používá se v /api/profile
 feedRoutes.get('/business/:kind/:id', async (c) => {
-  const kind = c.req.param('kind'); // 'organizations' | 'accommodation' | 'restaurants'
+  const kind = c.req.param('kind');
   const id = c.req.param('id');
   const allowedTables = { organizations: 'organizations', accommodation: 'accommodation', restaurants: 'restaurants' };
   const table = allowedTables[kind];
@@ -199,23 +192,23 @@ feedRoutes.get('/business/:kind/:id', async (c) => {
      WHERE business_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 30`,
   ).bind(id).all();
 
-  return c.json({ business, posts });
+  const mediaMap = await fetchMediaForPosts(c.env, posts.map((p) => p.id));
+  const postsWithMedia = posts.map((p) => ({
+    ...p, media: mediaMap[p.id] || (p.image_url ? [p.image_url] : []),
+  }));
+
+  return c.json({ business, posts: postsWithMedia });
 });
 
-feedRoutes.get('/organization', (c) =>
-  loadSocialFeed(c, { targetFeed: 'organization', table: 'organizations' }));
+feedRoutes.get('/organization', (c) => loadSocialFeed(c, { targetFeed: 'organization', table: 'organizations' }));
+feedRoutes.get('/accommodation', (c) => loadSocialFeed(c, { targetFeed: 'accommodation', table: 'accommodation' }));
+feedRoutes.get('/gastro', (c) => loadSocialFeed(c, { targetFeed: 'gastro', table: 'restaurants', extraFilterCols: ['cuisine_type'] }));
 
-feedRoutes.get('/accommodation', (c) =>
-  loadSocialFeed(c, { targetFeed: 'accommodation', table: 'accommodation' }));
-
-feedRoutes.get('/gastro', (c) =>
-  loadSocialFeed(c, { targetFeed: 'gastro', table: 'restaurants', extraFilterCols: ['cuisine_type'] }));
-
-// ---- KOMENTÁRE (spoločné pre všetky feedy, viazané na posts.id) ----
 feedRoutes.get('/:id/comments', async (c) => {
   const postId = c.req.param('id');
   const { results } = await c.env.DB.prepare(
-    `SELECT comments.id, comments.comment_text, comments.created_at, users.display_name AS user_name
+    `SELECT comments.id, comments.comment_text, comments.created_at,
+            users.id AS user_id, users.display_name AS user_name, users.avatar_url AS user_avatar
      FROM comments JOIN users ON users.id = comments.user_id
      WHERE post_id = ? ORDER BY comments.created_at ASC`,
   ).bind(postId).all();
@@ -233,9 +226,8 @@ feedRoutes.post('/:id/comment', async (c) => {
   if (!post) return c.json({ error: 'Príspevok nenájdený.' }, 404);
 
   const id = newId('comment');
-  await c.env.DB.prepare(
-    'INSERT INTO comments (id, post_id, user_id, comment_text) VALUES (?, ?, ?, ?)',
-  ).bind(id, postId, user.sub, text).run();
+  await c.env.DB.prepare('INSERT INTO comments (id, post_id, user_id, comment_text) VALUES (?, ?, ?, ?)')
+    .bind(id, postId, user.sub, text).run();
 
   return c.json({ id, post_id: postId, text, created_at: new Date().toISOString() }, 201);
 });
@@ -244,14 +236,10 @@ feedRoutes.post('/:id/report', async (c) => {
   const user = c.get('user');
   const postId = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
-
   const post = await c.env.DB.prepare('SELECT id FROM posts WHERE id = ?').bind(postId).first();
   if (!post) return c.json({ error: 'Príspevok nenájdený.' }, 404);
-
   const id = newId('report');
-  await c.env.DB.prepare(
-    'INSERT INTO reports (id, post_id, reporter_id, reason) VALUES (?, ?, ?, ?)',
-  ).bind(id, postId, user.sub, body.reason || null).run();
-
+  await c.env.DB.prepare('INSERT INTO reports (id, post_id, reporter_id, reason) VALUES (?, ?, ?, ?)')
+    .bind(id, postId, user.sub, body.reason || null).run();
   return c.json({ id, ok: true }, 201);
 });
