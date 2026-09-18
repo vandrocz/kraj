@@ -981,3 +981,26 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .file-preview-remove { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.6); color: white; display: flex; align-items: center; justify-content: center; }
 .bottom-nav { width: min(96vw, 500px); padding: 5px; gap: 2px; }
 .bottom-nav-btn { width: 42px; height: 42px; }
+
+/* ============ Google Sign-In ============ */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 18px;
+  color: var(--c-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--c-border);
+}
+#google-signin-container {
+  min-height: 44px;
+}
