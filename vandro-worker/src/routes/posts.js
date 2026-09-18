@@ -3,6 +3,10 @@ import { newId } from '../auth.js';
 
 export const postsRoutes = new Hono();
 
+// over že má overený e-mail
+const row = await c.env.DB.prepare('SELECT email_verified FROM users WHERE id = ?').bind(user.sub).first();
+if (!row?.email_verified) return c.json({ error: 'Pro přidání příspěvku musíš nejprve ověřit e-mail.' }, 403);
+
 const BUSINESS_TABLE_BY_FEED = {
   organization: 'organizations',
   accommodation: 'accommodation',
