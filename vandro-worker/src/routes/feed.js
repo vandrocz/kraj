@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { verify } from 'hono/jwt';
 import { newId } from '../auth.js';
 import { ensureActiveProjectRotation } from '../cron.js';
-import { checkText, flagContent } from '../moderation.js';
+import { checkText, flagContent, escapeLike } from '../moderation.js';
 import { rateLimit } from '../ratelimit.js';
 
 export const feedRoutes = new Hono();
@@ -42,6 +42,39 @@ function escapePlain(t) {
   return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// ---- Block helper: zisti blokovaných pre daného diváka ----
+async function getBlockedIds(env, viewerId) {
+  if (!viewerId) return new Set();
+  try {
+    const { results: a } = await env.DB.prepare(`SELECT blocked_id AS id FROM blocks WHERE blocker_id = ?`).bind(viewerId).all();
+    const { results: b } = await env.DB.prepare(`SELECT blocker_id AS id FROM blocks WHERE blocked_id = ?`).bind(viewerId).all();
+    return new Set([...a.map((r) => r.id), ...b.map((r) => r.id)]);
+  } catch {
+    return new Set();
+  }
+}
+
+async function getViewerId(c, env) {
+  const h = c.req.header('Authorization') || '';
+  if (!h.startsWith('Bearer ')) return null;
+  try {
+    const payload = await verify(h.slice(7), env.JWT_SECRET, 'HS256');
+    return payload.sub;
+  } catch { return null; }
+}
+
+// ---- Cursor helpers ----
+function encodeCursor(createdAt, id) {
+  return btoa(`${createdAt}|${id}`);
+}
+function decodeCursor(cursor) {
+  try {
+    const [createdAt, id] = atob(cursor).split('|');
+    if (!createdAt || !id) return null;
+    return { createdAt, id };
+  } catch { return null; }
+}
+
 // ---- Zbierky (ostávajú v kóde, len sa nezobrazujú) ----
 feedRoutes.get('/collections', async (c) => {
   await ensureActiveProjectRotation(c.env);
@@ -62,8 +95,7 @@ feedRoutes.get('/collections', async (c) => {
 });
 
 feedRoutes.post('/collections/:id/like', async (c) => {
-  const user = c.get('user');
-  const projectId = c.req.param('id');
+  const user = c.get('user'); const projectId = c.req.param('id');
   const project = await c.env.DB.prepare('SELECT id, status FROM projects WHERE id = ?').bind(projectId).first();
   if (!project) return c.json({ error: 'Nenájdené.' }, 404);
   if (project.status !== 'waiting') return c.json({ error: 'Lajkovať sa dá len v poradovníku.' }, 400);
@@ -82,26 +114,14 @@ function scorePostForUser(post, { followedIds, userCity, userRegion, verifiedBoo
   const created = new Date(post.created_at.replace(' ', 'T') + 'Z').getTime();
   const ageHours = (now - created) / 3600000;
 
-  // Recency (half-life 24h)
   let score = 100 * Math.pow(0.5, ageHours / 24);
-
-  // Engagement
   score += (post.likes || 0) * 2;
   score += (post.comment_count || 0) * 5;
-
-  // Verified boost
   if (verifiedBoost && post.business?.is_verified) score *= 1.3;
-
-  // Followed business boost
   if (followedIds?.has(post.business?.id)) score *= 2.5;
-
-  // Local boost
   if (userCity && post.business?.city === userCity) score *= 1.8;
   else if (userRegion && post.business?.region === userRegion) score *= 1.3;
-
-  // Jitter (proti stereotypnému poradiu)
   score *= 0.9 + Math.random() * 0.2;
-
   return score;
 }
 
@@ -112,46 +132,62 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
   const type = c.req.query('type') || '';
   const cuisine = c.req.query('cuisine') || '';
   const businessId = c.req.query('business_id') || '';
-  const sort = c.req.query('sort') || 'for_you'; // 'for_you' | 'recent' | 'trending'
+  const sort = c.req.query('sort') || 'for_you';
+  const cursorRaw = c.req.query('cursor') || null;
+  const limit = Math.min(parseInt(c.req.query('limit') || '12', 10), 30);
+
+  const viewerId = await getViewerId(c, c.env);
+  const blockedIds = await getBlockedIds(c.env, viewerId);
 
   const conditions = [`posts.target_feed = ?`, `posts.status = 'published'`];
   const params = [targetFeed];
 
   if (businessId) { conditions.push('posts.business_id = ?'); params.push(businessId); }
-  if (search) { conditions.push(`${table}.name LIKE ?`); params.push(`%${search}%`); }
+  if (search) { conditions.push(`${table}.name LIKE ? ESCAPE '\\'`); params.push(`%${escapeLike(search)}%`); }
   if (region) { conditions.push(`${table}.region = ?`); params.push(region); }
   if (district) { conditions.push(`${table}.district = ?`); params.push(district); }
   if (type) { conditions.push(`${table}.type = ?`); params.push(type); }
   if (cuisine && extraFilterCols?.includes('cuisine_type')) { conditions.push(`${table}.cuisine_type = ?`); params.push(cuisine); }
 
+  // Block filter: vylúč autorov príspevkov, ktorých mám blokovaných
+  if (blockedIds.size > 0) {
+    const placeholders = [...blockedIds].map(() => '?').join(',');
+    conditions.push(`posts.user_id NOT IN (${placeholders})`);
+    for (const id of blockedIds) params.push(id);
+  }
+
+  // Cursor pre "recent" sortovanie (created_at DESC, id DESC)
+  const cursor = cursorRaw ? decodeCursor(cursorRaw) : null;
+  if (cursor && sort === 'recent') {
+    conditions.push(`(posts.created_at < ? OR (posts.created_at = ? AND posts.id < ?))`);
+    params.push(cursor.createdAt, cursor.createdAt, cursor.id);
+  }
+
+  // Pre "for_you" a "trending" nemôžeme použiť cursor jednoducho, takže aplikujeme len limit + pri "recent" cursor
   const sql = `
-    SELECT posts.id, posts.text_content, posts.content_html, posts.image_url, posts.created_at,
-           posts.geo_lat, posts.geo_lng, posts.geo_place,
+    SELECT posts.id, posts.user_id, posts.text_content, posts.content_html, posts.image_url, posts.created_at,
+           posts.geo_lat, posts.geo_lng, posts.geo_place, posts.view_count,
            ${table}.id AS business_id, ${table}.name AS business_name, ${table}.type AS business_type,
            ${table}.region, ${table}.district, ${table}.city, ${table}.is_verified
            ${extraFilterCols?.includes('cuisine_type') ? `, ${table}.cuisine_type` : ''}
     FROM posts JOIN ${table} ON ${table}.id = posts.business_id
     WHERE ${conditions.join(' AND ')}
     ORDER BY posts.created_at DESC
-    LIMIT 100
+    LIMIT ${sort === 'recent' ? limit + 1 : 60}
   `;
 
   const { results } = await c.env.DB.prepare(sql).bind(...params).all();
   const mediaMap = await fetchMediaForPosts(c.env, results.map((r) => r.id));
 
-  // Fetch personalization data if authed
-  let followedIds = new Set();
-  let userCity = null;
-  let userRegion = null;
-  const authHeader = c.req.header('Authorization') || '';
-  if (authHeader.startsWith('Bearer ') && sort !== 'recent') {
+  // Personalizácia
+  let followedIds = new Set(), userCity = null, userRegion = null;
+  if (viewerId && sort !== 'recent') {
     try {
-      const payload = await verify(authHeader.slice(7), c.env.JWT_SECRET, 'HS256');
       const { results: fol } = await c.env.DB.prepare(
         `SELECT target_id FROM follows WHERE follower_id = ? AND target_type = ?`,
-      ).bind(payload.sub, table).all();
+      ).bind(viewerId, table).all();
       followedIds = new Set(fol.map((r) => r.target_id));
-      const u = await c.env.DB.prepare('SELECT geo_city FROM users WHERE id = ?').bind(payload.sub).first();
+      const u = await c.env.DB.prepare('SELECT geo_city FROM users WHERE id = ?').bind(viewerId).first();
       userCity = u?.geo_city || null;
       if (userCity) {
         const cRow = await c.env.DB.prepare(`SELECT region FROM ${table} WHERE city = ? LIMIT 1`).bind(userCity).first();
@@ -173,6 +209,7 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
       created_at: post.created_at,
       comment_count: cc?.n || 0,
       likes,
+      views: post.view_count || 0,
       geo: post.geo_place ? { place: post.geo_place, lat: post.geo_lat, lng: post.geo_lng } : null,
       business: {
         id: post.business_id,
@@ -187,30 +224,44 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
     };
   }));
 
-  if (sort === 'recent') {
-    // already ordered
-  } else if (sort === 'trending') {
-    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, {}) }))
-      .sort((a, b) => b.__score - a.__score);
+  // Aplikuj sort
+  if (sort === 'trending') {
+    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, {}) })).sort((a, b) => b.__score - a.__score);
+    out = out.slice(0, limit);
+  } else if (sort === 'for_you') {
+    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedIds, userCity, userRegion }) })).sort((a, b) => b.__score - a.__score);
+    out = out.slice(0, limit);
   } else {
-    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedIds, userCity, userRegion }) }))
-      .sort((a, b) => b.__score - a.__score);
+    // recent — cursor pagination
+    const hasMore = out.length > limit;
+    out = out.slice(0, limit);
+    const last = out[out.length - 1];
+    const nextCursor = hasMore && last ? encodeCursor(last.created_at, last.id) : null;
+    return c.json({ feed: out, next_cursor: nextCursor });
   }
 
-  return c.json({ feed: out });
+  return c.json({ feed: out, next_cursor: null });
 }
 
 feedRoutes.get('/organization', (c) => loadSocialFeed(c, { targetFeed: 'organization', table: 'organizations' }));
 feedRoutes.get('/accommodation', (c) => loadSocialFeed(c, { targetFeed: 'accommodation', table: 'accommodation' }));
 feedRoutes.get('/gastro', (c) => loadSocialFeed(c, { targetFeed: 'gastro', table: 'restaurants', extraFilterCols: ['cuisine_type'] }));
 
-// ---- Like post ----
+// ---- View count ----
+feedRoutes.post('/:id/view', async (c) => {
+  const postId = c.req.param('id');
+  try {
+    await c.env.DB.prepare(`UPDATE posts SET view_count = COALESCE(view_count, 0) + 1 WHERE id = ? AND status = 'published'`).bind(postId).run();
+  } catch {}
+  return c.json({ ok: true });
+});
+
+// ---- Like ----
 feedRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const postId = c.req.param('id');
   const post = await c.env.DB.prepare(`SELECT id, user_id FROM posts WHERE id = ? AND status = 'published'`).bind(postId).first();
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
-
   const likeKey = `like:post:${postId}:${user.sub}`;
   if (await c.env.NASKRAJ_LAJKY.get(likeKey)) {
     const r = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${postId}`);
@@ -220,16 +271,11 @@ feedRoutes.post('/:id/like', async (c) => {
   const cur = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${postId}`);
   const n = (cur ? parseInt(cur, 10) : 0) + 1;
   await c.env.NASKRAJ_LAJKY.put(`likecount:post:${postId}`, String(n));
-
   if (post.user_id && post.user_id !== user.sub) {
     try {
-      await c.env.DB.prepare(
-        `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
-         VALUES (?, ?, 'like', ?, 'post', ?, 'dal(a) like tvému příspěvku')`,
-      ).bind(newId('notif'), post.user_id, user.sub, postId).run();
+      await c.env.DB.prepare(`INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text) VALUES (?, ?, 'like', ?, 'post', ?, 'dal(a) like tvému příspěvku')`).bind(newId('notif'), post.user_id, user.sub, postId).run();
     } catch {}
   }
-
   return c.json({ liked: true, likes: n }, 201);
 });
 
@@ -237,8 +283,7 @@ feedRoutes.post('/:id/like', async (c) => {
 feedRoutes.get('/bookmarks', async (c) => {
   const user = c.get('user');
   const { results } = await c.env.DB.prepare(
-    `SELECT posts.id, posts.text_content, posts.content_html, posts.image_url, posts.created_at,
-            posts.target_feed,
+    `SELECT posts.id, posts.text_content, posts.content_html, posts.image_url, posts.created_at, posts.target_feed,
             organizations.name AS org_name, accommodation.name AS acc_name, restaurants.name AS rest_name
      FROM bookmarks
      JOIN posts ON posts.id = bookmarks.post_id
@@ -256,7 +301,6 @@ feedRoutes.post('/:id/bookmark', async (c) => {
   const postId = c.req.param('id');
   const post = await c.env.DB.prepare(`SELECT id FROM posts WHERE id = ? AND status = 'published'`).bind(postId).first();
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
-
   const existing = await c.env.DB.prepare(`SELECT 1 FROM bookmarks WHERE user_id = ? AND post_id = ?`).bind(user.sub, postId).first();
   if (existing) {
     await c.env.DB.prepare(`DELETE FROM bookmarks WHERE user_id = ? AND post_id = ?`).bind(user.sub, postId).run();
@@ -294,16 +338,34 @@ feedRoutes.delete('/comment/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-// ---- Comments ----
+// ---- Comments (s reply) ----
 feedRoutes.get('/:id/comments', async (c) => {
   const postId = c.req.param('id');
+  const viewerId = await getViewerId(c, c.env);
+  const blockedIds = await getBlockedIds(c.env, viewerId);
+
   const { results } = await c.env.DB.prepare(
-    `SELECT comments.id, comments.comment_text, comments.created_at,
+    `SELECT comments.id, comments.comment_text, comments.created_at, comments.parent_id,
             users.id AS user_id, users.display_name AS user_name, users.avatar_url AS user_avatar
      FROM comments JOIN users ON users.id = comments.user_id
      WHERE post_id = ? ORDER BY comments.created_at ASC`,
   ).bind(postId).all();
-  return c.json({ comments: results });
+
+  // Filtruj blokovaných
+  const filtered = results.filter((r) => !blockedIds.has(r.user_id));
+
+  // Organizuj do vlákien: root komentáre s replies[]
+  const byId = {};
+  const roots = [];
+  for (const r of filtered) byId[r.id] = { ...r, replies: [] };
+  for (const r of filtered) {
+    if (r.parent_id && byId[r.parent_id]) {
+      byId[r.parent_id].replies.push(byId[r.id]);
+    } else {
+      roots.push(byId[r.id]);
+    }
+  }
+  return c.json({ comments: roots, total: filtered.length });
 });
 
 feedRoutes.post('/:id/comment', async (c) => {
@@ -314,6 +376,7 @@ feedRoutes.post('/:id/comment', async (c) => {
 
   const body = await c.req.json().catch(() => ({}));
   const text = (body.text || '').trim();
+  const parentId = body.parent_id ? String(body.parent_id) : null;
   if (!text) return c.json({ error: 'Prázdný komentář.' }, 400);
 
   const mod = checkText(text);
@@ -325,10 +388,18 @@ feedRoutes.post('/:id/comment', async (c) => {
   const post = await c.env.DB.prepare(`SELECT id, user_id FROM posts WHERE id = ? AND status = 'published'`).bind(postId).first();
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
 
-  const id = newId('comment');
-  await c.env.DB.prepare('INSERT INTO comments (id, post_id, user_id, comment_text) VALUES (?, ?, ?, ?)')
-    .bind(id, postId, user.sub, text).run();
+  // Ak je parent, over že patrí k tomuto postu
+  let parentComment = null;
+  if (parentId) {
+    parentComment = await c.env.DB.prepare('SELECT id, user_id FROM comments WHERE id = ? AND post_id = ?').bind(parentId, postId).first();
+    if (!parentComment) return c.json({ error: 'Nadřazený komentář nenalezen.' }, 400);
+  }
 
+  const id = newId('comment');
+  await c.env.DB.prepare('INSERT INTO comments (id, post_id, user_id, comment_text, parent_id) VALUES (?, ?, ?, ?, ?)')
+    .bind(id, postId, user.sub, text, parentId).run();
+
+  // Notifikácia autorovi príspevku
   if (post.user_id && post.user_id !== user.sub) {
     try {
       await c.env.DB.prepare(
@@ -338,7 +409,17 @@ feedRoutes.post('/:id/comment', async (c) => {
     } catch {}
   }
 
-  return c.json({ id, post_id: postId, text, created_at: new Date().toISOString() }, 201);
+  // Notifikácia autorovi rodičovského komentáru (ak nie je ten istý ako autor príspevku)
+  if (parentComment && parentComment.user_id !== user.sub && parentComment.user_id !== post.user_id) {
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
+         VALUES (?, ?, 'reply', ?, 'comment', ?, 'odpověděl(a) na tvůj komentář')`,
+      ).bind(newId('notif'), parentComment.user_id, user.sub, id).run();
+    } catch {}
+  }
+
+  return c.json({ id, post_id: postId, parent_id: parentId, text, created_at: new Date().toISOString() }, 201);
 });
 
 feedRoutes.post('/:id/report', async (c) => {
@@ -353,6 +434,7 @@ feedRoutes.post('/:id/report', async (c) => {
   return c.json({ id, ok: true }, 201);
 });
 
+// ---- Business feed pre profil ----
 feedRoutes.get('/business/:kind/:id', async (c) => {
   const kind = c.req.param('kind');
   const id = c.req.param('id');
@@ -366,8 +448,7 @@ feedRoutes.get('/business/:kind/:id', async (c) => {
   ).bind(id).all();
   const mediaMap = await fetchMediaForPosts(c.env, posts.map((p) => p.id));
   const postsWithMedia = posts.map((p) => ({
-    ...p,
-    html: p.content_html || escapePlain(p.text_content),
+    ...p, html: p.content_html || escapePlain(p.text_content),
     media: mediaMap[p.id] || (p.image_url ? [p.image_url] : []),
   }));
   return c.json({ business, posts: postsWithMedia });
