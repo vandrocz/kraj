@@ -14,7 +14,7 @@ import { seoRoutes } from './routes/seo.js';
 import { geoRoutes } from './routes/geo.js';
 import { mentionsRoutes } from './routes/mentions.js';
 import { eventsApiRoutes } from './routes/events.js';
-import { runDailyDistribution, ensureActiveProjectRotation } from './cron.js';
+import { runDailyDistribution, ensureActiveProjectRotation, cleanupOrphanedR2 } from './cron.js';
 import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUISINE_TYPES } from './regions.js';
 
 const app = new Hono();
@@ -55,7 +55,7 @@ app.route('/api/seo', seoRoutes);
 app.route('/api/auth', authRoutes);
 app.route('/api/auth', authGoogleRoutes);
 
-// ---- Wallet (zostáva v API, len sa nezobrazuje v UI) ----
+// ---- Wallet (zostáva v API, len skryté v UI) ----
 app.get('/api/user/wallet', requireAuth, async (c) => {
   const user = c.get('user');
   const row = await c.env.DB.prepare('SELECT credit_balance, status FROM users WHERE id = ?').bind(user.sub).first();
@@ -94,7 +94,7 @@ app.route('/api/feed', feedRoutes);
 app.use('/api/posts', requireAuth);
 app.route('/api/posts', postsRoutes);
 
-// ---- Events ----
+// ---- Events (GET verejné, ostatné chránené) ----
 app.use('/api/events', async (c, next) => {
   if (c.req.method === 'GET') return next();
   return requireAuth(c, next);
@@ -114,6 +114,7 @@ app.use('/api/profile/me', requireAuth);
 app.use('/api/profile/follow', requireAuth);
 app.use('/api/profile/follow/*', requireAuth);
 app.use('/api/profile/block/*', requireAuth);
+app.use('/api/profile/report/*', requireAuth);
 app.use('/api/profile/search', requireAuth);
 app.route('/api/profile', profileRoutes);
 
@@ -134,12 +135,19 @@ app.use('/api/stories/upload', requireAuth);
 app.use('/api/stories', requireAuth);
 app.route('/api/stories', storiesRoutes);
 
-// ---- Admin ----
+// ---- Admin: cron endpoints ----
 app.post('/api/admin/run-distribution-now', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
   return c.json(await runDailyDistribution(c.env));
 });
+
+app.post('/api/admin/r2-cleanup', async (c) => {
+  const key = c.req.header('X-Cron-Secret');
+  if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
+  return c.json(await cleanupOrphanedR2(c.env));
+});
+
 app.use('/api/admin/*', requireAuth);
 app.route('/api/admin', adminRoutes);
 
@@ -153,6 +161,7 @@ export default {
   fetch: app.fetch,
   async scheduled(event, env, ctx) {
     if (event.cron === '0 8 * * *') ctx.waitUntil(runDailyDistribution(env));
+    else if (event.cron === '0 4 * * 0') ctx.waitUntil(cleanupOrphanedR2(env));
     else ctx.waitUntil(ensureActiveProjectRotation(env));
   },
 };
