@@ -53,6 +53,11 @@ const ICON_PATHS = {
   group: 'M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M3 21v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1 M17 4a4 4 0 0 1 0 8 M21 21v-1a5 5 0 0 0-3-4.6',
   key: 'M15 7a4 4 0 1 1-3.5 5.9L9 15H6v3H3v-3l7-7A4 4 0 0 1 15 7Z M15 10h.01',
   alert: 'M12 3 2 20h20L12 3Z M12 10v4 M12 17v.01',
+  calendar: 'M4 6h16v14H4Z M8 3v4 M16 3v4 M4 10h16 M8 14h2 M14 14h2 M8 17h2 M14 17h2',
+  bookmark: 'M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z',
+  hash: 'M5 9h14 M5 15h14 M10 3l-2 18 M16 3l-2 18',
+  stats: 'M4 20V10 M10 20V4 M16 20v-7 M4 20h16',
+  flipX: '',
 };
 
 function icon(name, { size = 22, strokeWidth = 1.8, filled = false, className = '' } = {}) {
