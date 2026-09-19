@@ -30,7 +30,8 @@ function onFilterChange(feedKey, field, value) {
   state.socialFeeds[feedKey][field] = value;
   if (field === 'region') state.socialFeeds[feedKey].district = '';
   renderApp();
-  loadSocialFeed(feedKey);
+  clearTimeout(filterDebounceTimer);
+  filterDebounceTimer = setTimeout(() => loadSocialFeed(feedKey), 250);
 }
 function onSearchChange(feedKey, value) {
   state.socialFeeds[feedKey].search = value;
@@ -41,14 +42,17 @@ function onSearchChange(feedKey, value) {
 function renderMediaCarousel(post) {
   const media = post.media && post.media.length ? post.media : (post.image_url ? [post.image_url] : []);
   if (media.length === 0) return '';
+  const caption = escapeAttr(post.text || '');
+
   if (media.length === 1) {
     return `
-      <button class="post-image-wrap" data-action="open-lightbox" data-img="${media[0]}" data-caption="${escapeAttr(post.text || '')}">
+      <button class="post-image-wrap" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${caption}">
         <img src="${media[0]}" alt="" class="post-image" loading="lazy" />
       </button>`;
   }
-  const slides = media.map((url) => `
-    <button class="post-carousel-slide" data-action="open-lightbox" data-img="${url}" data-caption="${escapeAttr(post.text || '')}">
+
+  const slides = media.map((url, idx) => `
+    <button class="post-carousel-slide" data-action="open-lightbox" data-post-id="${post.id}" data-index="${idx}" data-caption="${caption}">
       <img src="${url}" alt="" class="post-image" loading="lazy" />
     </button>`).join('');
   const dots = media.map((_, i) => `<span class="post-carousel-dot ${i === 0 ? 'is-active' : ''}"></span>`).join('');
@@ -96,6 +100,7 @@ function renderSocialPostCard(post, feedKey) {
         </button>
         <button class="post-action" data-action="toggle-comments" data-id="${post.id}" data-feed="${feedKey}">${icon('comment', { size: 21 })}</button>
         <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(post.text || '')}">${icon('share', { size: 21 })}</button>
+        ${isLoggedIn() ? `<button class="post-action ${post.__bookmarked ? 'is-bookmarked' : ''}" data-action="toggle-bookmark" data-id="${post.id}">${icon('bookmark', { size: 20, filled: !!post.__bookmarked })}</button>` : ''}
         ${isMinePost ? `<button class="post-action" data-action="delete-post" data-id="${post.id}" data-feed="${feedKey}" style="color:#B3273C">${icon('trash', { size: 18 })}</button>` : ''}
       </div>
       <div class="post-body">
@@ -116,8 +121,10 @@ async function togglePostLike(postId, feedKey, btnEl) {
   if (!isLoggedIn()) { showToast('Pro lajkování se musíš přihlásit.'); switchTab('account'); return; }
   const post = state.socialFeeds[feedKey].items.find((p) => p.id === postId);
   if (!post || post.__liked) return;
-  post.__liked = true; post.likes = (post.likes || 0) + 1;
-  btnEl.classList.add('is-liked'); btnEl.innerHTML = icon('heart', { size: 22, filled: true });
+  post.__liked = true;
+  post.likes = (post.likes || 0) + 1;
+  btnEl.classList.add('is-liked');
+  btnEl.innerHTML = icon('heart', { size: 22, filled: true });
   const likesEl = document.querySelector(`[data-like-count="${postId}"]`);
   if (likesEl) likesEl.textContent = `${fmt(post.likes)} páči sa mi`;
   try {
@@ -127,19 +134,34 @@ async function togglePostLike(postId, feedKey, btnEl) {
   } catch (err) { showToast(err.message); }
 }
 
+async function toggleBookmark(postId, btnEl) {
+  if (!isLoggedIn()) { showToast('Pro uložení se musíš přihlásit.'); switchTab('account'); return; }
+  try {
+    const data = await apiPost(`/api/feed/${postId}/bookmark`, {});
+    if (btnEl) {
+      btnEl.classList.toggle('is-bookmarked', data.bookmarked);
+      btnEl.innerHTML = icon('bookmark', { size: 20, filled: data.bookmarked });
+    }
+    showToast(data.bookmarked ? 'Uloženo.' : 'Odebráno z uložených.');
+  } catch (err) { showToast(err.message); }
+}
+
 async function sharePost(postId, text) {
   const url = `${location.origin}${location.pathname}?post=${encodeURIComponent(postId)}`;
-  if (navigator.share) { try { await navigator.share({ title: 'Náš kraj', text: text || '', url }); return; } catch { return; } }
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Náš kraj', text: text || '', url }); return; } catch { return; }
+  }
   try { await navigator.clipboard.writeText(url); showToast('Odkaz zkopírován.'); }
   catch { showToast('Zdílení se nepodařilo.'); }
 }
 
-function renderFeedPage(feedKey, title, typeOptions, showCuisine) {
+function renderFeedPage(feedKey, typeOptions, showCuisine) {
+  const title = getFeedTitle(feedKey);
   return `
     <div class="page-scroll">
       ${renderHeader(title, `
         <button class="header-icon-btn" data-action="open-search" aria-label="Hledat">${icon('search', { size: 19 })}</button>
-        ${isLoggedIn() ? `<button class="header-icon-btn" data-action="open-threads" aria-label="Zprávy" style="position:relative">${icon('chat', { size: 19 })}</button>` : ''}
+        ${isLoggedIn() ? `<button class="header-icon-btn" data-action="open-threads" aria-label="Zprávy">${icon('chat', { size: 19 })}</button>` : ''}
         <button class="header-icon-btn" data-action="open-groups" aria-label="Skupiny">${icon('group', { size: 19 })}</button>
       `)}
       ${renderStoriesBar()}
@@ -147,8 +169,6 @@ function renderFeedPage(feedKey, title, typeOptions, showCuisine) {
       ${renderSocialFeedBody(feedKey)}
     </div>`;
 }
-
-function renderOrganizationsPage() { return renderFeedPage('organization', 'Organizace', TYPES.organization, false); }
 
 function renderSocialFeedBody(feedKey) {
   const items = state.socialFeeds[feedKey].items;
@@ -166,7 +186,8 @@ async function toggleSocialComments(postId, feedKey) {
       const data = await apiGet(`/api/feed/${postId}/comments`);
       const post = state.socialFeeds[feedKey].items.find((p) => p.id === postId);
       if (post) post.__comments = data.comments;
-      list.innerHTML = (data.comments || []).map((c) => renderCommentRow(c, feedKey, postId)).join('') || '<p class="post-comment-row" style="color:var(--c-text-muted)">Zatím žádné komentáře.</p>';
+      list.innerHTML = (data.comments || []).map((c) => renderCommentRow(c, feedKey, postId)).join('') ||
+        '<p class="post-comment-row" style="color:var(--c-text-muted)">Zatím žádné komentáře.</p>';
       list.dataset.loaded = 'true';
     } catch (err) { showToast('Komentáře se nepodařilo načíst.'); return; }
   }
@@ -201,7 +222,8 @@ async function deletePost(postId, feedKey) {
   try {
     await apiDelete(`/api/feed/post/${postId}`);
     if (state.socialFeeds[feedKey]) state.socialFeeds[feedKey].items = state.socialFeeds[feedKey].items.filter((p) => p.id !== postId);
-    showToast('Smazáno.'); renderApp();
+    showToast('Smazáno.');
+    renderApp();
   } catch (err) { showToast(err.message); }
 }
 
@@ -225,12 +247,36 @@ async function openPostFromProfile(postId, kind, businessId) {
   if (!d || !d.posts) return;
   const post = d.posts.find((p) => p.id === postId);
   if (!post) return;
-  const img = (post.media && post.media[0]) || post.image_url;
-  const lb = document.getElementById('lightbox');
-  if (!lb) return;
-  document.getElementById('lightbox-img').src = img;
-  document.getElementById('lightbox-img').alt = post.text_content || '';
-  document.getElementById('lightbox-caption').textContent = post.text_content || '';
-  lb.classList.add('is-open');
-  document.body.style.overflow = 'hidden';
+  const media = post.media || (post.image_url ? [post.image_url] : []);
+  if (!media.length) return;
+  openLightbox(media, 0, post.text_content || '');
+}
+
+// ---- Bookmarks ----
+async function loadBookmarks() {
+  try {
+    const data = await apiGet('/api/feed/bookmarks');
+    state._bookmarks = data.bookmarks || [];
+  } catch { state._bookmarks = []; }
+  if (state.overlay?.type === 'bookmarks') renderApp();
+}
+
+function renderBookmarksOverlay() {
+  const list = state._bookmarks;
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader('Uložené příspěvky')}
+      <div class="profile-section">
+        ${list == null ? '<p class="empty-state">Načítám…</p>'
+          : list.length === 0 ? '<p class="empty-state">Zatím nic uloženého.</p>'
+          : list.map((b) => `
+            <button class="user-list-item" data-action="open-post-bookmark" data-id="${b.id}">
+              ${b.image_url ? `<img src="${b.image_url}" class="user-list-avatar" style="border-radius:12px" alt="" />` : `<span class="user-list-avatar user-list-avatar-init">${icon('image', { size: 18 })}</span>`}
+              <div style="flex:1;min-width:0">
+                <p class="user-list-name">${escapeHtml(b.org_name || b.acc_name || b.rest_name || '')}</p>
+                <p class="user-list-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;">${escapeHtml((b.text_content || '').slice(0, 80))}</p>
+              </div>
+            </button>`).join('')}
+      </div>
+    </div>`;
 }
