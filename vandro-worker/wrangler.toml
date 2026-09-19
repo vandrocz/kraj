@@ -15,8 +15,9 @@ bucket_name = "naskraj-media"
 binding = "NASKRAJ_LAJKY"
 id = "ad757c112f5b41d39e378dc330529ef9"
 
-[triggers]
-crons = ["*/1 * * * *", "0 8 * * *"]
+# Cron zakomentovaný — zbierky sú skryté, nechceme míňať CPU
+# [triggers]
+# crons = ["*/1 * * * *", "0 8 * * *"]
 
 [vars]
 ALLOWED_ORIGIN = "https://naskraj.vandro.cz,https://app.vandro.cz,https://kraj.vandro.cz"
