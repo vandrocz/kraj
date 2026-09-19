@@ -33,6 +33,35 @@ async function getFollowCount(env, type, id) {
   return row?.n || 0;
 }
 
+import { getUserBadges } from '../badges.js';
+
+// GET /api/profile/:type/:id/badges (user len)
+profileRoutes.get('/:type/:id/badges', async (c) => {
+  const type = c.req.param('type');
+  const id = c.req.param('id');
+  if (type !== 'user' && type !== 'users') return c.json({ error: 'Iba pre userov.' }, 400);
+  const badges = await getUserBadges(c.env, id);
+  return c.json({ badges });
+});
+
+// GET /api/profile/:type/:id/checkins
+profileRoutes.get('/:type/:id/checkins', async (c) => {
+  const id = c.req.param('id');
+  const { results } = await c.env.DB.prepare(
+    `SELECT checkins.*,
+            COALESCE(o.name, a.name, r.name) AS business_name,
+            COALESCE(o.logo_url, a.image_url, r.image_url) AS business_logo,
+            COALESCE(o.region, a.region, r.region) AS region
+     FROM checkins
+     LEFT JOIN organizations o ON o.id = checkins.business_id AND checkins.business_kind = 'organizations'
+     LEFT JOIN accommodation a ON a.id = checkins.business_id AND checkins.business_kind = 'accommodation'
+     LEFT JOIN restaurants r ON r.id = checkins.business_id AND checkins.business_kind = 'restaurants'
+     WHERE checkins.user_id = ?
+     ORDER BY checkins.visited_at DESC LIMIT 200`,
+  ).bind(id).all();
+  return c.json({ checkins: results });
+});
+
 // ============================================================
 // SEARCH — musí byť PRED /:type/:id
 // ============================================================
