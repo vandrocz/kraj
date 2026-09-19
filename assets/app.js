@@ -20,6 +20,8 @@ const state = {
   },
   events: { items: [], search: '', region: '', kind: '', when: 'upcoming', next_cursor: null, loading_more: false },
 
+  nearby: { coords: null, radius: 25, kind: 'all', results: null, loading: false },
+
   profiles: {},
   stories: null,
 
@@ -41,11 +43,15 @@ const state = {
   _bookmarks: null,
   _eventDetail: null,
 
+  _reviews: null, _myReview: null,
+  _wishlist: null,
+  _userBadges: null, _userCheckins: null, _businessCheckins: null,
+  _checkinStatus: undefined, _wishlistStatus: undefined,
+
   threads: null, threadCurrent: null, threadMessages: null,
   groupsMy: null, groupsDiscover: null, groupCurrent: null,
 
   lightbox: null,
-
   loading: {},
 };
 
@@ -91,18 +97,13 @@ function showToast(message) {
   toastTimer = setTimeout(() => el.classList.remove('is-visible'), 2600);
 }
 
-// ---- Throttle renderApp ----
 let _renderScheduled = false;
 function scheduleRender() {
   if (_renderScheduled) return;
   _renderScheduled = true;
-  requestAnimationFrame(() => {
-    _renderScheduled = false;
-    renderApp();
-  });
+  requestAnimationFrame(() => { _renderScheduled = false; renderApp(); });
 }
 
-// ---- Infinite scroll ----
 let _infiniteObserver = null;
 function setupInfiniteScroll(loadMoreFn) {
   if (_infiniteObserver) { _infiniteObserver.disconnect(); _infiniteObserver = null; }
@@ -131,7 +132,6 @@ function renderBackHeader(title, rightHtml) {
     </header>`;
 }
 
-// ---- Náhodné názvy feedov ----
 const FEED_TITLES = {
   events: [
     'Co se děje?', 'Kam dnes vyrazit?', 'Kulturní program', 'Akce v okolí',
@@ -240,7 +240,6 @@ function renderApp() {
   const root = document.getElementById('root');
   let pageHtml = '';
 
-  // Overlay routy
   if (state.overlay?.type === 'profile') pageHtml = renderProfileOverlay();
   else if (state.overlay?.type === 'profile-stats') pageHtml = renderProfileStatsOverlay();
   else if (state.overlay?.type === 'settings') pageHtml = renderSettingsOverlay();
@@ -262,7 +261,13 @@ function renderApp() {
   else if (state.overlay?.type === 'create-event') pageHtml = renderCreateEventOverlay();
   else if (state.overlay?.type === 'event-detail') pageHtml = renderEventDetailOverlay();
   else if (state.overlay?.type === 'bookmarks') pageHtml = renderBookmarksOverlay();
-  // Tab routy
+  else if (state.overlay?.type === 'nearby') pageHtml = renderNearbyOverlay();
+  else if (state.overlay?.type === 'wishlist') pageHtml = renderWishlistOverlay();
+  else if (state.overlay?.type === 'badges') pageHtml = renderBadgesOverlay();
+  else if (state.overlay?.type === 'user-checkins') pageHtml = renderUserCheckinsOverlay();
+  else if (state.overlay?.type === 'business-checkins') pageHtml = renderBusinessCheckinsOverlay();
+  else if (state.overlay?.type === 'create-checkin') pageHtml = renderCreateCheckinOverlay();
+  else if (state.overlay?.type === 'create-review') pageHtml = renderCreateReviewOverlay();
   else if (state.tab === 'events') pageHtml = renderEventsPage();
   else if (state.tab === 'map') pageHtml = renderMapPage();
   else if (state.tab === 'organizations') pageHtml = renderFeedPage('organization', TYPES.organization, false);
@@ -277,12 +282,10 @@ function renderApp() {
       ${pageHtml}
       ${renderBottomNav()}
       ${hideChrome ? '' : renderLightbox()}
-      ${hideChrome ? '' : renderDetailModal()}
     </div>`;
 
   applySeo();
 
-  // Infinite scroll
   if (!state.overlay) {
     if (state.tab === 'events' && state.events.next_cursor) {
       setupInfiniteScroll(() => loadEvents(true));
@@ -329,6 +332,10 @@ function openProfile(kind, id) {
   state._bizProfileTab = 'posts';
   state._bizEvents = null;
   state._bizStats = null;
+  state._reviews = null;
+  state._myReview = null;
+  state._checkinStatus = undefined;
+  state._wishlistStatus = undefined;
   renderApp();
   window.scrollTo(0, 0);
 }
@@ -357,6 +364,9 @@ function openLoginLogs() { state.overlay = { type: 'login-logs' }; renderApp(); 
 function openThreads() { state.overlay = { type: 'threads' }; renderApp(); loadThreads(); }
 function openGroups() { state.overlay = { type: 'groups' }; renderApp(); loadGroupsMy(); loadGroupsDiscover(); }
 function openBookmarks() { state.overlay = { type: 'bookmarks' }; state._bookmarks = null; renderApp(); loadBookmarks(); }
+function openBadges() { state.overlay = { type: 'badges' }; state._userBadges = null; renderApp(); if (isLoggedIn()) loadUserBadges(state.user.id); }
+function openUserCheckins(userId) { state.overlay = { type: 'user-checkins', userId }; state._userCheckins = null; renderApp(); loadUserCheckins(userId); }
+function openWishlist() { state.overlay = { type: 'wishlist' }; state._wishlist = null; renderApp(); loadWishlist(); }
 
 function switchTab(tab) {
   state.overlay = null;
