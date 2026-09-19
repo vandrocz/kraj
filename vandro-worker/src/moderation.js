@@ -41,42 +41,80 @@ export async function flagContent(env, { userId, postId, commentId, reason, seve
   }
 }
 
-// Povolené HTML tagy pre rich-text (whitelist)
-const ALLOWED_TAGS = ['b', 'strong', 'i', 'em', 'u', 's', 'p', 'br', 'ul', 'ol', 'li', 'a', 'blockquote'];
-const ALLOWED_ATTR = { a: ['href', 'target', 'rel'] };
+// ============================================================
+// Striktná sanitizácia HTML
+// Povolené tagy: b, strong, i, em, u, s, br, p, ul, ol, li, a, blockquote
+// Povolené atribúty: a[href] (len http/https)
+// ============================================================
 
-export function sanitizeHtml(html) {
-  if (!html) return '';
-  let out = String(html);
+const ALLOWED_TAGS = new Set([
+  'b', 'strong', 'i', 'em', 'u', 's', 'br', 'p',
+  'ul', 'ol', 'li', 'a', 'blockquote',
+]);
 
-  // Odstráň nebezpečné tagy
-  out = out.replace(/<\s*(script|style|iframe|object|embed|form|input|button)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '');
-  out = out.replace(/<\s*(script|style|iframe|object|embed|form|input|button)[^>]*\/?\s*>/gi, '');
+const DANGEROUS_TAGS = [
+  'script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button',
+  'link', 'meta', 'base', 'svg', 'math', 'template', 'noscript', 'video',
+  'audio', 'source', 'track', 'img', 'picture', 'canvas', 'map', 'area',
+];
 
-  // Odstráň všetky neznáme tagy (zachovaj whitelist)
-  out = out.replace(/<\s*\/?\s*([a-zA-Z0-9]+)([^>]*)>/g, (match, tag, attrs) => {
-    const lower = tag.toLowerCase();
-    if (!ALLOWED_TAGS.includes(lower)) return '';
-    // Vyčisti atribúty
-    const allowed = ALLOWED_ATTR[lower] || [];
-    if (allowed.length === 0) return `<${lower}>`;
-    let cleanAttrs = '';
-    for (const attr of allowed) {
-      const re = new RegExp(`\\s${attr}\\s*=\\s*["']([^"']*)["']`, 'i');
-      const m = attrs.match(re);
-      if (m) {
-        let val = m[1].replace(/javascript:/gi, '').replace(/on\w+=/gi, '');
-        cleanAttrs += ` ${attr}="${val}"`;
-      }
+export function sanitizeHtml(input) {
+  if (!input) return '';
+  let s = String(input);
+
+  // 1) Odstráň kompletné bloky nebezpečných tagov (aj s obsahom)
+  for (const tag of DANGEROUS_TAGS) {
+    const reBlock = new RegExp(`<\\s*${tag}\\b[^>]*>[\\s\\S]*?<\\s*\\/\\s*${tag}\\s*>`, 'gi');
+    s = s.replace(reBlock, '');
+    const reSelf = new RegExp(`<\\s*\\/?\\s*${tag}\\b[^>]*\\/?\\s*>`, 'gi');
+    s = s.replace(reSelf, '');
+  }
+
+  // 2) Odstráň HTML komentáre
+  s = s.replace(/<!--[\s\S]*?-->/g, '');
+
+  // 3) Whitelist tagov
+  s = s.replace(/<\s*\/?\s*([a-zA-Z][a-zA-Z0-9]*)([^>]*)>/g, (match, rawTag, attrs) => {
+    const tag = rawTag.toLowerCase();
+    if (!ALLOWED_TAGS.has(tag)) return '';
+
+    const isClosing = /^\s*<\s*\//.test(match);
+
+    if (tag === 'a') {
+      if (isClosing) return '</a>';
+      const hrefMatch = attrs.match(/\shref\s*=\s*["']([^"']+)["']/i);
+      if (!hrefMatch) return '<a>';
+      let href = hrefMatch[1].trim();
+      // Iba http:// alebo https://
+      if (!/^https?:\/\//i.test(href)) return '<a>';
+      // Odstráň nebezpečné znaky
+      href = href.replace(/["'<>\\]/g, '').slice(0, 500);
+      return `<a href="${href}" target="_blank" rel="noopener nofollow ugc">`;
     }
-    return `<${lower}${cleanAttrs}>`;
+
+    return isClosing ? `</${tag}>` : `<${tag}>`;
   });
 
-  // Zatvor nezavreté tagy (jednoduché)
-  return out;
+  // 4) Escapuj osamelé < a > ktoré nie sú súčasťou whitelist tagov
+  s = s.replace(/<([^>]*)>/g, (m, inner) => {
+    if (/^\s*\/?\s*[a-z]+\s*$/.test(inner)) return m; // je to tag bez atribútov
+    if (/^\s*\/?\s*a\s+href\s*=/.test(inner)) return m;
+    return '&lt;' + inner + '&gt;';
+  });
+
+  // 5) Escapuj nebezpečné URL javascript:, data: (aj s medzerami)
+  s = s.replace(/javascript\s*:/gi, '').replace(/data\s*:/gi, '');
+  s = s.replace(/on\w+\s*=/gi, '');
+
+  return s.trim();
 }
 
 export function htmlToPlain(html) {
   if (!html) return '';
   return String(html).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Escape % a _ pre SQL LIKE
+export function escapeLike(str) {
+  return String(str || '').replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
