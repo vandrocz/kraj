@@ -63,7 +63,6 @@ function renderMediaCarousel(post) {
   if (media.length === 0) return '';
   const caption = escapeAttr(post.text || '');
 
-  // View count (post view) sa zapíše raz pri kliku na fotku
   if (media.length === 1) {
     return `
       <button class="post-image-wrap" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${caption}">
@@ -196,6 +195,7 @@ function renderFeedPage(feedKey, typeOptions, showCuisine) {
   return `
     <div class="page-scroll">
       ${renderHeader(title, `
+        <button class="header-icon-btn" data-action="open-nearby" aria-label="V okolí">${icon('location', { size: 19 })}</button>
         <button class="header-icon-btn" data-action="open-search" aria-label="Hledat">${icon('search', { size: 19 })}</button>
         ${isLoggedIn() ? `<button class="header-icon-btn" data-action="open-threads" aria-label="Zprávy">${icon('chat', { size: 19 })}</button>` : ''}
         <button class="header-icon-btn" data-action="open-groups" aria-label="Skupiny">${icon('group', { size: 19 })}</button>
