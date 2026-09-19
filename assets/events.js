@@ -173,6 +173,26 @@ document.addEventListener('click', (e) => {
 
     case 'biz-profile-tab': switchBizProfileTab(el.dataset.tab); break;
     case 'open-profile-stats': openProfileStats(el.dataset.kind, el.dataset.id); break;
+
+    // Nearby
+    case 'open-nearby': openNearby(); break;
+    case 'nearby-refresh': loadNearby(); break;
+
+    // Wishlist
+    case 'open-wishlist': openWishlist(); break;
+    case 'toggle-wishlist': toggleWishlist(el.dataset.kind, el.dataset.id, el); break;
+
+    // Badges
+    case 'open-badges': openBadges(); break;
+    case 'open-user-checkins': openUserCheckins(el.dataset.id); break;
+    case 'open-business-checkins': openBusinessCheckins(el.dataset.kind, el.dataset.id); break;
+
+    // Checkin
+    case 'open-create-checkin': openCheckinCreate(el.dataset.kind, el.dataset.id, el.dataset.name); break;
+
+    // Reviews
+    case 'open-create-review': openCreateReview(el.dataset.kind, el.dataset.id); break;
+    case 'set-review-rating': setReviewRating(parseInt(el.dataset.value, 10)); break;
   }
 });
 
@@ -210,6 +230,8 @@ document.addEventListener('change', (e) => {
     state.overlay.businessId = el.value;
     renderApp();
   }
+  else if (a === 'nearby-radius') { state.nearby.radius = parseInt(el.value, 10); loadNearby(); }
+  else if (a === 'nearby-kind') { state.nearby.kind = el.value; loadNearby(); }
 });
 
 document.addEventListener('input', (e) => {
@@ -255,6 +277,8 @@ document.addEventListener('submit', (e) => {
   else if (a === 'submit-thread-message') handleSendThreadMessage(form);
   else if (a === 'submit-group-post') handleGroupPostSubmit(form);
   else if (a === 'submit-create-story') handleCreateStorySubmit(form);
+  else if (a === 'submit-checkin') handleCheckinSubmit(form);
+  else if (a === 'submit-review') handleReviewSubmit(form);
 });
 
 document.addEventListener('keydown', (e) => {
