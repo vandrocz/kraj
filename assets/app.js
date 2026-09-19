@@ -1,3 +1,6 @@
+// ============================================================
+// STAV APLIKÁCIE
+// ============================================================
 const state = {
   tab: 'events',
   overlay: null,
@@ -8,15 +11,14 @@ const state = {
   businesses: getStoredBusinesses(),
   authView: 'login',
 
-  // Random feed titles (pevné v session, aby sa nemenili pri každom renderi)
   feedTitles: {},
 
   socialFeeds: {
-    organization: { items: [], search: '', region: '', district: '', type: '', sort: 'for_you' },
-    accommodation: { items: [], search: '', region: '', district: '', type: '', sort: 'for_you' },
-    gastro: { items: [], search: '', region: '', district: '', type: '', cuisine: '', sort: 'for_you' },
+    organization: { items: [], search: '', region: '', district: '', type: '', sort: 'for_you', next_cursor: null, loading_more: false },
+    accommodation: { items: [], search: '', region: '', district: '', type: '', sort: 'for_you', next_cursor: null, loading_more: false },
+    gastro: { items: [], search: '', region: '', district: '', type: '', cuisine: '', sort: 'for_you', next_cursor: null, loading_more: false },
   },
-  events: { items: [], search: '', region: '', kind: '', when: 'upcoming' },
+  events: { items: [], search: '', region: '', kind: '', when: 'upcoming', next_cursor: null, loading_more: false },
 
   profiles: {},
   stories: null,
@@ -35,11 +37,14 @@ const state = {
   _bizProfileTab: 'posts',
   _bizEvents: null,
   _bizStats: null,
+  _profileStats: null,
+  _bookmarks: null,
+  _eventDetail: null,
 
   threads: null, threadCurrent: null, threadMessages: null,
   groupsMy: null, groupsDiscover: null, groupCurrent: null,
 
-  lightbox: null, // { images: [], index: 0, caption: '' }
+  lightbox: null,
 
   loading: {},
 };
@@ -84,6 +89,29 @@ function showToast(message) {
   el.classList.add('is-visible');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('is-visible'), 2600);
+}
+
+// ---- Throttle renderApp ----
+let _renderScheduled = false;
+function scheduleRender() {
+  if (_renderScheduled) return;
+  _renderScheduled = true;
+  requestAnimationFrame(() => {
+    _renderScheduled = false;
+    renderApp();
+  });
+}
+
+// ---- Infinite scroll ----
+let _infiniteObserver = null;
+function setupInfiniteScroll(loadMoreFn) {
+  if (_infiniteObserver) { _infiniteObserver.disconnect(); _infiniteObserver = null; }
+  const target = document.querySelector('[data-load-more]');
+  if (!target) return;
+  _infiniteObserver = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting) loadMoreFn();
+  }, { rootMargin: '300px' });
+  _infiniteObserver.observe(target);
 }
 
 function renderHeader(title, rightHtml) {
@@ -199,7 +227,7 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
     <div class="filter-bar">
       <div class="search-input-wrap">
         ${icon('search', { size: 17 })}
-        <input class="search-input" type="search" placeholder="Hledat podle názvu…" value="${f.search}" data-action="search-change" data-feed="${feedKey}" />
+        <input class="search-input" type="search" placeholder="Hledat podle názvu…" value="${escapeAttr(f.search)}" data-action="search-change" data-feed="${feedKey}" />
       </div>
       <div class="filter-row">${regionSelect}${districtSelect}${typeSelect}${cuisineSelect}${sortSelect}</div>
     </div>`;
@@ -210,6 +238,7 @@ function renderApp() {
   let pageHtml = '';
 
   if (state.overlay?.type === 'profile') pageHtml = renderProfileOverlay();
+  else if (state.overlay?.type === 'profile-stats') pageHtml = renderProfileStatsOverlay();
   else if (state.overlay?.type === 'settings') pageHtml = renderSettingsOverlay();
   else if (state.overlay?.type === 'security') pageHtml = renderSecurityOverlay();
   else if (state.overlay?.type === 'notifications') pageHtml = renderNotificationsOverlay();
@@ -235,7 +264,6 @@ function renderApp() {
   else if (state.tab === 'accommodation') pageHtml = renderFeedPage('accommodation', TYPES.accommodation, false);
   else if (state.tab === 'gastro') pageHtml = renderFeedPage('gastro', TYPES.restaurant, true);
   else if (state.tab === 'account') pageHtml = renderAccountPage();
-  else if (state.overlay?.type === 'profile-stats') pageHtml = renderProfileStatsOverlay();
 
   const hideChrome = (state.tab === 'map' && !state.overlay) || state.overlay?.type === 'story-viewer';
 
@@ -248,6 +276,18 @@ function renderApp() {
     </div>`;
 
   applySeo();
+
+  // Infinite scroll
+  if (!state.overlay) {
+    if (state.tab === 'events' && state.events.next_cursor) {
+      setupInfiniteScroll(() => loadEvents(true));
+    } else if (['organizations', 'accommodation', 'gastro'].includes(state.tab)) {
+      const k = state.tab === 'organizations' ? 'organization' : state.tab;
+      if (state.socialFeeds[k].next_cursor) {
+        setupInfiniteScroll(() => loadSocialFeed(k, true));
+      }
+    }
+  }
 }
 
 async function applySeo() {
@@ -311,13 +351,12 @@ function openForgotPassword() { state.overlay = { type: 'forgot' }; renderApp();
 function openLoginLogs() { state.overlay = { type: 'login-logs' }; renderApp(); loadLoginLogs(); }
 function openThreads() { state.overlay = { type: 'threads' }; renderApp(); loadThreads(); }
 function openGroups() { state.overlay = { type: 'groups' }; renderApp(); loadGroupsMy(); loadGroupsDiscover(); }
-function openBookmarks() { state.overlay = { type: 'bookmarks' }; renderApp(); loadBookmarks(); }
+function openBookmarks() { state.overlay = { type: 'bookmarks' }; state._bookmarks = null; renderApp(); loadBookmarks(); }
 
 function switchTab(tab) {
   state.overlay = null;
   state.overlayStack = [];
   state.tab = tab;
-  // Vygeneruj nový random title pre tento tab (ak ešte nie je)
   getFeedTitle(tab);
   renderApp();
   if (tab === 'events' && state.events.items.length === 0) loadEvents();
@@ -327,7 +366,7 @@ function switchTab(tab) {
   if (tab === 'account' && isLoggedIn()) loadNotifications();
 }
 
-// ---- Lightbox s carouselom ----
+// ---- LIGHTBOX s carouselom ----
 function openLightbox(images, index = 0, caption = '') {
   state.lightbox = { images, index: Math.max(0, Math.min(index, images.length - 1)), caption };
   updateLightboxDOM();
@@ -383,10 +422,8 @@ function renderLightbox() {
     </div>`;
 }
 
-// Swipe v lightboxe
 (function setupLightboxSwipe() {
-  let startX = 0;
-  let startY = 0;
+  let startX = 0, startY = 0;
   document.addEventListener('touchstart', (e) => {
     if (!e.target.closest('.lightbox.is-open')) return;
     startX = e.touches[0].clientX;
@@ -403,7 +440,6 @@ function renderLightbox() {
   }, { passive: true });
 })();
 
-// Klávesy ←/→
 document.addEventListener('keydown', (e) => {
   if (!state.lightbox) return;
   if (e.key === 'ArrowRight') lightboxNext();
