@@ -20,5 +20,5 @@ crons = ["*/1 * * * *", "0 8 * * *"]
 
 [vars]
 ALLOWED_ORIGIN = "https://naskraj.vandro.cz,https://app.vandro.cz,https://kraj.vandro.cz"
-R2_PUBLIC_BASE = "https://pub-018a49e751a74fa58480051c4ef96422.r2.dev"
+R2_PUBLIC_BASE = "https://media.vandro.cz"
 ONESIGNAL_APP_ID = ""
