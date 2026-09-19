@@ -1,4 +1,6 @@
-// Hashovanie hesiel cez Web Crypto (PBKDF2)
+// ============================================================
+// Pomocné funkcie pre autentifikáciu
+// ============================================================
 
 function bufToHex(buf) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -25,13 +27,24 @@ export async function hashPassword(password) {
 }
 
 export async function verifyPassword(password, hash, saltHex) {
-  if (!hash || !saltHex || hash === 'deleted') return false;
-  const salt = hexToBuf(saltHex);
-  const candidate = await pbkdf2(password, salt);
-  if (candidate.length !== hash.length) return false;
-  let diff = 0;
-  for (let i = 0; i < candidate.length; i++) diff |= candidate.charCodeAt(i) ^ hash.charCodeAt(i);
-  return diff === 0;
+  // Bezpečné odmietnutie pre účty bez hesla (Google OAuth, zmazané)
+  if (!hash || !saltHex) return false;
+  if (hash === 'deleted' || hash === 'google-oauth') return false;
+  if (saltHex === 'deleted' || saltHex === 'google-oauth') return false;
+  // Salt musí byť hex reťazec párnej dĺžky
+  if (typeof saltHex !== 'string' || saltHex.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(saltHex)) return false;
+
+  try {
+    const salt = hexToBuf(saltHex);
+    const candidate = await pbkdf2(password, salt);
+    if (candidate.length !== hash.length) return false;
+    let diff = 0;
+    for (let i = 0; i < candidate.length; i++) diff |= candidate.charCodeAt(i) ^ hash.charCodeAt(i);
+    return diff === 0;
+  } catch (err) {
+    console.error('verifyPassword zlyhal:', err);
+    return false;
+  }
 }
 
 export function newId(prefix = '') {
@@ -44,7 +57,7 @@ export function publicUser(u) {
     id: u.id, email: u.email, role: u.role, display_name: u.display_name,
     bio: u.bio || null, avatar_url: u.avatar_url || null, cover_url: u.cover_url || null,
     location: u.location || null, website: u.website || null, phone: u.phone || null,
-    email_verified: !!u.email_verified,
+    email_verified: u.email_verified != null ? !!u.email_verified : true,
     totp_enabled: !!u.totp_enabled,
   };
 }
