@@ -5,27 +5,44 @@ document.addEventListener('click', (e) => {
 
   switch (action) {
     case 'set-tab': switchTab(el.dataset.tab); break;
+
     case 'open-lightbox': {
       e.preventDefault();
-      const img = el.dataset.img, caption = el.dataset.caption;
-      const lb = document.getElementById('lightbox');
-      if (!lb) break;
-      document.getElementById('lightbox-img').src = img;
-      document.getElementById('lightbox-img').alt = caption || '';
-      document.getElementById('lightbox-caption').textContent = caption || '';
-      lb.classList.add('is-open');
-      document.body.style.overflow = 'hidden';
+      const postId = el.dataset.postId;
+      const index = parseInt(el.dataset.index || '0', 10);
+      const caption = el.dataset.caption || '';
+      const img = el.dataset.img;
+
+      let images = [img];
+      if (postId) {
+        // Nájdi post v ktoromkoľvek feede
+        for (const key of Object.keys(state.socialFeeds)) {
+          const p = state.socialFeeds[key].items.find((x) => x.id === postId);
+          if (p && p.media?.length) { images = p.media; break; }
+        }
+        // Skús aj business profile
+        if (images.length === 1) {
+          for (const k of Object.keys(state.profiles)) {
+            const d = state.profiles[k];
+            if (d?.posts) {
+              const p = d.posts.find((x) => x.id === postId);
+              if (p && p.media?.length) { images = p.media; break; }
+            }
+          }
+        }
+      }
+      openLightbox(images, index, caption);
       break;
     }
-    case 'close-lightbox':
-      document.getElementById('lightbox')?.classList.remove('is-open');
-      document.body.style.overflow = '';
-      break;
+    case 'close-lightbox': closeLightbox(); break;
+    case 'lightbox-prev': lightboxPrev(); break;
+    case 'lightbox-next': lightboxNext(); break;
+
     case 'open-detail': {
       const id = el.dataset.id, source = el.dataset.source;
-      const project = source === 'active' ? state.collections.active : state.collections.waiting.find((p) => p.id === id);
+      const project = source === 'active' ? state.collections?.active : state.collections?.waiting?.find((p) => p.id === id);
       if (!project) break;
-      document.getElementById('detail-sheet').innerHTML = buildDetailSheetHtml(project);
+      document.getElementById('detail-sheet').innerHTML = buildDetailSheetHtml ? buildDetailSheetHtml(project) : '';
       document.getElementById('detail-modal').classList.add('is-open');
       document.body.style.overflow = 'hidden';
       break;
@@ -34,11 +51,13 @@ document.addEventListener('click', (e) => {
       document.getElementById('detail-modal')?.classList.remove('is-open');
       document.body.style.overflow = '';
       break;
-    case 'like-collection': likeCollection(el.dataset.id, el); break;
+
     case 'toggle-comments': toggleSocialComments(el.dataset.id, el.dataset.feed); break;
     case 'toggle-post-like': togglePostLike(el.dataset.id, el.dataset.feed, el); break;
+    case 'toggle-bookmark': toggleBookmark(el.dataset.id, el); break;
     case 'share-post': sharePost(el.dataset.id, el.dataset.text); break;
     case 'report-post': reportPost(el.dataset.id); break;
+
     case 'open-profile': if (el.dataset.id) openProfile(el.dataset.kind, el.dataset.id); break;
     case 'close-overlay': closeOverlay(); break;
     case 'clear-overlay': clearOverlay(); break;
@@ -59,6 +78,12 @@ document.addEventListener('click', (e) => {
     case 'join-group': joinGroup(el.dataset.id); break;
     case 'leave-group': leaveGroup(el.dataset.id); break;
     case 'open-post': openPostFromProfile(el.dataset.postId, el.dataset.kind, el.dataset.id); break;
+    case 'open-post-bookmark': {
+      // nájdi uložený post a otvor lightbox
+      const b = (state._bookmarks || []).find((x) => x.id === el.dataset.id);
+      if (b?.image_url) openLightbox([b.image_url], 0, b.text_content || '');
+      break;
+    }
     case 'toggle-follow': toggleFollow(el.dataset.kind === 'user' ? 'user' : el.dataset.kind, el.dataset.id); break;
     case 'read-all-notifications': markAllNotificationsRead(); break;
     case 'block-user': blockUser(el.dataset.id); break;
@@ -68,10 +93,14 @@ document.addEventListener('click', (e) => {
     case 'resend-verification': resendVerification(); break;
     case 'delete-account': promptDeleteAccount(); break;
     case 'export-data': exportMyData(); break;
+    case 'open-bookmarks': openBookmarks(); break;
+
     case 'edit-profile':
       state.overlay = { type: 'profile', kind: el.dataset.kind, id: el.dataset.id, edit: true, editKind: el.dataset.kind, editId: el.dataset.id };
-      renderApp(); break;
+      renderApp();
+      break;
     case 'upload-avatar': uploadProfileImage(el.dataset.target, el.dataset.targetId, el.dataset.field); break;
+
     case 'set-auth-view': state.authView = el.dataset.view; accountFormState.formError = ''; renderApp(); break;
     case 'set-register-role': accountFormState.registerRole = el.dataset.role; renderApp(); break;
     case 'set-business-kind': accountFormState.registerBusinessKind = el.dataset.kind; renderApp(); break;
@@ -91,7 +120,7 @@ document.addEventListener('click', (e) => {
           const data = await apiGet(`/api/profile/${el.dataset.kind}/${el.dataset.id}`);
           const ownerId = data.profile.user_id;
           if (ownerId) openThreadWith(ownerId);
-        } catch (err) { showToast('Nepodařilo se otevřít konverzaci.'); }
+        } catch { showToast('Nepodařilo se otevřít konverzaci.'); }
       })();
       break;
     case 'open-story-viewer': openStoryViewer(el.dataset.groupKey); break;
@@ -117,6 +146,19 @@ document.addEventListener('click', (e) => {
         }
       })();
       break;
+
+    // ---- Events ----
+    case 'open-event': openEventDetail(el.dataset.id); break;
+    case 'open-event-create': openCreateEvent(); break;
+    case 'delete-event': deleteEvent(el.dataset.id); break;
+    case 'trigger-event-file': document.getElementById('event-file-input')?.click(); break;
+    case 'event-file-selected': onEventFileSelected(el); break;
+
+    // ---- Business profile tabs ----
+    case 'biz-profile-tab': switchBizProfileTab(el.dataset.tab); break;
+
+    // ---- Stats ----
+    case 'open-profile-stats': openProfileStats(el.dataset.kind, el.dataset.id); break;
   }
 });
 
@@ -149,13 +191,23 @@ document.addEventListener('change', (e) => {
   else if (a === 'file-selected') onFileSelected(el);
   else if (a === 'setting-toggle') toggleSetting(el.dataset.key, el.checked);
   else if (a === 'story-file-selected') onStoryFileSelected(el);
+  else if (a === 'event-filter') onEventFilterChange(el.dataset.field, el.value);
+  else if (a === 'event-business-select') {
+    state.overlay.businessId = el.value;
+    renderApp();
+  }
 });
 
 document.addEventListener('input', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
   if (el.dataset.action === 'search-change') { onSearchChange(el.dataset.feed, el.value); return; }
-  if (el.dataset.action === 'search-global') { onGlobalSearchInput(el.value); }
+  if (el.dataset.action === 'search-global') { onGlobalSearchInput(el.value); return; }
+  if (el.dataset.action === 'event-search') {
+    state.events.search = el.value;
+    clearTimeout(window._eventSearchTimer);
+    window._eventSearchTimer = setTimeout(loadEvents, 400);
+  }
 });
 
 document.addEventListener('submit', (e) => {
@@ -167,6 +219,7 @@ document.addEventListener('submit', (e) => {
   else if (a === 'submit-register') handleRegisterSubmit(form);
   else if (a === 'submit-business-post') handleBusinessPostSubmit(form);
   else if (a === 'submit-edit-profile') handleEditProfileSubmit(form);
+  else if (a === 'submit-create-event') handleCreateEventSubmit(form);
   else if (a === 'submit-social-comment') {
     const id = form.dataset.id, feed = form.dataset.feed;
     const input = form.querySelector(`[data-comment-input="${id}"]`);
@@ -184,7 +237,7 @@ document.addEventListener('submit', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    document.getElementById('lightbox')?.classList.remove('is-open');
+    if (state.lightbox) { closeLightbox(); return; }
     document.getElementById('detail-modal')?.classList.remove('is-open');
     document.body.style.overflow = '';
     if (state.overlay) closeOverlay();
@@ -195,8 +248,7 @@ async function bootstrap() {
   renderApp();
   await loadMetaFromApi();
   renderApp();
-  loadCollections();
-  if (isLoggedIn()) { loadWallet(); loadNotifications(); loadStoriesFeed(); }
+  if (isLoggedIn()) { loadNotifications(); loadStoriesFeed(); }
 
   const verifyToken = getUrlParam('verify');
   const resetToken = getUrlParam('reset');
@@ -205,7 +257,7 @@ async function bootstrap() {
     clearUrlParams();
     try {
       await apiPost('/api/auth/verify-email', { token: verifyToken });
-      showToast('E-mail ověřen! Můžeš se přihlásit.');
+      showToast('E-mail ověřen!');
       state.authView = 'login';
     } catch (err) { showToast(err.message); }
   } else if (resetToken) {
