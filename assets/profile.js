@@ -39,10 +39,6 @@ function renderProfileOverlay() {
   return renderBusinessProfile(data, id, kind);
 }
 
-// ============================================================
-// USER PROFIL
-// ============================================================
-
 function renderUserProfile(data, id) {
   const p = data.profile;
   const isOwn = isLoggedIn() && state.user.id === id;
@@ -85,6 +81,7 @@ function renderUserProfile(data, id) {
             <button class="profile-action-btn" data-action="open-settings">${icon('settings', { size: 15 })} Nastavení</button>
           ` : (isLoggedIn() ? `
             <button class="profile-action-btn" data-action="dm-user" data-id="${id}">${icon('chat', { size: 15 })} Napsat</button>
+            <button class="profile-action-btn" data-action="report-user" data-id="${id}" style="color:#B3273C">${icon('flag', { size: 15 })} Nahlásit</button>
             <button class="profile-action-btn" data-action="block-user" data-id="${id}" style="color:#B3273C">${icon('ban', { size: 15 })} Blokovat</button>
           ` : '')}
         </div>
@@ -96,10 +93,6 @@ function renderUserProfile(data, id) {
         </div>` : ''}
     </div>`;
 }
-
-// ============================================================
-// BUSINESS PROFIL (s tabmi ako Facebook)
-// ============================================================
 
 function renderBusinessProfile(data, id, kind) {
   const b = data.profile;
@@ -205,10 +198,6 @@ async function switchBizProfileTab(tab) {
     renderApp();
   }
 }
-
-// ============================================================
-// EDIT PROFILE FORM
-// ============================================================
 
 function renderEditProfileForm() {
   const kind = state.overlay.editKind;
@@ -331,10 +320,7 @@ async function uploadProfileImage(targetType, targetId, field) {
   input.click();
 }
 
-// ============================================================
-// NASTAVENÍ
-// ============================================================
-
+// ---- SETTINGS ----
 async function loadSettings() {
   if (!isLoggedIn()) return;
   try { const res = await apiGet('/api/profile/me/settings'); state._settings = res.settings; if (state.overlay?.type === 'settings') renderApp(); } catch {}
@@ -384,10 +370,7 @@ async function toggleSetting(key, value) {
   catch (err) { showToast(err.message); }
 }
 
-// ============================================================
-// SECURITY (2FA)
-// ============================================================
-
+// ---- SECURITY (2FA) ----
 function renderSecurityOverlay() {
   if (!state._totpSetup) state._totpSetup = { stage: 'idle' };
   const has2fa = state.user?.totp_enabled;
@@ -459,10 +442,6 @@ async function submitDisable2FA(form) {
   } catch (err) { showToast(err.message); }
 }
 
-// ============================================================
-// LOGIN LOGS
-// ============================================================
-
 async function loadLoginLogs() {
   try { const d = await apiGet('/api/auth/me/login-logs'); state._loginLogs = d.logs || []; }
   catch { state._loginLogs = []; }
@@ -489,10 +468,7 @@ function renderLoginLogsOverlay() {
     </div>`;
 }
 
-// ============================================================
-// FOLLOWERS / FOLLOWING / BLOCKS
-// ============================================================
-
+// ---- FOLLOWERS / FOLLOWING / BLOCKS ----
 async function loadFollowers(kind, id) {
   try { const data = await apiGet(`/api/profile/${kind}/${id}/followers`); state._followers = data.users || []; }
   catch { state._followers = []; }
@@ -582,10 +558,7 @@ async function blockUser(id) {
   catch (err) { showToast(err.message); }
 }
 
-// ============================================================
-// NOTIFIKACE
-// ============================================================
-
+// ---- NOTIFICATIONS ----
 async function loadNotifications() {
   if (!isLoggedIn()) return;
   try {
@@ -623,10 +596,7 @@ async function markAllNotificationsRead() {
   loadNotifications();
 }
 
-// ============================================================
-// GLOBÁLNÍ VYHLEDÁVÁNÍ
-// ============================================================
-
+// ---- SEARCH ----
 let _searchTimer = null;
 
 function renderSearchOverlay() {
@@ -666,10 +636,7 @@ function onGlobalSearchInput(value) {
   }, 350);
 }
 
-// ============================================================
-// GDPR
-// ============================================================
-
+// ---- GDPR ----
 async function exportMyData() {
   try {
     const data = await apiGet('/api/profile/me/export');
@@ -699,10 +666,7 @@ async function promptDeleteAccount() {
   renderApp();
 }
 
-// ============================================================
-// HELPERS
-// ============================================================
-
+// ---- HELPERS ----
 function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
