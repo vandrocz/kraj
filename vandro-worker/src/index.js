@@ -14,6 +14,10 @@ import { seoRoutes } from './routes/seo.js';
 import { geoRoutes } from './routes/geo.js';
 import { mentionsRoutes } from './routes/mentions.js';
 import { eventsApiRoutes } from './routes/events.js';
+import { checkinsRoutes } from './routes/checkins.js';
+import { reviewsRoutes } from './routes/reviews.js';
+import { wishlistRoutes } from './routes/wishlist.js';
+import { nearbyRoutes } from './routes/nearby.js';
 import { runDailyDistribution, ensureActiveProjectRotation, cleanupOrphanedR2 } from './cron.js';
 import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUISINE_TYPES } from './regions.js';
 
@@ -45,17 +49,15 @@ async function requireAuth(c, next) {
 app.get('/', (c) => c.json({ ok: true, service: 'naskraj-api' }));
 app.get('/api/meta/regions', (c) => c.json({ regions: REGIONS }));
 app.get('/api/meta/types', (c) => c.json({
-  organization: ORGANIZATION_TYPES,
-  accommodation: ACCOMMODATION_TYPES,
-  restaurant: RESTAURANT_TYPES,
-  cuisine: CUISINE_TYPES,
+  organization: ORGANIZATION_TYPES, accommodation: ACCOMMODATION_TYPES,
+  restaurant: RESTAURANT_TYPES, cuisine: CUISINE_TYPES,
 }));
 
 app.route('/api/seo', seoRoutes);
 app.route('/api/auth', authRoutes);
 app.route('/api/auth', authGoogleRoutes);
 
-// ---- Wallet (zostáva v API, len skryté v UI) ----
+// Wallet
 app.get('/api/user/wallet', requireAuth, async (c) => {
   const user = c.get('user');
   const row = await c.env.DB.prepare('SELECT credit_balance, status FROM users WHERE id = ?').bind(user.sub).first();
@@ -78,7 +80,7 @@ app.post('/api/user/wallet/topup', requireAuth, async (c) => {
   return c.json({ credit_balance: row.credit_balance });
 });
 
-// ---- Feed ----
+// Feed
 app.use('/api/feed/collections/:id/like', requireAuth);
 app.use('/api/feed/:id/comment', requireAuth);
 app.use('/api/feed/:id/report', requireAuth);
@@ -90,25 +92,49 @@ app.use('/api/feed/post/:id', requireAuth);
 app.use('/api/feed/comment/:id', requireAuth);
 app.route('/api/feed', feedRoutes);
 
-// ---- Posts ----
+// Posts
 app.use('/api/posts', requireAuth);
 app.route('/api/posts', postsRoutes);
 
-// ---- Events (GET verejné, ostatné chránené) ----
+// Events
 app.use('/api/events', async (c, next) => {
   if (c.req.method === 'GET') return next();
   return requireAuth(c, next);
 });
 app.route('/api/events', eventsApiRoutes);
 
-// ---- Geo ----
+// Geo
 app.post('/api/geo/save', requireAuth);
 app.route('/api/geo', geoRoutes);
 
-// ---- Mentions ----
+// Mentions
 app.route('/api/mentions', mentionsRoutes);
 
-// ---- Profile ----
+// Checkins
+app.use('/api/checkins/me/*', requireAuth);
+app.use('/api/checkins', async (c, next) => {
+  if (c.req.method === 'GET') return next();
+  return requireAuth(c, next);
+});
+app.route('/api/checkins', checkinsRoutes);
+
+// Reviews
+app.use('/api/reviews/me/*', requireAuth);
+app.use('/api/reviews', async (c, next) => {
+  if (c.req.method === 'GET') return next();
+  return requireAuth(c, next);
+});
+app.route('/api/reviews', reviewsRoutes);
+
+// Wishlist
+app.use('/api/wishlist/*', requireAuth);
+app.use('/api/wishlist', requireAuth);
+app.route('/api/wishlist', wishlistRoutes);
+
+// Nearby (verejné)
+app.route('/api/nearby', nearbyRoutes);
+
+// Profile
 app.use('/api/profile/me/*', requireAuth);
 app.use('/api/profile/me', requireAuth);
 app.use('/api/profile/follow', requireAuth);
@@ -118,24 +144,24 @@ app.use('/api/profile/report/*', requireAuth);
 app.use('/api/profile/search', requireAuth);
 app.route('/api/profile', profileRoutes);
 
-// ---- Messages ----
+// Messages
 app.use('/api/messages/*', requireAuth);
 app.use('/api/messages', requireAuth);
 app.route('/api/messages', messagesRoutes);
 
-// ---- Groups ----
+// Groups
 app.use('/api/groups/my', requireAuth);
 app.use('/api/groups/discover', requireAuth);
 app.use('/api/groups', requireAuth);
 app.route('/api/groups', groupsRoutes);
 
-// ---- Stories ----
+// Stories
 app.use('/api/stories/feed', requireAuth);
 app.use('/api/stories/upload', requireAuth);
 app.use('/api/stories', requireAuth);
 app.route('/api/stories', storiesRoutes);
 
-// ---- Admin: cron endpoints ----
+// Admin cron
 app.post('/api/admin/run-distribution-now', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
