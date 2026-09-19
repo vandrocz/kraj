@@ -1,5 +1,5 @@
 // ============================================================
-// SEKCE 5: MŮJ ÚČET (s Google Sign-In)
+// SEKCE 5: MŮJ ÚČET
 // ============================================================
 
 const accountFormState = {
@@ -18,7 +18,6 @@ function renderAccountPage() {
         ${renderHeader('Můj účet')}
         ${renderAuthCard()}
       </div>`;
-    // Inicializuj Google button až po vložení do DOM
     setTimeout(() => {
       const el = document.getElementById('google-signin-container');
       if (el && el.children.length === 0) {
@@ -52,7 +51,7 @@ function renderVerifyBanner() {
       <div class="verify-banner-icon">${icon('mail', { size: 22 })}</div>
       <div class="verify-banner-body">
         <p class="verify-banner-title">Ověř svůj e-mail</p>
-        <p class="verify-banner-text">Poslali jsme odkaz na <strong>${escapeHtml(state.user.email)}</strong>. Bez ověření nemůžeš přidávat příspěvky. <span style="color:var(--c-primary-dark);font-weight:700">Poslat znovu →</span></p>
+        <p class="verify-banner-text">Poslali jsme odkaz na <strong>${escapeHtml(state.user.email)}</strong>. <span style="color:var(--c-primary-dark);font-weight:700">Poslat znovu →</span></p>
       </div>
     </div>`;
 }
@@ -174,7 +173,6 @@ async function handleLoginSubmit(form) {
   const btn = form.querySelector('button[type="submit"]');
   const orig = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Přihlašuji…'; }
-
   try {
     const recaptcha_token = await getRecaptchaToken('login');
     const data = await apiPost('/api/auth/login', {
@@ -203,11 +201,9 @@ function finishLogin(data) {
   state.token = data.token;
   state.user = data.user;
   state.businesses = data.businesses || [];
-  state.wallet = null;
   state._twofaStage = null;
   state._twofaToken = null;
   showToast(`Vítej zpět, ${data.user.display_name}!`);
-  loadWallet();
   loadNotifications();
 }
 
@@ -216,7 +212,6 @@ async function handleRegisterSubmit(form) {
   const body = Object.fromEntries(fd.entries());
   const btn = form.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = 'Vytvářím účet…'; }
-
   try {
     body.recaptcha_token = await getRecaptchaToken('register');
     await apiPost('/api/auth/register', body);
@@ -238,12 +233,11 @@ function handleLogout() {
   state.token = null;
   state.user = null;
   state.businesses = [];
-  state.wallet = null;
   state.adminPending = null;
   state.adminReports = null;
   state.overlay = null;
   state.unreadNotifications = 0;
-  stopThreadPolling();
+  if (typeof stopThreadPolling === 'function') stopThreadPolling();
   showToast('Byl jsi odhlášen.');
   renderApp();
 }
@@ -272,11 +266,9 @@ function renderRoleSpecificContent() {
   return '';
 }
 
-async function loadWallet() {
-  try { state.wallet = await apiGet('/api/user/wallet'); }
-  catch (err) { console.error('Wallet:', err.message); }
-  finally { if (state.tab === 'account') renderApp(); }
-}
+// ============================================================
+// ROLA: USER — bez peňaženky, namiesto nej "O mně" + aktivita
+// ============================================================
 
 function renderUserAboutSection() {
   const u = state.user;
@@ -284,7 +276,9 @@ function renderUserAboutSection() {
     <div class="profile-section">
       <h3 class="profile-section-title">O mně</h3>
       <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:16px;">
-        ${u.bio ? `<p style="font-size:14px;line-height:1.6">${escapeHtml(u.bio)}</p>` : '<p style="color:var(--c-text-muted);font-size:13.5px">Zatím žádné bio. Klikni na „Upravit profil".</p>'}
+        ${u.bio
+          ? `<p style="font-size:14px;line-height:1.6">${escapeHtml(u.bio)}</p>`
+          : '<p style="color:var(--c-text-muted);font-size:13.5px">Zatím žádné bio. Klikni na „Upravit profil".</p>'}
         <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px 16px;font-size:12.5px;color:var(--c-text-muted)">
           ${u.location ? `<span>${icon('location', { size: 14 })} ${escapeHtml(u.location)}</span>` : ''}
           ${u.website ? `<a href="${escapeAttr(u.website)}" target="_blank" rel="noopener" style="color:var(--c-primary-dark)">${icon('globe', { size: 14 })} ${escapeHtml(u.website)}</a>` : ''}
@@ -294,6 +288,7 @@ function renderUserAboutSection() {
         </div>
       </div>
     </div>
+
     <div class="profile-section">
       <h3 class="profile-section-title">Moje aktivita</h3>
       <div class="stat-cards">
@@ -309,14 +304,9 @@ function renderUserAboutSection() {
     </div>`;
 }
 
-async function handleTopup(amount) {
-  try {
-    const data = await apiPost('/api/user/wallet/topup', { amount });
-    if (state.wallet) state.wallet.credit_balance = data.credit_balance;
-    showToast(`Kredit dobit o ${amount} Kč.`);
-    renderApp();
-  } catch (err) { showToast(err.message); }
-}
+// ============================================================
+// ROLA: BUSINESS (organizace / hotelier)
+// ============================================================
 
 function renderBusinessDashboard() {
   const businesses = state.businesses || [];
@@ -331,8 +321,10 @@ function renderBusinessDashboard() {
       <div class="business-picker">
         ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${b.is_verified ? '✓' : ''}</button>`).join('')}
       </div>
-      <div style="padding:0 16px 10px">
+      <div style="padding:0 16px 10px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="profile-action-btn" data-action="open-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('user', { size: 15 })} Zobrazit profil</button>
+        <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">${icon('chart', { size: 15 })} Statistiky</button>
+        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Přidat akci</button>
       </div>
       ${!selected.is_verified ? '<p class="form-hint" style="padding:0 16px 10px">Profil nemá odznak Ověřeno.</p>' : ''}
     </div>
@@ -366,10 +358,19 @@ async function onFilesSelected(inputEl) {
   const label = document.getElementById('file-drop-label');
   const drop = inputEl.closest('.file-drop');
   const grid = document.getElementById('file-preview-grid');
+  if (!label || !drop || !grid) return;
   drop.classList.add('has-file');
   label.textContent = `Zpracovávám ${files.length}…`;
   const compressed = [];
-  for (const f of files) compressed.push(await compressImage(f, { maxDim: 1600, quality: 0.82 }));
+  for (const f of files) {
+    try {
+      const c = await compressImage(f, { maxDim: 1600, quality: 0.82 });
+      compressed.push(c);
+    } catch (err) {
+      console.error('Kompresia zlyhala:', err);
+      compressed.push(f);
+    }
+  }
   accountFormState.postFiles = compressed;
   label.textContent = `✓ Připraveno ${compressed.length}`;
   grid.innerHTML = compressed.map((f) => {
@@ -430,6 +431,58 @@ async function handleBusinessPostSubmit(form) {
     if (btn) { btn.disabled = false; btn.textContent = 'Zveřejnit'; }
   }
 }
+
+// ============================================================
+// STATISTIKY
+// ============================================================
+
+async function openProfileStats(kind, id) {
+  state.overlayStack.push(state.overlay);
+  state.overlay = { type: 'profile-stats', kind, id };
+  state._profileStats = null;
+  renderApp();
+  try {
+    const data = await apiGet(`/api/profile/${kind}/${id}/stats`);
+    state._profileStats = data;
+    renderApp();
+  } catch (err) {
+    showToast(err.message);
+    closeOverlay();
+  }
+}
+
+function renderProfileStatsOverlay() {
+  const s = state._profileStats;
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader('Statistiky')}
+      ${s === null ? '<p class="empty-state">Načítám…</p>' : `
+        <div class="profile-section">
+          <div class="stat-cards">
+            <div class="stat-card"><div class="stat-card-value">${fmt(s.posts)}</div><div class="stat-card-label">Příspěvků</div></div>
+            <div class="stat-card"><div class="stat-card-value">${fmt(s.events)}</div><div class="stat-card-label">Akce</div></div>
+            <div class="stat-card"><div class="stat-card-value">${fmt(s.followers)}</div><div class="stat-card-label">Sledujících</div></div>
+            <div class="stat-card"><div class="stat-card-value">${fmt(s.likes)}</div><div class="stat-card-label">Lajků</div></div>
+            <div class="stat-card"><div class="stat-card-value">${fmt(s.comments)}</div><div class="stat-card-label">Komentářů</div></div>
+          </div>
+        </div>
+        ${s.last_30_days?.length ? `
+          <div class="profile-section">
+            <h3 class="profile-section-title">Posledních 30 dní (příspěvky/den)</h3>
+            <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:16px">
+              <div class="stats-bars">
+                ${s.last_30_days.map((d) => `<div class="stats-bar" style="height:${Math.max(4, (d.n || 1) * 8)}px" title="${d.day}: ${d.n}"></div>`).join('')}
+              </div>
+            </div>
+          </div>
+        ` : ''}
+      `}
+    </div>`;
+}
+
+// ============================================================
+// FORGOT / RESET / 2FA (bez zmien)
+// ============================================================
 
 function renderForgotPasswordOverlay() {
   return `
@@ -511,6 +564,10 @@ async function handleTwoFALogin(form) {
     finishLogin(data);
   } catch (err) { showToast(err.message); }
 }
+
+// ============================================================
+// ADMIN
+// ============================================================
 
 async function loadAdminPending() {
   try { state.adminPending = await apiGet('/api/admin/pending'); }
