@@ -1,3 +1,7 @@
+// ============================================================
+// SOCIÁLNY FEED — s pagination, reply, view count
+// ============================================================
+
 function buildFeedQuery(feedKey) {
   const f = state.socialFeeds[feedKey];
   const params = new URLSearchParams();
@@ -10,17 +14,29 @@ function buildFeedQuery(feedKey) {
   return params.toString();
 }
 
-async function loadSocialFeed(feedKey) {
-  state.loading[feedKey] = true;
+async function loadSocialFeed(feedKey, loadMore = false) {
+  const f = state.socialFeeds[feedKey];
+  if (loadMore && !f.next_cursor) return;
+  if (loadMore && f.loading_more) return;
+  if (loadMore) f.loading_more = true;
+  else state.loading[feedKey] = true;
+
   try {
     const q = buildFeedQuery(feedKey);
-    const data = await apiGet(`/api/feed/${feedKey}${q ? `?${q}` : ''}`);
-    state.socialFeeds[feedKey].items = data.feed || [];
+    const url = `/api/feed/${feedKey}${q ? `?${q}` : ''}${loadMore && f.next_cursor ? `${q ? '&' : '?'}cursor=${encodeURIComponent(f.next_cursor)}` : ''}`;
+    const data = await apiGet(url);
+    if (loadMore) {
+      f.items = [...f.items, ...(data.feed || [])];
+    } else {
+      f.items = data.feed || [];
+    }
+    f.next_cursor = data.next_cursor || null;
   } catch (err) {
     console.error(`Feed ${feedKey}:`, err.message);
     showToast('Příspěvky se nepodařilo načíst.');
   } finally {
     state.loading[feedKey] = false;
+    f.loading_more = false;
     renderApp();
   }
 }
@@ -29,12 +45,15 @@ let filterDebounceTimer = null;
 function onFilterChange(feedKey, field, value) {
   state.socialFeeds[feedKey][field] = value;
   if (field === 'region') state.socialFeeds[feedKey].district = '';
+  state.socialFeeds[feedKey].next_cursor = null;
   renderApp();
   clearTimeout(filterDebounceTimer);
   filterDebounceTimer = setTimeout(() => loadSocialFeed(feedKey), 250);
 }
+
 function onSearchChange(feedKey, value) {
   state.socialFeeds[feedKey].search = value;
+  state.socialFeeds[feedKey].next_cursor = null;
   clearTimeout(filterDebounceTimer);
   filterDebounceTimer = setTimeout(() => loadSocialFeed(feedKey), 400);
 }
@@ -44,6 +63,7 @@ function renderMediaCarousel(post) {
   if (media.length === 0) return '';
   const caption = escapeAttr(post.text || '');
 
+  // View count (post view) sa zapíše raz pri kliku na fotku
   if (media.length === 1) {
     return `
       <button class="post-image-wrap" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${caption}">
@@ -63,13 +83,29 @@ function renderMediaCarousel(post) {
     </div>`;
 }
 
-function renderCommentRow(c, feedKey, postId) {
+function renderCommentRow(c, feedKey, postId, isReply = false) {
   const isMine = isLoggedIn() && state.user.id === c.user_id;
-  return `<p class="post-comment-row">
-    <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}" style="cursor:pointer">${escapeHtml(c.user_name || 'Uživatel')}</strong>
-    ${escapeHtml(c.comment_text)}
-    ${isMine ? `<button class="comment-del" data-action="delete-comment" data-id="${c.id}" data-feed="${feedKey}" data-post-id="${postId}">${icon('close', { size: 12 })}</button>` : ''}
-  </p>`;
+  const repliesHtml = (c.replies || []).map((r) => renderCommentRow(r, feedKey, postId, true)).join('');
+  return `
+    <div class="post-comment-block ${isReply ? 'is-reply' : ''}" data-comment-id="${c.id}">
+      <p class="post-comment-row">
+        <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}" style="cursor:pointer">${escapeHtml(c.user_name || 'Uživatel')}</strong>
+        ${escapeHtml(c.comment_text)}
+        ${isMine ? `<button class="comment-del" data-action="delete-comment" data-id="${c.id}" data-feed="${feedKey}" data-post-id="${postId}">${icon('close', { size: 12 })}</button>` : ''}
+      </p>
+      ${isLoggedIn() ? `
+        <button class="comment-reply-btn" data-action="reply-comment" data-id="${c.id}" data-post-id="${postId}" data-feed="${feedKey}" data-name="${escapeAttr(c.user_name || '')}">
+          Odpovědět
+        </button>
+      ` : ''}
+      <div class="comment-reply-form" data-reply-form="${c.id}" style="display:none">
+        <form data-action="submit-reply" data-id="${c.id}" data-post-id="${postId}" data-feed="${feedKey}">
+          <input class="post-comment-input" placeholder="Odpovědět ${escapeAttr(c.user_name || '')}…" data-reply-input="${c.id}" />
+          <button type="submit" class="post-comment-send">Odeslat</button>
+        </form>
+      </div>
+      ${repliesHtml ? `<div class="comment-replies">${repliesHtml}</div>` : ''}
+    </div>`;
 }
 
 function renderSocialPostCard(post, feedKey) {
@@ -104,7 +140,7 @@ function renderSocialPostCard(post, feedKey) {
         ${isMinePost ? `<button class="post-action" data-action="delete-post" data-id="${post.id}" data-feed="${feedKey}" style="color:#B3273C">${icon('trash', { size: 18 })}</button>` : ''}
       </div>
       <div class="post-body">
-        <p class="post-likes" data-like-count="${post.id}">${fmt(post.likes || 0)} páči sa mi</p>
+        <p class="post-likes" data-like-count="${post.id}">${fmt(post.likes || 0)} páči sa mi${post.views ? ` · ${fmt(post.views)} zobrazení` : ''}</p>
         <p class="post-caption"><strong>${escapeHtml(post.business.name)}</strong> <span class="rich-text">${post.html || escapeHtml(post.text || '')}</span></p>
         ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
         ${post.comment_count > 0 ? `<button class="post-comments-link" data-action="toggle-comments" data-id="${post.id}" data-feed="${feedKey}">Zobrazit všech ${post.comment_count} komentářů</button>` : ''}
@@ -171,10 +207,15 @@ function renderFeedPage(feedKey, typeOptions, showCuisine) {
 }
 
 function renderSocialFeedBody(feedKey) {
-  const items = state.socialFeeds[feedKey].items;
+  const f = state.socialFeeds[feedKey];
+  const items = f.items;
   if (state.loading[feedKey] && items.length === 0) return '<p class="empty-state">Načítám příspěvky…</p>';
   if (items.length === 0) return '<p class="empty-state">Žádné příspěvky neodpovídají zvoleným filtrům.</p>';
-  return `<div class="post-feed-grid">${items.map((p) => renderSocialPostCard(p, feedKey)).join('')}</div>`;
+  return `
+    <div class="post-feed-grid">${items.map((p) => renderSocialPostCard(p, feedKey)).join('')}</div>
+    ${f.loading_more ? '<p class="empty-state">Načítám další…</p>' : ''}
+    ${f.next_cursor ? `<div data-load-more style="height:1px"></div>` : ''}
+  `;
 }
 
 async function toggleSocialComments(postId, feedKey) {
@@ -205,6 +246,26 @@ async function submitSocialComment(postId, feedKey, text, inputEl) {
     const list = document.querySelector(`[data-comments-list="${postId}"]`);
     if (list) { list.dataset.loaded = 'false'; list.style.display = 'none'; await toggleSocialComments(postId, feedKey); }
     showToast('Komentář přidán.');
+  } catch (err) { showToast(err.message); }
+}
+
+function toggleReplyForm(commentId) {
+  const form = document.querySelector(`[data-reply-form="${commentId}"]`);
+  if (!form) return;
+  form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+  if (form.style.display === 'flex') {
+    form.querySelector('input')?.focus();
+  }
+}
+
+async function submitReply(parentId, postId, feedKey, text, inputEl) {
+  if (!text.trim()) return;
+  try {
+    await apiPost(`/api/feed/${postId}/comment`, { text: text.trim(), parent_id: parentId });
+    inputEl.value = '';
+    const list = document.querySelector(`[data-comments-list="${postId}"]`);
+    if (list) { list.dataset.loaded = 'false'; list.style.display = 'none'; await toggleSocialComments(postId, feedKey); }
+    showToast('Odpověď přidána.');
   } catch (err) { showToast(err.message); }
 }
 
@@ -252,7 +313,6 @@ async function openPostFromProfile(postId, kind, businessId) {
   openLightbox(media, 0, post.text_content || '');
 }
 
-// ---- Bookmarks ----
 async function loadBookmarks() {
   try {
     const data = await apiGet('/api/feed/bookmarks');
