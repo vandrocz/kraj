@@ -13,6 +13,7 @@ import { storiesRoutes } from './routes/stories.js';
 import { seoRoutes } from './routes/seo.js';
 import { geoRoutes } from './routes/geo.js';
 import { mentionsRoutes } from './routes/mentions.js';
+import { eventsApiRoutes } from './routes/events.js';
 import { runDailyDistribution, ensureActiveProjectRotation } from './cron.js';
 import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUISINE_TYPES } from './regions.js';
 
@@ -32,21 +33,29 @@ async function requireAuth(c, next) {
   const h = c.req.header('Authorization') || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return c.json({ error: 'Chýba prihlásenie.' }, 401);
-  try { const payload = await verify(token, c.env.JWT_SECRET, 'HS256'); c.set('user', payload); await next(); }
-  catch { return c.json({ error: 'Neplatný token.' }, 401); }
+  try {
+    const payload = await verify(token, c.env.JWT_SECRET, 'HS256');
+    c.set('user', payload);
+    await next();
+  } catch {
+    return c.json({ error: 'Neplatný token.' }, 401);
+  }
 }
 
 app.get('/', (c) => c.json({ ok: true, service: 'naskraj-api' }));
 app.get('/api/meta/regions', (c) => c.json({ regions: REGIONS }));
-app.get('/api/meta/types', (c) => c.json({ organization: ORGANIZATION_TYPES, accommodation: ACCOMMODATION_TYPES, restaurant: RESTAURANT_TYPES, cuisine: CUISINE_TYPES }));
+app.get('/api/meta/types', (c) => c.json({
+  organization: ORGANIZATION_TYPES,
+  accommodation: ACCOMMODATION_TYPES,
+  restaurant: RESTAURANT_TYPES,
+  cuisine: CUISINE_TYPES,
+}));
 
 app.route('/api/seo', seoRoutes);
-
-// ---- AUTH ----
 app.route('/api/auth', authRoutes);
-app.route('/api/auth', authGoogleRoutes);   // <-- Google endpoint
+app.route('/api/auth', authGoogleRoutes);
 
-// ---- WALLET ----
+// ---- Wallet (zostáva v API, len sa nezobrazuje v UI) ----
 app.get('/api/user/wallet', requireAuth, async (c) => {
   const user = c.get('user');
   const row = await c.env.DB.prepare('SELECT credit_balance, status FROM users WHERE id = ?').bind(user.sub).first();
@@ -69,27 +78,37 @@ app.post('/api/user/wallet/topup', requireAuth, async (c) => {
   return c.json({ credit_balance: row.credit_balance });
 });
 
-// ---- FEED ----
+// ---- Feed ----
 app.use('/api/feed/collections/:id/like', requireAuth);
 app.use('/api/feed/:id/comment', requireAuth);
 app.use('/api/feed/:id/report', requireAuth);
 app.use('/api/feed/:id/like', requireAuth);
+app.use('/api/feed/:id/bookmark', requireAuth);
+app.use('/api/feed/:id/bookmarked', requireAuth);
+app.use('/api/feed/bookmarks', requireAuth);
 app.use('/api/feed/post/:id', requireAuth);
 app.use('/api/feed/comment/:id', requireAuth);
 app.route('/api/feed', feedRoutes);
 
-// ---- POSTS ----
+// ---- Posts ----
 app.use('/api/posts', requireAuth);
 app.route('/api/posts', postsRoutes);
 
-// ---- GEO ----
+// ---- Events ----
+app.use('/api/events', async (c, next) => {
+  if (c.req.method === 'GET') return next();
+  return requireAuth(c, next);
+});
+app.route('/api/events', eventsApiRoutes);
+
+// ---- Geo ----
 app.post('/api/geo/save', requireAuth);
 app.route('/api/geo', geoRoutes);
 
-// ---- MENTIONS ----
+// ---- Mentions ----
 app.route('/api/mentions', mentionsRoutes);
 
-// ---- PROFILE ----
+// ---- Profile ----
 app.use('/api/profile/me/*', requireAuth);
 app.use('/api/profile/me', requireAuth);
 app.use('/api/profile/follow', requireAuth);
@@ -98,24 +117,24 @@ app.use('/api/profile/block/*', requireAuth);
 app.use('/api/profile/search', requireAuth);
 app.route('/api/profile', profileRoutes);
 
-// ---- MESSAGES ----
+// ---- Messages ----
 app.use('/api/messages/*', requireAuth);
 app.use('/api/messages', requireAuth);
 app.route('/api/messages', messagesRoutes);
 
-// ---- GROUPS ----
+// ---- Groups ----
 app.use('/api/groups/my', requireAuth);
 app.use('/api/groups/discover', requireAuth);
 app.use('/api/groups', requireAuth);
 app.route('/api/groups', groupsRoutes);
 
-// ---- STORIES ----
+// ---- Stories ----
 app.use('/api/stories/feed', requireAuth);
 app.use('/api/stories/upload', requireAuth);
 app.use('/api/stories', requireAuth);
 app.route('/api/stories', storiesRoutes);
 
-// ---- ADMIN ----
+// ---- Admin ----
 app.post('/api/admin/run-distribution-now', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
