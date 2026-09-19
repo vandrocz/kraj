@@ -1,3 +1,7 @@
+// ============================================================
+// GLOBÁLNE EVENT DELEGOVANIE
+// ============================================================
+
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
@@ -13,15 +17,13 @@ document.addEventListener('click', (e) => {
       const caption = el.dataset.caption || '';
       const img = el.dataset.img;
 
-      let images = [img];
+      let images = [img].filter(Boolean);
       if (postId) {
-        // Nájdi post v ktoromkoľvek feede
         for (const key of Object.keys(state.socialFeeds)) {
           const p = state.socialFeeds[key].items.find((x) => x.id === postId);
           if (p && p.media?.length) { images = p.media; break; }
         }
-        // Skús aj business profile
-        if (images.length === 1) {
+        if (images.length <= 1) {
           for (const k of Object.keys(state.profiles)) {
             const d = state.profiles[k];
             if (d?.posts) {
@@ -30,7 +32,10 @@ document.addEventListener('click', (e) => {
             }
           }
         }
+        if (images.length === 0) return;
+        apiPost(`/api/feed/${postId}/view`, {}).catch(() => {});
       }
+      if (images.length === 0) return;
       openLightbox(images, index, caption);
       break;
     }
@@ -42,8 +47,9 @@ document.addEventListener('click', (e) => {
       const id = el.dataset.id, source = el.dataset.source;
       const project = source === 'active' ? state.collections?.active : state.collections?.waiting?.find((p) => p.id === id);
       if (!project) break;
-      document.getElementById('detail-sheet').innerHTML = buildDetailSheetHtml ? buildDetailSheetHtml(project) : '';
-      document.getElementById('detail-modal').classList.add('is-open');
+      const sheet = document.getElementById('detail-sheet');
+      if (sheet && typeof buildDetailSheetHtml === 'function') sheet.innerHTML = buildDetailSheetHtml(project);
+      document.getElementById('detail-modal')?.classList.add('is-open');
       document.body.style.overflow = 'hidden';
       break;
     }
@@ -57,6 +63,7 @@ document.addEventListener('click', (e) => {
     case 'toggle-bookmark': toggleBookmark(el.dataset.id, el); break;
     case 'share-post': sharePost(el.dataset.id, el.dataset.text); break;
     case 'report-post': reportPost(el.dataset.id); break;
+    case 'reply-comment': toggleReplyForm(el.dataset.id); break;
 
     case 'open-profile': if (el.dataset.id) openProfile(el.dataset.kind, el.dataset.id); break;
     case 'close-overlay': closeOverlay(); break;
@@ -79,7 +86,6 @@ document.addEventListener('click', (e) => {
     case 'leave-group': leaveGroup(el.dataset.id); break;
     case 'open-post': openPostFromProfile(el.dataset.postId, el.dataset.kind, el.dataset.id); break;
     case 'open-post-bookmark': {
-      // nájdi uložený post a otvor lightbox
       const b = (state._bookmarks || []).find((x) => x.id === el.dataset.id);
       if (b?.image_url) openLightbox([b.image_url], 0, b.text_content || '');
       break;
@@ -94,6 +100,18 @@ document.addEventListener('click', (e) => {
     case 'delete-account': promptDeleteAccount(); break;
     case 'export-data': exportMyData(); break;
     case 'open-bookmarks': openBookmarks(); break;
+
+    case 'report-user': {
+      const reason = prompt('Proč tohoto uživatele nahlašuješ? (nepovinné)');
+      if (reason === null) break;
+      (async () => {
+        try {
+          await apiPost(`/api/profile/report/${el.dataset.id}`, { reason: reason || null });
+          showToast('Nahlášení odesláno.');
+        } catch (err) { showToast(err.message); }
+      })();
+      break;
+    }
 
     case 'edit-profile':
       state.overlay = { type: 'profile', kind: el.dataset.kind, id: el.dataset.id, edit: true, editKind: el.dataset.kind, editId: el.dataset.id };
@@ -147,17 +165,13 @@ document.addEventListener('click', (e) => {
       })();
       break;
 
-    // ---- Events ----
     case 'open-event': openEventDetail(el.dataset.id); break;
     case 'open-event-create': openCreateEvent(); break;
     case 'delete-event': deleteEvent(el.dataset.id); break;
     case 'trigger-event-file': document.getElementById('event-file-input')?.click(); break;
     case 'event-file-selected': onEventFileSelected(el); break;
 
-    // ---- Business profile tabs ----
     case 'biz-profile-tab': switchBizProfileTab(el.dataset.tab); break;
-
-    // ---- Stats ----
     case 'open-profile-stats': openProfileStats(el.dataset.kind, el.dataset.id); break;
   }
 });
@@ -205,8 +219,9 @@ document.addEventListener('input', (e) => {
   if (el.dataset.action === 'search-global') { onGlobalSearchInput(el.value); return; }
   if (el.dataset.action === 'event-search') {
     state.events.search = el.value;
+    state.events.next_cursor = null;
     clearTimeout(window._eventSearchTimer);
-    window._eventSearchTimer = setTimeout(loadEvents, 400);
+    window._eventSearchTimer = setTimeout(() => loadEvents(), 400);
   }
 });
 
@@ -224,6 +239,13 @@ document.addEventListener('submit', (e) => {
     const id = form.dataset.id, feed = form.dataset.feed;
     const input = form.querySelector(`[data-comment-input="${id}"]`);
     submitSocialComment(id, feed, input.value, input);
+  }
+  else if (a === 'submit-reply') {
+    const parentId = form.dataset.id;
+    const postId = form.dataset.postId;
+    const feed = form.dataset.feed;
+    const input = form.querySelector(`[data-reply-input="${parentId}"]`);
+    submitReply(parentId, postId, feed, input.value, input);
   }
   else if (a === 'submit-forgot') handleForgotSubmit(form);
   else if (a === 'submit-reset') handleResetSubmit(form);
