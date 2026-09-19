@@ -267,7 +267,7 @@ function renderRoleSpecificContent() {
 }
 
 // ============================================================
-// ROLA: USER — bez peňaženky, namiesto nej "O mně" + aktivita
+// ROLA: USER — O mně + aktivita
 // ============================================================
 
 function renderUserAboutSection() {
@@ -292,6 +292,18 @@ function renderUserAboutSection() {
     <div class="profile-section">
       <h3 class="profile-section-title">Moje aktivita</h3>
       <div class="stat-cards">
+        <button class="stat-card" data-action="open-badges" style="cursor:pointer;text-align:left">
+          <div class="stat-card-value">${icon('chart', { size: 20 })}</div>
+          <div class="stat-card-label">Moje odznaky</div>
+        </button>
+        <button class="stat-card" data-action="open-user-checkins" data-id="${u.id}" style="cursor:pointer;text-align:left">
+          <div class="stat-card-value">${icon('location', { size: 20 })}</div>
+          <div class="stat-card-label">Navštívená místa</div>
+        </button>
+        <button class="stat-card" data-action="open-wishlist" style="cursor:pointer;text-align:left">
+          <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
+          <div class="stat-card-label">Chci navštívit</div>
+        </button>
         <button class="stat-card" data-action="open-bookmarks" style="cursor:pointer;text-align:left">
           <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
           <div class="stat-card-label">Uložené příspěvky</div>
@@ -408,234 +420,4 @@ async function handleBusinessPostSubmit(form) {
 
   const html = getEditorHtml(form);
   fd.set('text_html', html);
-  fd.set('text', html.replace(/<[^>]*>/g, ' ').trim());
-
-  const geoLat = form.dataset.geoLat || '';
-  const geoLng = form.dataset.geoLng || '';
-  const geoPlace = form.dataset.geoPlace || '';
-  if (geoLat) fd.set('geo_lat', geoLat);
-  if (geoLng) fd.set('geo_lng', geoLng);
-  if (geoPlace) fd.set('geo_place', geoPlace);
-
-  const btn = form.querySelector('button[type="submit"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Nahrávám…'; }
-
-  try {
-    await apiPost('/api/posts', fd);
-    showToast('Příspěvek zveřejněn!');
-    if (state.socialFeeds[targetFeed]) state.socialFeeds[targetFeed].items = [];
-    accountFormState.postFiles = [];
-    renderApp();
-  } catch (err) {
-    showToast(err.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Zveřejnit'; }
-  }
-}
-
-// ============================================================
-// STATISTIKY
-// ============================================================
-
-async function openProfileStats(kind, id) {
-  state.overlayStack.push(state.overlay);
-  state.overlay = { type: 'profile-stats', kind, id };
-  state._profileStats = null;
-  renderApp();
-  try {
-    const data = await apiGet(`/api/profile/${kind}/${id}/stats`);
-    state._profileStats = data;
-    renderApp();
-  } catch (err) {
-    showToast(err.message);
-    closeOverlay();
-  }
-}
-
-function renderProfileStatsOverlay() {
-  const s = state._profileStats;
-  return `
-    <div class="page-scroll">
-      ${renderBackHeader('Statistiky')}
-      ${s === null ? '<p class="empty-state">Načítám…</p>' : `
-        <div class="profile-section">
-          <div class="stat-cards">
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.posts)}</div><div class="stat-card-label">Příspěvků</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.events)}</div><div class="stat-card-label">Akce</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.followers)}</div><div class="stat-card-label">Sledujících</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.likes)}</div><div class="stat-card-label">Lajků</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.comments)}</div><div class="stat-card-label">Komentářů</div></div>
-          </div>
-        </div>
-        ${s.last_30_days?.length ? `
-          <div class="profile-section">
-            <h3 class="profile-section-title">Posledních 30 dní (příspěvky/den)</h3>
-            <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:16px">
-              <div class="stats-bars">
-                ${s.last_30_days.map((d) => `<div class="stats-bar" style="height:${Math.max(4, (d.n || 1) * 8)}px" title="${d.day}: ${d.n}"></div>`).join('')}
-              </div>
-            </div>
-          </div>
-        ` : ''}
-      `}
-    </div>`;
-}
-
-// ============================================================
-// FORGOT / RESET / 2FA (bez zmien)
-// ============================================================
-
-function renderForgotPasswordOverlay() {
-  return `
-    <div class="page-scroll">
-      ${renderBackHeader('Zapomenuté heslo')}
-      <div class="auth-card">
-        <p style="font-size:13.5px;color:var(--c-text-muted);margin-bottom:16px;">Zadej e-mail, kterým ses registroval.</p>
-        <form data-action="submit-forgot">
-          <div class="form-field"><label class="form-label">E-mail</label><input class="form-input" type="email" name="email" required /></div>
-          <button class="form-submit-btn" type="submit">Poslat odkaz</button>
-        </form>
-      </div>
-    </div>`;
-}
-
-async function handleForgotSubmit(form) {
-  const fd = new FormData(form);
-  const btn = form.querySelector('button[type="submit"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Odesílám…'; }
-  try {
-    await apiPost('/api/auth/forgot-password', { email: fd.get('email') });
-    showToast('Pokud e-mail existuje, dorazí odkaz.');
-    closeOverlay();
-  } catch (err) {
-    showToast(err.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Poslat odkaz'; }
-  }
-}
-
-function renderResetPasswordOverlay(token) {
-  return `
-    <div class="page-scroll">
-      ${renderBackHeader('Nové heslo')}
-      <div class="auth-card">
-        <form data-action="submit-reset" data-token="${token}">
-          <div class="form-field"><label class="form-label">Nové heslo (min. 8 znaků)</label><input class="form-input" type="password" name="password" minlength="8" required /></div>
-          <button class="form-submit-btn" type="submit">Uložit heslo</button>
-        </form>
-      </div>
-    </div>`;
-}
-
-async function handleResetSubmit(form) {
-  const fd = new FormData(form);
-  try {
-    await apiPost('/api/auth/reset-password', { token: form.dataset.token, password: fd.get('password') });
-    showToast('Heslo změněno. Přihlas se.');
-    state.overlay = null;
-    state.authView = 'login';
-    renderApp();
-  } catch (err) { showToast(err.message); }
-}
-
-async function resendVerification() {
-  try {
-    await apiPost('/api/auth/resend-verification', {});
-    showToast('Poslali jsme nový odkaz.');
-  } catch (err) { showToast(err.message); }
-}
-
-function renderTwoFAOverlay() {
-  return `
-    <div class="page-scroll">
-      ${renderBackHeader('Dvoufázové ověření')}
-      <div class="auth-card">
-        <p style="font-size:13.5px;color:var(--c-text-muted);margin-bottom:16px;">Zadej 6místný kód z autentizační aplikace, nebo použij záložní kód.</p>
-        <form data-action="submit-2fa-login">
-          <div class="form-field"><label class="form-label">Kód</label><input class="form-input" name="code" required autofocus autocomplete="one-time-code" /></div>
-          <button class="form-submit-btn" type="submit">Ověřit a přihlásit</button>
-        </form>
-      </div>
-    </div>`;
-}
-
-async function handleTwoFALogin(form) {
-  const code = form.querySelector('input[name="code"]').value.trim();
-  try {
-    const data = await apiPost('/api/auth/verify-2fa', { twofa_token: state._twofaToken, code });
-    finishLogin(data);
-  } catch (err) { showToast(err.message); }
-}
-
-// ============================================================
-// ADMIN
-// ============================================================
-
-async function loadAdminPending() {
-  try { state.adminPending = await apiGet('/api/admin/pending'); }
-  catch { state.adminPending = { organizations: [], accommodation: [], restaurants: [] }; }
-  finally { state.adminPendingLoading = false; if (state.tab === 'account') renderApp(); }
-}
-
-async function loadAdminReports() {
-  try { const d = await apiGet('/api/admin/reports'); state.adminReports = d.reports; }
-  catch { state.adminReports = []; }
-  finally { state.adminReportsLoading = false; if (state.tab === 'account') renderApp(); }
-}
-
-function renderAdminPanel() {
-  if (state.adminPending === null && !state.adminPendingLoading) { state.adminPendingLoading = true; loadAdminPending(); }
-  if (state.adminReports === null && !state.adminReportsLoading) { state.adminReportsLoading = true; loadAdminReports(); }
-  const pending = state.adminPending;
-  const items = pending ? [
-    ...(pending.organizations || []).map((o) => ({ ...o, kind: 'organizations' })),
-    ...(pending.accommodation || []).map((o) => ({ ...o, kind: 'accommodation' })),
-    ...(pending.restaurants || []).map((o) => ({ ...o, kind: 'restaurants' })),
-  ] : [];
-  return `
-    <div class="profile-section">
-      <h3 class="profile-section-title">Čekající na ověření (${pending ? items.length : '…'})</h3>
-      ${pending === null ? '<p class="empty-state">Načítám…</p>'
-        : items.length === 0 ? '<p class="empty-state">Žádné profily nečekají.</p>'
-        : items.map((it) => `
-          <div class="admin-list-item">
-            <div class="admin-list-info">
-              <p class="admin-list-title">${escapeHtml(it.name)}</p>
-              <p class="admin-list-meta">${it.type} · ${it.city ? `${it.city}, ` : ''}${it.region}</p>
-            </div>
-            <button class="admin-approve-btn" data-action="verify-business" data-kind="${it.kind}" data-id="${it.id}">Ověřit</button>
-          </div>`).join('')}
-    </div>
-    <div class="profile-section">
-      <h3 class="profile-section-title">Nahlášené příspěvky (${state.adminReports ? state.adminReports.length : '…'})</h3>
-      ${state.adminReports === null ? '<p class="empty-state">Načítám…</p>'
-        : state.adminReports.length === 0 ? '<p class="empty-state">Žádná nahlášení.</p>'
-        : state.adminReports.map((r) => `
-          <div class="admin-list-item">
-            <div class="admin-list-info">
-              <p class="admin-list-title">${(r.text_content || '').slice(0, 60) || '(bez textu)'}</p>
-              <p class="admin-list-meta">Nahlásil: ${r.reporter_name || 'uživatel'}${r.reason ? ` · ${r.reason}` : ''}</p>
-            </div>
-            <button class="admin-delete-btn" data-action="delete-reported-post" data-post-id="${r.post_id}" data-report-id="${r.id}">Smazat</button>
-          </div>`).join('')}
-    </div>`;
-}
-
-async function verifyBusiness(kind, id) {
-  try {
-    await apiPost(`/api/admin/verify/${kind}/${id}`, {});
-    showToast('Profil ověřen.');
-    state.adminPending = null;
-    state.adminPendingLoading = false;
-    renderApp();
-  } catch (err) { showToast(err.message); }
-}
-
-async function deleteReportedPost(postId, reportId) {
-  if (!confirm('Skrýt tento příspěvek?')) return;
-  try {
-    await apiDelete(`/api/admin/posts/${postId}`);
-    showToast('Odstraněno.');
-    state.adminReports = null;
-    state.adminReportsLoading = false;
-    renderApp();
-  } catch (err) { showToast(err.message); }
-}
+  fd.set('text', html.replace(/
