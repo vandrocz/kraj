@@ -118,6 +118,49 @@ profileRoutes.get('/me/following', async (c) => {
   return c.json({ items: results });
 });
 
+// GET /api/profile/:type/:id/stats — štatistiky (len pre vlastníka)
+profileRoutes.get('/:type/:id/stats', async (c) => {
+  const type = normalizeType(c.req.param('type'));
+  const id = c.req.param('id');
+  const table = TYPE_TO_TABLE[type];
+  if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
+
+  const user = c.get('user');
+  const biz = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(id).first();
+  if (!biz) return c.json({ error: 'Nenalezeno.' }, 404);
+  if (biz.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
+
+  const postsCount = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).first();
+  const eventsCount = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM events WHERE business_id = ? AND status = 'published'`).bind(id).first();
+  const followers = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first();
+
+  const { results: postRows } = await c.env.DB.prepare(
+    `SELECT id FROM posts WHERE business_id = ? AND status = 'published'`,
+  ).bind(id).all();
+
+  let totalLikes = 0;
+  let totalComments = 0;
+  for (const p of postRows) {
+    const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`);
+    totalLikes += raw ? parseInt(raw, 10) : 0;
+    const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first();
+    totalComments += cc?.n || 0;
+  }
+
+  const { results: recent } = await c.env.DB.prepare(
+    `SELECT DATE(created_at) AS day, COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published' AND created_at >= datetime('now','-30 days') GROUP BY day ORDER BY day ASC`,
+  ).bind(id).all();
+
+  return c.json({
+    posts: postsCount?.n || 0,
+    events: eventsCount?.n || 0,
+    followers: followers?.n || 0,
+    likes: totalLikes,
+    comments: totalComments,
+    last_30_days: recent,
+  });
+});
+
 // ---- Blocks ----
 profileRoutes.post('/block/:id', async (c) => {
   const user = c.get('user');
