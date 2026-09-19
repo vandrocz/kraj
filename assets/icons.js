@@ -58,6 +58,7 @@ const ICON_PATHS = {
   hash: 'M5 9h14 M5 15h14 M10 3l-2 18 M16 3l-2 18',
   stats: 'M4 20V10 M10 20V4 M16 20v-7 M4 20h16',
   flipX: '',
+  refresh: 'M4 12a8 8 0 0 1 13.7-5.7L20 8 M4 4v4h4 M20 12a8 8 0 0 1-13.7 5.7L4 16 M20 20v-4h-4',
 };
 
 function icon(name, { size = 22, strokeWidth = 1.8, filled = false, className = '' } = {}) {
