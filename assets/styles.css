@@ -1183,3 +1183,66 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   display: flex; gap: 8px; width: 100%;
 }
 .comment-replies { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+
+/* ============ Rating ============ */
+.profile-rating-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.stars { color: var(--c-gold); letter-spacing: 1px; }
+.star { font-size: inherit; }
+.stars .star:not(.is-full) { opacity: 0.35; }
+
+/* ============ Reviews ============ */
+.reviews-summary { display: flex; gap: 20px; padding: 16px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius-md); }
+.reviews-avg { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 90px; gap: 4px; }
+.reviews-avg-num { font-family: var(--font-display); font-size: 40px; font-weight: 800; color: var(--c-primary-dark); line-height: 1; }
+.reviews-avg-count { font-size: 12px; color: var(--c-text-muted); }
+.reviews-dist { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.reviews-dist-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.reviews-dist-label { width: 20px; color: var(--c-text-muted); }
+.reviews-dist-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--c-border); overflow: hidden; }
+.reviews-dist-bar > div { height: 100%; background: var(--c-gold); border-radius: 999px; }
+.reviews-dist-count { width: 26px; text-align: right; color: var(--c-text-muted); }
+
+.review-item { padding: 14px 0; border-bottom: 1px solid var(--c-border); }
+.review-item:last-child { border-bottom: none; }
+.review-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+.my-review-box { margin-top: 16px; padding: 14px; background: var(--c-primary-light); border-radius: var(--radius-md); }
+
+.rating-picker { display: flex; gap: 4px; margin-top: 6px; }
+.rating-star { font-size: 36px; color: var(--c-border); background: none; border: none; padding: 0; cursor: pointer; transition: color .15s, transform .15s; }
+.rating-star.is-active { color: var(--c-gold); }
+.rating-star:active { transform: scale(0.9); }
+
+/* ============ Badges ============ */
+.badges-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+@media (min-width: 720px) { .badges-grid { grid-template-columns: repeat(3, 1fr); } }
+.badge-card {
+  padding: 14px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+.badge-icon-wrap {
+  position: relative;
+  width: 52px; height: 52px;
+  margin: 0 auto 10px;
+  border-radius: 50%;
+  background: linear-gradient(155deg, var(--c-primary-dark), var(--c-primary));
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+}
+.badge-level {
+  position: absolute; bottom: -4px; right: -4px;
+  background: var(--c-gold); color: #3A2500;
+  font-size: 10px; font-weight: 800;
+  padding: 2px 6px; border-radius: 999px;
+  border: 2px solid var(--c-surface);
+}
+.badge-name { font-weight: 800; font-size: 13.5px; }
+.badge-desc { font-size: 11.5px; color: var(--c-text-muted); margin-top: 2px; }
+.badge-progress { margin-top: 10px; display: flex; justify-content: space-between; font-size: 11px; color: var(--c-text-muted); }
+.badge-levels { color: var(--c-gold); letter-spacing: 1px; }
+
+/* ============ Wishlist ============ */
+.profile-action-btn.is-in-wishlist { background: var(--c-primary-light); color: var(--c-primary-dark); border-color: var(--c-primary); }
