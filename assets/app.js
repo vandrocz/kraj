@@ -1,5 +1,5 @@
 const state = {
-  tab: 'collections',
+  tab: 'events',
   overlay: null,
   overlayStack: [],
 
@@ -8,30 +8,38 @@ const state = {
   businesses: getStoredBusinesses(),
   authView: 'login',
 
-  collections: { active: null, waiting: [] },
+  // Random feed titles (pevné v session, aby sa nemenili pri každom renderi)
+  feedTitles: {},
+
   socialFeeds: {
-    organization: { items: [], search: '', region: '', district: '', type: '', sort: 'recent' },
-    accommodation: { items: [], search: '', region: '', district: '', type: '', sort: 'recent' },
-    gastro: { items: [], search: '', region: '', district: '', type: '', cuisine: '', sort: 'recent' },
+    organization: { items: [], search: '', region: '', district: '', type: '', sort: 'for_you' },
+    accommodation: { items: [], search: '', region: '', district: '', type: '', sort: 'for_you' },
+    gastro: { items: [], search: '', region: '', district: '', type: '', cuisine: '', sort: 'for_you' },
   },
+  events: { items: [], search: '', region: '', kind: '', when: 'upcoming' },
+
   profiles: {},
   stories: null,
 
-  wallet: null,
   adminPending: null, adminPendingLoading: false,
   adminReports: null, adminReportsLoading: false,
 
   notifications: null,
   unreadNotifications: 0,
-  unreadDMs: 0,
 
   _settings: null, _blocks: null, _followers: null, _following: null,
   _searchQuery: '', _searchResults: null,
   _totpSetup: null, _loginLogs: null,
   _twofaToken: null, _twofaStage: null,
 
+  _bizProfileTab: 'posts',
+  _bizEvents: null,
+  _bizStats: null,
+
   threads: null, threadCurrent: null, threadMessages: null,
   groupsMy: null, groupsDiscover: null, groupCurrent: null,
+
+  lightbox: null, // { images: [], index: 0, caption: '' }
 
   loading: {},
 };
@@ -55,6 +63,15 @@ function timeAgo(iso) {
   const w = Math.floor(d / 7);
   if (w < 5) return `před ${w} týž.`;
   return new Date(n).toLocaleDateString('cs-CZ');
+}
+
+function formatEventDate(iso) {
+  if (!iso) return '';
+  let n = String(iso);
+  if (!/[Zz]|[+-]\d{2}:?\d{2}$/.test(n)) n = n.replace(' ', 'T') + 'Z';
+  const d = new Date(n);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function isLoggedIn() { return !!(state.token && state.user); }
@@ -86,8 +103,44 @@ function renderBackHeader(title, rightHtml) {
     </header>`;
 }
 
+// ---- Náhodné názvy feedov ----
+const FEED_TITLES = {
+  events: [
+    'Co se děje?', 'Kam dnes vyrazit?', 'Kulturní program', 'Akce v okolí',
+    'Dnes, zítra, o víkendu', 'Nezmeškej!', 'Tipy na akce', 'Zábava v kraji',
+    'Naplánuj si víkend', 'Kde se potkáme?',
+  ],
+  organization: [
+    'Kam na výlet?', 'Dnešní dobrodružství', 'Objevuj Česko', 'Za památkami',
+    'Příroda a historie', 'Tipy na trip', 'Co navštívit?', 'Toulky krajem',
+    'Za kulturou a zábavou', 'Výlety, které nadchnou',
+  ],
+  accommodation: [
+    'Kde se vyspat?', 'Útulné noclehy', 'Ubytování na cestách', 'Přespání v přírodě',
+    'Tipy na přenocování', 'Wellness a klid', 'Víkendový pobyt', 'Nocleh se srdcem',
+    'Hotely, penziony, kempy', 'Kde složit hlavu?',
+  ],
+  gastro: [
+    'Kam na jídlo?', 'Dobroty a chutě', 'Gurmánské tipy', 'Hladový cestovatel',
+    'Mňam!', 'Restaurace, kavárny, hospody', 'Co si dnes dáme?', 'Ochutnej kraj',
+    'Skvělá jídla', 'Za dobrým jídlem',
+  ],
+};
+
+function pickRandomTitle(key) {
+  const arr = FEED_TITLES[key] || ['Náš kraj'];
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function getFeedTitle(key) {
+  if (!state.feedTitles[key]) {
+    state.feedTitles[key] = pickRandomTitle(key);
+  }
+  return state.feedTitles[key];
+}
+
 const TABS = [
-  { key: 'collections', icon: 'piggy', label: 'Sbírky' },
+  { key: 'events', icon: 'calendar', label: 'Akce' },
   { key: 'map', icon: 'mapPin', label: 'Mapa' },
   { key: 'organizations', icon: 'landmark', label: 'Organizace' },
   { key: 'accommodation', icon: 'bed', label: 'Ubytování' },
@@ -136,10 +189,10 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
       ${TYPES.cuisine.map((t) => `<option value="${t.value}" ${f.cuisine === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}
     </select>` : '';
   const sortSelect = `
-    <select class="filter-select ${f.sort !== 'recent' ? 'is-active' : ''}" data-action="filter-change" data-feed="${feedKey}" data-field="sort">
+    <select class="filter-select ${f.sort !== 'for_you' ? 'is-active' : ''}" data-action="filter-change" data-feed="${feedKey}" data-field="sort">
+      <option value="for_you" ${f.sort === 'for_you' ? 'selected' : ''}>Pro tebe</option>
       <option value="recent" ${f.sort === 'recent' ? 'selected' : ''}>Nejnovější</option>
       <option value="trending" ${f.sort === 'trending' ? 'selected' : ''}>Trendy</option>
-      <option value="for_you" ${f.sort === 'for_you' ? 'selected' : ''}>Pro tebe</option>
     </select>`;
 
   return `
@@ -173,11 +226,14 @@ function renderApp() {
   else if (state.overlay?.type === 'group') pageHtml = renderGroupDetailOverlay();
   else if (state.overlay?.type === 'story-viewer') pageHtml = renderStoryViewerOverlay();
   else if (state.overlay?.type === 'create-story') pageHtml = renderCreateStoryOverlay();
-  else if (state.tab === 'collections') pageHtml = renderCollectionsPage();
+  else if (state.overlay?.type === 'create-event') pageHtml = renderCreateEventOverlay();
+  else if (state.overlay?.type === 'event-detail') pageHtml = renderEventDetailOverlay();
+  else if (state.overlay?.type === 'bookmarks') pageHtml = renderBookmarksOverlay();
+  else if (state.tab === 'events') pageHtml = renderEventsPage();
   else if (state.tab === 'map') pageHtml = renderMapPage();
-  else if (state.tab === 'organizations') pageHtml = renderFeedPage('organization', 'Organizace', TYPES.organization, false);
-  else if (state.tab === 'accommodation') pageHtml = renderFeedPage('accommodation', 'Ubytování', TYPES.accommodation, false);
-  else if (state.tab === 'gastro') pageHtml = renderFeedPage('gastro', 'Gastro', TYPES.restaurant, true);
+  else if (state.tab === 'organizations') pageHtml = renderFeedPage('organization', TYPES.organization, false);
+  else if (state.tab === 'accommodation') pageHtml = renderFeedPage('accommodation', TYPES.accommodation, false);
+  else if (state.tab === 'gastro') pageHtml = renderFeedPage('gastro', TYPES.restaurant, true);
   else if (state.tab === 'account') pageHtml = renderAccountPage();
 
   const hideChrome = (state.tab === 'map' && !state.overlay) || state.overlay?.type === 'story-viewer';
@@ -224,6 +280,9 @@ function openProfile(kind, id) {
   if (kind === 'gastro') k = 'restaurants';
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'profile', kind: k, id };
+  state._bizProfileTab = 'posts';
+  state._bizEvents = null;
+  state._bizStats = null;
   renderApp();
   window.scrollTo(0, 0);
 }
@@ -251,18 +310,102 @@ function openForgotPassword() { state.overlay = { type: 'forgot' }; renderApp();
 function openLoginLogs() { state.overlay = { type: 'login-logs' }; renderApp(); loadLoginLogs(); }
 function openThreads() { state.overlay = { type: 'threads' }; renderApp(); loadThreads(); }
 function openGroups() { state.overlay = { type: 'groups' }; renderApp(); loadGroupsMy(); loadGroupsDiscover(); }
+function openBookmarks() { state.overlay = { type: 'bookmarks' }; renderApp(); loadBookmarks(); }
 
 function switchTab(tab) {
   state.overlay = null;
   state.overlayStack = [];
   state.tab = tab;
+  // Vygeneruj nový random title pre tento tab (ak ešte nie je)
+  getFeedTitle(tab);
   renderApp();
-  if (tab === 'collections' && state.collections.waiting.length === 0 && !state.collections.active) loadCollections();
+  if (tab === 'events' && state.events.items.length === 0) loadEvents();
   if (tab === 'organizations' && state.socialFeeds.organization.items.length === 0) loadSocialFeed('organization');
   if (tab === 'accommodation' && state.socialFeeds.accommodation.items.length === 0) loadSocialFeed('accommodation');
   if (tab === 'gastro' && state.socialFeeds.gastro.items.length === 0) loadSocialFeed('gastro');
-  if (tab === 'account' && isLoggedIn()) {
-    if (!state.wallet) loadWallet();
-    loadNotifications();
-  }
+  if (tab === 'account' && isLoggedIn()) loadNotifications();
 }
+
+// ---- Lightbox s carouselom ----
+function openLightbox(images, index = 0, caption = '') {
+  state.lightbox = { images, index: Math.max(0, Math.min(index, images.length - 1)), caption };
+  updateLightboxDOM();
+  document.getElementById('lightbox')?.classList.add('is-open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox')?.classList.remove('is-open');
+  document.body.style.overflow = '';
+  state.lightbox = null;
+}
+
+function lightboxPrev() {
+  if (!state.lightbox) return;
+  state.lightbox.index = (state.lightbox.index - 1 + state.lightbox.images.length) % state.lightbox.images.length;
+  updateLightboxDOM();
+}
+
+function lightboxNext() {
+  if (!state.lightbox) return;
+  state.lightbox.index = (state.lightbox.index + 1) % state.lightbox.images.length;
+  updateLightboxDOM();
+}
+
+function updateLightboxDOM() {
+  const lb = state.lightbox;
+  if (!lb || !lb.images.length) return;
+  const img = document.getElementById('lightbox-img');
+  const cap = document.getElementById('lightbox-caption');
+  const counter = document.getElementById('lightbox-counter');
+  const nav = document.querySelectorAll('.lightbox-nav');
+  if (img) img.src = lb.images[lb.index];
+  if (cap) cap.textContent = lb.caption || '';
+  if (counter) {
+    counter.textContent = lb.images.length > 1 ? `${lb.index + 1} / ${lb.images.length}` : '';
+    counter.style.display = lb.images.length > 1 ? '' : 'none';
+  }
+  nav.forEach((n) => { n.style.display = lb.images.length > 1 ? '' : 'none'; });
+}
+
+function renderLightbox() {
+  return `
+    <div class="lightbox" id="lightbox">
+      <button class="lightbox-close" data-action="close-lightbox" aria-label="Zavřít">${icon('close', { size: 22 })}</button>
+      <button class="lightbox-nav lightbox-prev" data-action="lightbox-prev" aria-label="Předchozí">${icon('chevronRight', { size: 26, className: 'flip-x' })}</button>
+      <button class="lightbox-nav lightbox-next" data-action="lightbox-next" aria-label="Další">${icon('chevronRight', { size: 26 })}</button>
+      <div class="lightbox-body">
+        <img src="" alt="" class="lightbox-img" id="lightbox-img" />
+        <p class="lightbox-caption" id="lightbox-caption"></p>
+        <p class="lightbox-counter" id="lightbox-counter"></p>
+      </div>
+    </div>`;
+}
+
+// Swipe v lightboxe
+(function setupLightboxSwipe() {
+  let startX = 0;
+  let startY = 0;
+  document.addEventListener('touchstart', (e) => {
+    if (!e.target.closest('.lightbox.is-open')) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (!e.target.closest('.lightbox.is-open')) return;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0) lightboxNext();
+      else lightboxPrev();
+    }
+  }, { passive: true });
+})();
+
+// Klávesy ←/→
+document.addEventListener('keydown', (e) => {
+  if (!state.lightbox) return;
+  if (e.key === 'ArrowRight') lightboxNext();
+  else if (e.key === 'ArrowLeft') lightboxPrev();
+  else if (e.key === 'Escape') closeLightbox();
+});
