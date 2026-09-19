@@ -2,22 +2,31 @@
 // PODUJATIA (Events)
 // ============================================================
 
-async function loadEvents() {
-  state.loading.events = true;
+async function loadEvents(loadMore = false) {
+  const e = state.events;
+  if (loadMore && !e.next_cursor) return;
+  if (loadMore && e.loading_more) return;
+  if (loadMore) e.loading_more = true;
+  else state.loading.events = true;
+
   try {
-    const e = state.events;
     const params = new URLSearchParams();
     if (e.region) params.set('region', e.region);
     if (e.kind) params.set('kind', e.kind);
     if (e.when) params.set('when', e.when);
     if (e.search) params.set('search', e.search);
+    if (loadMore && e.next_cursor) params.set('cursor', e.next_cursor);
+
     const data = await apiGet(`/api/events?${params.toString()}`);
-    state.events.items = data.events || [];
+    if (loadMore) e.items = [...e.items, ...(data.events || [])];
+    else e.items = data.events || [];
+    e.next_cursor = data.next_cursor || null;
   } catch (err) {
     console.error('Events load failed:', err);
     showToast('Akce se nepodařilo načíst.');
   } finally {
     state.loading.events = false;
+    e.loading_more = false;
     if (state.tab === 'events') renderApp();
   }
 }
@@ -26,9 +35,10 @@ let _eventsFilterTimer = null;
 function onEventFilterChange(field, value) {
   state.events[field] = value;
   if (field === 'region') state.events.city = '';
+  state.events.next_cursor = null;
   renderApp();
   clearTimeout(_eventsFilterTimer);
-  _eventsFilterTimer = setTimeout(loadEvents, 250);
+  _eventsFilterTimer = setTimeout(() => loadEvents(), 250);
 }
 
 function renderEventsPage() {
@@ -78,10 +88,14 @@ function renderEventsFilterBar() {
 }
 
 function renderEventsList() {
-  const items = state.events.items;
-  if (state.loading.events && items.length === 0) return '<p class="empty-state">Načítám akce…</p>';
-  if (items.length === 0) return '<p class="empty-state">Žádné akce neodpovídají filtrům.</p>';
-  return `<div class="events-list">${items.map(renderEventCard).join('')}</div>`;
+  const e = state.events;
+  if (state.loading.events && e.items.length === 0) return '<p class="empty-state">Načítám akce…</p>';
+  if (e.items.length === 0) return '<p class="empty-state">Žádné akce neodpovídají filtrům.</p>';
+  return `
+    <div class="events-list">${e.items.map(renderEventCard).join('')}</div>
+    ${e.loading_more ? '<p class="empty-state">Načítám další…</p>' : ''}
+    ${e.next_cursor ? `<div data-load-more style="height:1px"></div>` : ''}
+  `;
 }
 
 function renderEventCard(ev) {
@@ -111,7 +125,6 @@ function renderEventCard(ev) {
     </article>`;
 }
 
-// ---- Detail ----
 async function openEventDetail(id) {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'event-detail', id };
@@ -151,7 +164,6 @@ function renderEventDetailOverlay() {
     </div>`;
 }
 
-// ---- Create ----
 function openCreateEvent() {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'create-event', file: null, previewUrl: null, uploading: false, businessId: null };
@@ -250,7 +262,6 @@ async function handleCreateEventSubmit(form) {
     fd.set('business_kind', form.dataset.businessKind);
     if (state.overlay.file) fd.append('file', state.overlay.file, state.overlay.file.name);
 
-    // Preveď datetime-local na SQLite formát
     const startEl = form.querySelector('input[name="start_at"]');
     const endEl = form.querySelector('input[name="end_at"]');
     if (startEl?.value) fd.set('start_at', startEl.value.replace('T', ' ') + ':00');
@@ -261,6 +272,7 @@ async function handleCreateEventSubmit(form) {
     state.overlayStack.pop();
     state.overlay = null;
     state.events.items = [];
+    state.events.next_cursor = null;
     if (state.tab === 'events') loadEvents();
     renderApp();
   } catch (err) {
