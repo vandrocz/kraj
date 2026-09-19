@@ -174,8 +174,14 @@ async function handleLoginSubmit(form) {
   const btn = form.querySelector('button[type="submit"]');
   const orig = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Přihlašuji…'; }
+
   try {
-    const data = await apiPost('/api/auth/login', { email: fd.get('email'), password: fd.get('password') });
+    const recaptcha_token = await getRecaptchaToken('login');
+    const data = await apiPost('/api/auth/login', {
+      email: fd.get('email'),
+      password: fd.get('password'),
+      recaptcha_token,
+    });
     if (data.twofa_required) {
       state._twofaToken = data.twofa_token;
       state._twofaStage = 'verify';
@@ -210,9 +216,11 @@ async function handleRegisterSubmit(form) {
   const body = Object.fromEntries(fd.entries());
   const btn = form.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = 'Vytvářím účet…'; }
+
   try {
+    body.recaptcha_token = await getRecaptchaToken('register');
     await apiPost('/api/auth/register', body);
-    showToast('Účet vytvořen! Zkontroluj e-mail a ověř adresu.');
+    showToast('Účet vytvořen! Můžeš se přihlásit.');
     state.authView = 'login';
     accountFormState.formError = '';
     renderApp();
