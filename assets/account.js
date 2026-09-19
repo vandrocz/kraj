@@ -266,7 +266,7 @@ function renderAccountHeaderCard() {
 }
 
 function renderRoleSpecificContent() {
-  if (state.user.role === 'user') return renderUserWalletSection();
+  if (state.user.role === 'user') return renderUserAboutSection();
   if (state.user.role === 'organization' || state.user.role === 'hotelier') return renderBusinessDashboard();
   if (state.user.role === 'admin') return renderAdminPanel();
   return '';
@@ -278,31 +278,34 @@ async function loadWallet() {
   finally { if (state.tab === 'account') renderApp(); }
 }
 
-function renderUserWalletSection() {
-  const w = state.wallet;
+function renderUserAboutSection() {
+  const u = state.user;
   return `
-    <div class="credit-card">
-      <div class="credit-card-top"><div>
-        <p class="credit-label">Tvůj kredit</p>
-        <p class="credit-amount">${icon('wallet', { size: 20 })}${w ? fmt(w.credit_balance) : '…'}</p>
-      </div></div>
-      <p class="topup-label">Dobít kredit</p>
-      <div class="topup-grid">
-        ${[50, 150, 400, 1000].map((v) => `<button class="topup-chip" data-action="topup" data-amount="${v}">${v} Kč</button>`).join('')}
+    <div class="profile-section">
+      <h3 class="profile-section-title">O mně</h3>
+      <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:16px;">
+        ${u.bio ? `<p style="font-size:14px;line-height:1.6">${escapeHtml(u.bio)}</p>` : '<p style="color:var(--c-text-muted);font-size:13.5px">Zatím žádné bio. Klikni na „Upravit profil".</p>'}
+        <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px 16px;font-size:12.5px;color:var(--c-text-muted)">
+          ${u.location ? `<span>${icon('location', { size: 14 })} ${escapeHtml(u.location)}</span>` : ''}
+          ${u.website ? `<a href="${escapeAttr(u.website)}" target="_blank" rel="noopener" style="color:var(--c-primary-dark)">${icon('globe', { size: 14 })} ${escapeHtml(u.website)}</a>` : ''}
+        </div>
+        <div style="margin-top:14px">
+          <button class="profile-action-btn" data-action="edit-profile" data-kind="user" data-id="${u.id}">${icon('edit', { size: 15 })} Upravit profil</button>
+        </div>
       </div>
     </div>
     <div class="profile-section">
-      <h3 class="profile-section-title">Sbírky, kterým jsi pomohl</h3>
-      ${w && w.contributions && w.contributions.length > 0
-        ? w.contributions.map((c) => `
-          <div class="contribution-row">
-            <div>
-              <p class="contribution-title">${escapeHtml(c.title)}</p>
-              <p class="contribution-date">${timeAgo(c.created_at)}</p>
-            </div>
-            <span class="contribution-amount">+${c.amount} Kč</span>
-          </div>`).join('')
-        : '<p class="empty-state">Zatím žádné příspěvky.</p>'}
+      <h3 class="profile-section-title">Moje aktivita</h3>
+      <div class="stat-cards">
+        <button class="stat-card" data-action="open-bookmarks" style="cursor:pointer;text-align:left">
+          <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
+          <div class="stat-card-label">Uložené příspěvky</div>
+        </button>
+        <button class="stat-card" data-action="open-following" style="cursor:pointer;text-align:left">
+          <div class="stat-card-value">${icon('users', { size: 20 })}</div>
+          <div class="stat-card-label">Sleduji</div>
+        </button>
+      </div>
     </div>`;
 }
 
