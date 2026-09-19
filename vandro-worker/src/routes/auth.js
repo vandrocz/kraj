@@ -1,14 +1,14 @@
 import { Hono } from 'hono';
 import { sign } from 'hono/jwt';
 import { hashPassword, verifyPassword, newId, publicUser } from '../auth.js';
-import { sendVerificationEmail, sendPasswordResetEmail, sendNewDeviceEmail } from '../email.js';
+import { sendPasswordResetEmail } from '../email.js';
 import { verifyTotp, generateSecret, otpauthUri, generateRecoveryCodes } from '../totp.js';
 import { rateLimit, clientIp, userAgent } from '../ratelimit.js';
+import { verifyRecaptcha } from '../recaptcha.js';
 
 export const authRoutes = new Hono();
 
 const VALID_ROLES = ['user', 'organization', 'hotelier'];
-const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const RESET_TTL_MS = 60 * 60 * 1000;
 const TWOFA_TTL_MS = 5 * 60 * 1000;
 
@@ -17,26 +17,38 @@ async function logLogin(env, { userId, email, ip, ua, success, method }) {
     await env.DB.prepare(
       `INSERT INTO login_logs (id, user_id, email, ip, user_agent, success, method) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).bind(newId('log'), userId || null, email || null, ip, ua, success ? 1 : 0, method || 'password').run();
-  } catch (err) { console.error('logLogin failed:', err); }
+  } catch (err) {
+    // Nikdy nezhodíme login kvôli logu
+    console.warn('logLogin failed:', err.message);
+  }
 }
 
-async function issueVerificationToken(env, userId, email) {
-  await env.DB.prepare(`UPDATE email_verifications SET used_at = datetime('now') WHERE user_id = ? AND used_at IS NULL`).bind(userId).run();
-  const token = newId('ev') + '_' + crypto.randomUUID().replace(/-/g, '');
-  const exp = new Date(Date.now() + VERIFY_TTL_MS).toISOString();
-  await env.DB.prepare(`INSERT INTO email_verifications (token, user_id, email, expires_at) VALUES (?, ?, ?, ?)`)
-    .bind(token, userId, email, exp).run();
-  return token;
+async function updateLastLogin(env, userId, ip) {
+  try {
+    await env.DB.prepare(`UPDATE users SET last_login_at = datetime('now'), last_login_ip = ? WHERE id = ?`)
+      .bind(ip, userId).run();
+  } catch (err) {
+    console.warn('updateLastLogin failed (chýbajúce stĺpce?):', err.message);
+  }
 }
 
-// ---- Register ----
+// ============================================================
+// REGISTER
+// ============================================================
 authRoutes.post('/register', async (c) => {
   const ip = clientIp(c);
   const rl = await rateLimit(c.env, 'register', ip, 5, 3600);
   if (!rl.ok) return c.json({ error: 'Příliš mnoho registrací z této IP. Zkus to za hodinu.' }, 429);
 
   const body = await c.req.json().catch(() => ({}));
-  const { email, password, displayName, role = 'user', termsAccepted } = body;
+  const { email, password, displayName, role = 'user', termsAccepted, recaptcha_token } = body;
+
+  // reCAPTCHA
+  const captcha = await verifyRecaptcha(c.env, recaptcha_token, 'register');
+  if (!captcha.ok) {
+    console.warn('[register] recaptcha zlyhala:', captcha.reason, captcha.score);
+    return c.json({ error: 'Ověření proti robotům selhalo. Obnov stránku a zkus to znovu.' }, 400);
+  }
 
   if (!email || !password) return c.json({ error: 'Vyžaduje sa email a heslo.' }, 400);
   if (!VALID_ROLES.includes(role)) return c.json({ error: 'Neplatná rola účtu.' }, 400);
@@ -52,14 +64,17 @@ authRoutes.post('/register', async (c) => {
   const { hash, salt } = await hashPassword(password);
   const userId = newId('user');
   await c.env.DB.prepare(
-    `INSERT INTO users (id, email, password_hash, password_salt, display_name, role, credit_balance, terms_accepted_at, email_verified)
-     VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'), 0)`,
+    `INSERT INTO users (id, email, password_hash, password_salt, display_name, role, credit_balance, terms_accepted_at, email_verified, auth_provider)
+     VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'), 1, 'password')`,
   ).bind(userId, lower, hash, salt, displayName || lower.split('@')[0], role).run();
 
   let business = null;
+
   if (role === 'organization') {
     const { orgName, orgType, region, district, city, description } = body;
-    if (!orgName || !orgType || !region || !district || !city) return c.json({ error: 'Pre organizáciu vyžadujeme názov, typ, kraj, okres a obec.' }, 400);
+    if (!orgName || !orgType || !region || !district || !city) {
+      return c.json({ error: 'Pre organizáciu vyžadujeme názov, typ, kraj, okres a obec.' }, 400);
+    }
     const orgId = newId('org');
     await c.env.DB.prepare(
       `INSERT INTO organizations (id, user_id, name, type, region, district, city, description, is_verified)
@@ -67,9 +82,12 @@ authRoutes.post('/register', async (c) => {
     ).bind(orgId, userId, orgName, orgType, region, district, city, description || '').run();
     business = { id: orgId, kind: 'organization', name: orgName };
   }
+
   if (role === 'hotelier') {
     const { businessName, businessKind, businessType, cuisineType, region, district, city, description, capacity } = body;
-    if (!businessName || !businessKind || !businessType || !region || !district || !city) return c.json({ error: 'Pre podnik vyžadujeme názov, druh, typ, kraj, okres a obec.' }, 400);
+    if (!businessName || !businessKind || !businessType || !region || !district || !city) {
+      return c.json({ error: 'Pre podnik vyžadujeme názov, druh, typ, kraj, okres a obec.' }, 400);
+    }
     if (businessKind === 'accommodation') {
       const accId = newId('acc');
       await c.env.DB.prepare(
@@ -89,23 +107,32 @@ authRoutes.post('/register', async (c) => {
     }
   }
 
-  try {
-    const token = await issueVerificationToken(c.env, userId, lower);
-    await sendVerificationEmail(c.env, { to: lower, token, displayName: displayName || lower.split('@')[0] });
-  } catch (err) { console.error('verify email:', err); }
+  await logLogin(c.env, { userId, email: lower, ip, ua: userAgent(c), success: true, method: 'register' });
 
-  return c.json({ id: userId, email: lower, role, business, verification_sent: true }, 201);
+  return c.json({ id: userId, email: lower, role, business }, 201);
 });
 
-// ---- Login ----
+// ============================================================
+// LOGIN
+// ============================================================
 authRoutes.post('/login', async (c) => {
   const ip = clientIp(c);
   const ua = userAgent(c);
   const body = await c.req.json().catch(() => ({}));
-  const { email, password } = body;
+  const { email, password, recaptcha_token } = body;
+
   if (!email || !password) return c.json({ error: 'Vyžaduje sa email a heslo.' }, 400);
 
+  // reCAPTCHA
+  const captcha = await verifyRecaptcha(c.env, recaptcha_token, 'login');
+  if (!captcha.ok) {
+    console.warn('[login] recaptcha zlyhala:', captcha.reason, captcha.score);
+    return c.json({ error: 'Ověření proti robotům selhalo. Obnov stránku a zkus to znovu.' }, 400);
+  }
+
   const lower = String(email).toLowerCase();
+
+  // Rate limit na pokusy
   const rl = await rateLimit(c.env, 'login', `${ip}:${lower}`, 10, 900);
   if (!rl.ok) {
     await logLogin(c.env, { userId: null, email: lower, ip, ua, success: false, method: 'password' });
@@ -113,29 +140,41 @@ authRoutes.post('/login', async (c) => {
   }
 
   const user = await c.env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(lower).first();
-  if (!user) { await logLogin(c.env, { userId: null, email: lower, ip, ua, success: false, method: 'password' }); return c.json({ error: 'Nesprávny email alebo heslo.' }, 401); }
+  if (!user) {
+    await logLogin(c.env, { userId: null, email: lower, ip, ua, success: false, method: 'password' });
+    return c.json({ error: 'Nesprávny email alebo heslo.' }, 401);
+  }
   if (user.deleted_at) return c.json({ error: 'Tento účet byl smazán.' }, 403);
 
-  const valid = await verifyPassword(password, user.password_hash, user.password_salt);
-  if (!valid) { await logLogin(c.env, { userId: user.id, email: lower, ip, ua, success: false, method: 'password' }); return c.json({ error: 'Nesprávny email alebo heslo.' }, 401); }
-  if (user.status !== 'active') return c.json({ error: 'Tento účet je pozastavený.' }, 403);
+  // Ak je účet Google-only, klasické prihlásenie nefunguje
+  if (user.auth_provider === 'google' || user.password_hash === 'google-oauth') {
+    await logLogin(c.env, { userId: user.id, email: lower, ip, ua, success: false, method: 'password' });
+    return c.json({ error: 'Tento účet byl vytvořen přes Google. Přihlas se tlačítkem "Sign in with Google".' }, 400);
+  }
 
-  // Ak má 2FA → vráť twofa_token a nepokračuj
+  const valid = await verifyPassword(password, user.password_hash, user.password_salt);
+  if (!valid) {
+    await logLogin(c.env, { userId: user.id, email: lower, ip, ua, success: false, method: 'password' });
+    return c.json({ error: 'Nesprávny email alebo heslo.' }, 401);
+  }
+  if (user.status && user.status !== 'active') return c.json({ error: 'Tento účet je pozastavený.' }, 403);
+
+  // 2FA
   if (user.totp_enabled && user.totp_secret) {
     const tfa = newId('2fa') + '_' + crypto.randomUUID().replace(/-/g, '');
     const exp = new Date(Date.now() + TWOFA_TTL_MS).toISOString();
-    await c.env.DB.prepare(`INSERT INTO twofa_sessions (token, user_id, expires_at) VALUES (?, ?, ?)`)
-      .bind(tfa, user.id, exp).run();
+    try {
+      await c.env.DB.prepare(`INSERT INTO twofa_sessions (token, user_id, expires_at) VALUES (?, ?, ?)`)
+        .bind(tfa, user.id, exp).run();
+    } catch (err) {
+      console.error('twofa_sessions insert zlyhal:', err.message);
+      return c.json({ error: 'Chyba při přípravě 2FA.' }, 500);
+    }
     return c.json({ twofa_required: true, twofa_token: tfa });
   }
 
   await logLogin(c.env, { userId: user.id, email: lower, ip, ua, success: true, method: 'password' });
-
-  // Detekcia nového zariadenia (info e-mail raz za deň pri zmene IP)
-  if (user.last_login_ip && user.last_login_ip !== ip) {
-    try { await sendNewDeviceEmail(c.env, { to: user.email, ip, ua, displayName: user.display_name }); } catch {}
-  }
-  await c.env.DB.prepare(`UPDATE users SET last_login_at = datetime('now'), last_login_ip = ? WHERE id = ?`).bind(ip, user.id).run();
+  await updateLastLogin(c.env, user.id, ip);
 
   const token = await sign(
     { sub: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 },
@@ -158,10 +197,62 @@ authRoutes.post('/login', async (c) => {
   return c.json({ token, user: publicUser(user), businesses });
 });
 
-// ---- Verify 2FA ----
-authRoutes.post('/verify-2fa', async (c) => {
+// ============================================================
+// LOGOUT
+// ============================================================
+authRoutes.post('/logout', (c) => c.json({ ok: true }));
+
+// ============================================================
+// FORGOT / RESET hesla (odpovedá OK aj keď e-mail neexistuje)
+// ============================================================
+authRoutes.post('/forgot-password', async (c) => {
   const ip = clientIp(c);
-  const ua = userAgent(c);
+  const rl = await rateLimit(c.env, 'forgot', ip, 5, 3600);
+  if (!rl.ok) return c.json({ error: 'Příliš mnoho pokusů.' }, 429);
+
+  const body = await c.req.json().catch(() => ({}));
+  const email = (body.email || '').toString().toLowerCase();
+  if (!email) return c.json({ error: 'Zadej e-mail.' }, 400);
+
+  const user = await c.env.DB.prepare('SELECT id, email, display_name FROM users WHERE email = ? AND deleted_at IS NULL').bind(email).first();
+  if (!user) return c.json({ ok: true });
+
+  try {
+    await c.env.DB.prepare(`UPDATE password_resets SET used_at = datetime('now') WHERE user_id = ? AND used_at IS NULL`).bind(user.id).run();
+    const token = newId('pr') + '_' + crypto.randomUUID().replace(/-/g, '');
+    const exp = new Date(Date.now() + RESET_TTL_MS).toISOString();
+    await c.env.DB.prepare(`INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)`).bind(token, user.id, exp).run();
+    await sendPasswordResetEmail(c.env, { to: user.email, token, displayName: user.display_name });
+  } catch (err) {
+    console.warn('forgot-password:', err.message);
+  }
+  return c.json({ ok: true });
+});
+
+authRoutes.post('/reset-password', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const token = (body.token || '').toString();
+  const newPassword = (body.password || '').toString();
+  if (!token || !newPassword) return c.json({ error: 'Chýba token nebo heslo.' }, 400);
+  if (newPassword.length < 8) return c.json({ error: 'Heslo musí mať aspoň 8 znakov.' }, 400);
+
+  const row = await c.env.DB.prepare(`SELECT * FROM password_resets WHERE token = ?`).bind(token).first();
+  if (!row) return c.json({ error: 'Neplatný odkaz.' }, 400);
+  if (row.used_at) return c.json({ error: 'Odkaz byl již použit.' }, 400);
+  if (new Date(row.expires_at) < new Date()) return c.json({ error: 'Platnost odkazu vypršela.' }, 400);
+
+  const { hash, salt } = await hashPassword(newPassword);
+  await c.env.DB.prepare(`UPDATE users SET password_hash = ?, password_salt = ?, auth_provider = 'password' WHERE id = ?`)
+    .bind(hash, salt, row.user_id).run();
+  await c.env.DB.prepare(`UPDATE password_resets SET used_at = datetime('now') WHERE token = ?`).bind(token).run();
+  return c.json({ ok: true });
+});
+
+// ============================================================
+// 2FA — setup / enable / disable (bez zmien)
+// ============================================================
+authRoutes.post('/verify-2fa', async (c) => {
+  const ip = clientIp(c); const ua = userAgent(c);
   const body = await c.req.json().catch(() => ({}));
   const { twofa_token, code } = body;
   if (!twofa_token || !code) return c.json({ error: 'Chýba kód.' }, 400);
@@ -170,7 +261,7 @@ authRoutes.post('/verify-2fa', async (c) => {
   if (!rl.ok) return c.json({ error: 'Příliš mnoho pokusů.' }, 429);
 
   const sess = await c.env.DB.prepare(`SELECT * FROM twofa_sessions WHERE token = ?`).bind(twofa_token).first();
-  if (!sess) return c.json({ error: 'Neplatná relace. Přihlas se znovu.' }, 400);
+  if (!sess) return c.json({ error: 'Neplatná relace.' }, 400);
   if (sess.used_at) return c.json({ error: 'Relace již použita.' }, 400);
   if (new Date(sess.expires_at) < new Date()) return c.json({ error: 'Relace vypršela.' }, 400);
 
@@ -192,11 +283,13 @@ authRoutes.post('/verify-2fa', async (c) => {
     return c.json({ error: 'Neplatný kód.' }, 401);
   }
 
-  await c.env.DB.prepare(`UPDATE twofa_sessions SET used_at = datetime('now') WHERE token = ?`).bind(twofa_token).run();
-  if (updatedCodes) await c.env.DB.prepare(`UPDATE users SET recovery_codes_json = ? WHERE id = ?`).bind(JSON.stringify(updatedCodes), user.id).run();
+  try {
+    await c.env.DB.prepare(`UPDATE twofa_sessions SET used_at = datetime('now') WHERE token = ?`).bind(twofa_token).run();
+    if (updatedCodes) await c.env.DB.prepare(`UPDATE users SET recovery_codes_json = ? WHERE id = ?`).bind(JSON.stringify(updatedCodes), user.id).run();
+  } catch {}
 
   await logLogin(c.env, { userId: user.id, email: user.email, ip, ua, success: true, method: okRecovery ? '2fa-recovery' : '2fa' });
-  await c.env.DB.prepare(`UPDATE users SET last_login_at = datetime('now'), last_login_ip = ? WHERE id = ?`).bind(ip, user.id).run();
+  await updateLastLogin(c.env, user.id, ip);
 
   const token = await sign(
     { sub: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 },
@@ -219,119 +312,39 @@ authRoutes.post('/verify-2fa', async (c) => {
   return c.json({ token, user: publicUser(user), businesses, recovery_remaining: updatedCodes?.length });
 });
 
-authRoutes.post('/logout', (c) => c.json({ ok: true }));
-
-// ---- Verify email ----
-authRoutes.post('/verify-email', async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const token = (body.token || '').toString();
-  if (!token) return c.json({ error: 'Chýba token.' }, 400);
-  const row = await c.env.DB.prepare(`SELECT * FROM email_verifications WHERE token = ?`).bind(token).first();
-  if (!row) return c.json({ error: 'Neplatný odkaz.' }, 400);
-  if (row.used_at) return c.json({ error: 'Tento odkaz byl již použit.' }, 400);
-  if (new Date(row.expires_at) < new Date()) return c.json({ error: 'Platnost odkazu vypršela.' }, 400);
-  await c.env.DB.prepare(`UPDATE users SET email_verified = 1 WHERE id = ?`).bind(row.user_id).run();
-  await c.env.DB.prepare(`UPDATE email_verifications SET used_at = datetime('now') WHERE token = ?`).bind(token).run();
-  return c.json({ ok: true, email: row.email });
-});
-
-authRoutes.post('/resend-verification', async (c) => {
+async function getAuthUser(c) {
   const h = c.req.header('Authorization') || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-  if (!token) return c.json({ error: 'Chýba prihlásenie.' }, 401);
-  let payload;
-  try { const { verify } = await import('hono/jwt'); payload = await verify(token, c.env.JWT_SECRET, 'HS256'); }
-  catch { return c.json({ error: 'Neplatný token.' }, 401); }
-  const user = await c.env.DB.prepare('SELECT id, email, display_name, email_verified FROM users WHERE id = ?').bind(payload.sub).first();
-  if (!user) return c.json({ error: 'Nenájdený.' }, 404);
-  if (user.email_verified) return c.json({ ok: true, already: true });
-  const rl = await rateLimit(c.env, 'resend-verify', user.id, 3, 3600);
-  if (!rl.ok) return c.json({ error: 'Příliš mnoho pokusů. Zkus to za hodinu.' }, 429);
-  const vt = await issueVerificationToken(c.env, user.id, user.email);
-  await sendVerificationEmail(c.env, { to: user.email, token: vt, displayName: user.display_name });
-  return c.json({ ok: true, sent: true });
-});
+  if (!token) return null;
+  try { const { verify } = await import('hono/jwt'); return await verify(token, c.env.JWT_SECRET, 'HS256'); }
+  catch { return null; }
+}
 
-// ---- Forgot / reset password ----
-authRoutes.post('/forgot-password', async (c) => {
-  const ip = clientIp(c);
-  const rl = await rateLimit(c.env, 'forgot', ip, 5, 3600);
-  if (!rl.ok) return c.json({ error: 'Příliš mnoho pokusů.' }, 429);
-
-  const body = await c.req.json().catch(() => ({}));
-  const email = (body.email || '').toString().toLowerCase();
-  if (!email) return c.json({ error: 'Zadej e-mail.' }, 400);
-
-  const user = await c.env.DB.prepare('SELECT id, email, display_name FROM users WHERE email = ? AND deleted_at IS NULL').bind(email).first();
-  if (!user) return c.json({ ok: true });
-
-  await c.env.DB.prepare(`UPDATE password_resets SET used_at = datetime('now') WHERE user_id = ? AND used_at IS NULL`).bind(user.id).run();
-  const token = newId('pr') + '_' + crypto.randomUUID().replace(/-/g, '');
-  const exp = new Date(Date.now() + RESET_TTL_MS).toISOString();
-  await c.env.DB.prepare(`INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)`).bind(token, user.id, exp).run();
-  try { await sendPasswordResetEmail(c.env, { to: user.email, token, displayName: user.display_name }); } catch {}
-  return c.json({ ok: true });
-});
-
-authRoutes.post('/reset-password', async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const token = (body.token || '').toString();
-  const newPassword = (body.password || '').toString();
-  if (!token || !newPassword) return c.json({ error: 'Chýba token nebo heslo.' }, 400);
-  if (newPassword.length < 8) return c.json({ error: 'Heslo musí mať aspoň 8 znakov.' }, 400);
-
-  const row = await c.env.DB.prepare(`SELECT * FROM password_resets WHERE token = ?`).bind(token).first();
-  if (!row) return c.json({ error: 'Neplatný odkaz.' }, 400);
-  if (row.used_at) return c.json({ error: 'Odkaz byl již použit.' }, 400);
-  if (new Date(row.expires_at) < new Date()) return c.json({ error: 'Platnost odkazu vypršela.' }, 400);
-
-  const { hash, salt } = await hashPassword(newPassword);
-  await c.env.DB.prepare(`UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?`).bind(hash, salt, row.user_id).run();
-  await c.env.DB.prepare(`UPDATE password_resets SET used_at = datetime('now') WHERE token = ?`).bind(token).run();
-  return c.json({ ok: true });
-});
-
-// ---- 2FA setup (chránené) ----
 authRoutes.post('/2fa/setup', async (c) => {
-  const h = c.req.header('Authorization') || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-  if (!token) return c.json({ error: 'Chýba prihlásenie.' }, 401);
-  let payload;
-  try { const { verify } = await import('hono/jwt'); payload = await verify(token, c.env.JWT_SECRET, 'HS256'); }
-  catch { return c.json({ error: 'Neplatný token.' }, 401); }
-
+  const payload = await getAuthUser(c);
+  if (!payload) return c.json({ error: 'Chýba prihlásenie.' }, 401);
   const user = await c.env.DB.prepare('SELECT id, email, totp_enabled FROM users WHERE id = ?').bind(payload.sub).first();
   if (!user) return c.json({ error: 'Nenájdený.' }, 404);
   if (user.totp_enabled) return c.json({ error: '2FA je již aktivní.' }, 400);
 
   const secret = generateSecret();
-  // dočasne uložíme secret do totp_secret (ešte nie enabled)
   await c.env.DB.prepare(`UPDATE users SET totp_secret = ?, totp_enabled = 0 WHERE id = ?`).bind(secret, user.id).run();
-
-  return c.json({
-    secret,
-    otpauth_uri: otpauthUri({ secret, label: user.email }),
-  });
+  return c.json({ secret, otpauth_uri: otpauthUri({ secret, label: user.email }) });
 });
 
 authRoutes.post('/2fa/enable', async (c) => {
-  const h = c.req.header('Authorization') || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-  if (!token) return c.json({ error: 'Chýba prihlásenie.' }, 401);
-  let payload;
-  try { const { verify } = await import('hono/jwt'); payload = await verify(token, c.env.JWT_SECRET, 'HS256'); }
-  catch { return c.json({ error: 'Neplatný token.' }, 401); }
-
+  const payload = await getAuthUser(c);
+  if (!payload) return c.json({ error: 'Chýba prihlásenie.' }, 401);
   const body = await c.req.json().catch(() => ({}));
   const code = (body.code || '').toString();
-  if (!code) return c.json({ error: 'Zadej kód z aplikace.' }, 400);
+  if (!code) return c.json({ error: 'Zadej kód.' }, 400);
 
   const user = await c.env.DB.prepare('SELECT id, totp_secret, totp_enabled FROM users WHERE id = ?').bind(payload.sub).first();
   if (!user || !user.totp_secret) return c.json({ error: 'Nejdřív spusť nastavení.' }, 400);
   if (user.totp_enabled) return c.json({ error: '2FA je již aktivní.' }, 400);
 
   const ok = await verifyTotp(user.totp_secret, code);
-  if (!ok) return c.json({ error: 'Neplatný kód. Zkus znovu.' }, 401);
+  if (!ok) return c.json({ error: 'Neplatný kód.' }, 401);
 
   const codes = generateRecoveryCodes(8);
   await c.env.DB.prepare(`UPDATE users SET totp_enabled = 1, recovery_codes_json = ? WHERE id = ?`).bind(JSON.stringify(codes), user.id).run();
@@ -339,35 +352,27 @@ authRoutes.post('/2fa/enable', async (c) => {
 });
 
 authRoutes.post('/2fa/disable', async (c) => {
-  const h = c.req.header('Authorization') || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-  if (!token) return c.json({ error: 'Chýba prihlásenie.' }, 401);
-  let payload;
-  try { const { verify } = await import('hono/jwt'); payload = await verify(token, c.env.JWT_SECRET, 'HS256'); }
-  catch { return c.json({ error: 'Neplatný token.' }, 401); }
-
+  const payload = await getAuthUser(c);
+  if (!payload) return c.json({ error: 'Chýba prihlásenie.' }, 401);
   const body = await c.req.json().catch(() => ({}));
   const code = (body.code || '').toString();
   const user = await c.env.DB.prepare('SELECT id, totp_secret, totp_enabled FROM users WHERE id = ?').bind(payload.sub).first();
   if (!user || !user.totp_enabled) return c.json({ error: '2FA není aktivní.' }, 400);
-
   const ok = await verifyTotp(user.totp_secret, code);
   if (!ok) return c.json({ error: 'Neplatný kód.' }, 401);
-
   await c.env.DB.prepare(`UPDATE users SET totp_secret = NULL, totp_enabled = 0, recovery_codes_json = NULL WHERE id = ?`).bind(user.id).run();
   return c.json({ ok: true });
 });
 
 authRoutes.get('/me/login-logs', async (c) => {
-  const h = c.req.header('Authorization') || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-  if (!token) return c.json({ error: 'Chýba prihlásenie.' }, 401);
-  let payload;
-  try { const { verify } = await import('hono/jwt'); payload = await verify(token, c.env.JWT_SECRET, 'HS256'); }
-  catch { return c.json({ error: 'Neplatný token.' }, 401); }
-
-  const { results } = await c.env.DB.prepare(
-    `SELECT id, ip, user_agent, success, method, created_at FROM login_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
-  ).bind(payload.sub).all();
-  return c.json({ logs: results });
+  const payload = await getAuthUser(c);
+  if (!payload) return c.json({ error: 'Chýba prihlásenie.' }, 401);
+  try {
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, ip, user_agent, success, method, created_at FROM login_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+    ).bind(payload.sub).all();
+    return c.json({ logs: results });
+  } catch (err) {
+    return c.json({ logs: [], warning: err.message });
+  }
 });
