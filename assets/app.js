@@ -235,6 +235,7 @@ function renderApp() {
   else if (state.tab === 'accommodation') pageHtml = renderFeedPage('accommodation', TYPES.accommodation, false);
   else if (state.tab === 'gastro') pageHtml = renderFeedPage('gastro', TYPES.restaurant, true);
   else if (state.tab === 'account') pageHtml = renderAccountPage();
+  else if (state.overlay?.type === 'profile-stats') pageHtml = renderProfileStatsOverlay();
 
   const hideChrome = (state.tab === 'map' && !state.overlay) || state.overlay?.type === 'story-viewer';
 
