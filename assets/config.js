@@ -1,6 +1,7 @@
 const API_BASE_URL = 'https://naskraj-api.vandrocz-contact.workers.dev';
 const MAP_ORIGIN = 'https://maps.vandro.cz';
 const GOOGLE_CLIENT_ID = '769764675952-1nb44qbpc4o7a1l5r14vt8phamom9209.apps.googleusercontent.com';
+const RECAPTCHA_SITE_KEY = '6LdNqsMtAAAAAI7IEkcxJhwnokL14pidWEy-Vngi';
 
 function getToken() { return localStorage.getItem('naskraj_token'); }
 function setToken(t) { localStorage.setItem('naskraj_token', t); }
@@ -35,7 +36,6 @@ function apiPost(path, body) { return apiFetch(path, { method: 'POST', body: bod
 function apiPatch(path, body) { return apiFetch(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) }); }
 function apiDelete(path, body) { return apiFetch(path, { method: 'DELETE', body: body ? JSON.stringify(body) : undefined }); }
 
-// ---- URL params ----
 function getUrlParam(key) { return new URLSearchParams(location.search).get(key); }
 function clearUrlParams() { if (location.search) history.replaceState(null, '', location.pathname); }
 
@@ -67,7 +67,8 @@ async function compressImage(file, opts = {}) {
     const newName = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
     return new File([blob], newName, { type: 'image/jpeg', lastModified: Date.now() });
   } catch (err) {
-    console.warn('Kompresia zlyhala:', err); return file;
+    console.warn('Kompresia zlyhala:', err);
+    return file;
   }
 }
 
@@ -83,16 +84,11 @@ async function compressImageList(files, opts) {
 let _googleInitialized = false;
 
 function initGoogleSignIn(onCredential) {
-  if (!window.google?.accounts?.id) {
-    console.warn('Google Identity Services sa ešte nenačítal.');
-    return false;
-  }
+  if (!window.google?.accounts?.id) return false;
   if (!_googleInitialized) {
     window.google.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
-      callback: (response) => {
-        if (response?.credential) onCredential(response.credential);
-      },
+      callback: (response) => { if (response?.credential) onCredential(response.credential); },
       auto_select: false,
       cancel_on_tap_outside: true,
     });
@@ -103,21 +99,15 @@ function initGoogleSignIn(onCredential) {
 
 function renderGoogleButton(containerEl, onCredential) {
   if (!initGoogleSignIn(onCredential)) {
-    // Skús znova o sekundu (script sa možno ešte načítava)
     setTimeout(() => renderGoogleButton(containerEl, onCredential), 1000);
     return;
   }
   window.google.accounts.id.renderButton(containerEl, {
-    theme: 'outline',
-    size: 'large',
-    text: 'signin_with',
-    shape: 'pill',
-    logo_alignment: 'left',
-    width: 320,
+    theme: 'outline', size: 'large', text: 'signin_with',
+    shape: 'pill', logo_alignment: 'left', width: 320,
   });
 }
 
-// Handler – pošle Google credential na backend
 async function handleGoogleCredential(credential) {
   try {
     const data = await apiPost('/api/auth/google', { credential });
@@ -134,4 +124,30 @@ async function handleGoogleCredential(credential) {
   } catch (err) {
     showToast(err.message);
   }
+}
+
+// ============================================================
+// reCAPTCHA v3
+// ============================================================
+async function getRecaptchaToken(action) {
+  if (!window.grecaptcha || !RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === 'SEM_VLOZ_SVOJ_RECAPTCHA_SITE_KEY') {
+    // Ak reCAPTCHA nie je nastavená, vráť prázdny token — server to zvládne
+    return '';
+  }
+  return new Promise((resolve) => {
+    try {
+      grecaptcha.ready(async () => {
+        try {
+          const token = await grecaptcha.execute(RECAPTCHA_SITE_KEY, { action });
+          resolve(token);
+        } catch (err) {
+          console.warn('[recaptcha] execute zlyhal:', err);
+          resolve('');
+        }
+      });
+    } catch (err) {
+      console.warn('[recaptcha] ready zlyhal:', err);
+      resolve('');
+    }
+  });
 }
