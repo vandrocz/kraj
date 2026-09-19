@@ -233,10 +233,14 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
     </div>`;
 }
 
+// ============================================================
+// HLAVNÝ RENDER
+// ============================================================
 function renderApp() {
   const root = document.getElementById('root');
   let pageHtml = '';
 
+  // Overlay routy
   if (state.overlay?.type === 'profile') pageHtml = renderProfileOverlay();
   else if (state.overlay?.type === 'profile-stats') pageHtml = renderProfileStatsOverlay();
   else if (state.overlay?.type === 'settings') pageHtml = renderSettingsOverlay();
@@ -258,6 +262,7 @@ function renderApp() {
   else if (state.overlay?.type === 'create-event') pageHtml = renderCreateEventOverlay();
   else if (state.overlay?.type === 'event-detail') pageHtml = renderEventDetailOverlay();
   else if (state.overlay?.type === 'bookmarks') pageHtml = renderBookmarksOverlay();
+  // Tab routy
   else if (state.tab === 'events') pageHtml = renderEventsPage();
   else if (state.tab === 'map') pageHtml = renderMapPage();
   else if (state.tab === 'organizations') pageHtml = renderFeedPage('organization', TYPES.organization, false);
@@ -366,7 +371,9 @@ function switchTab(tab) {
   if (tab === 'account' && isLoggedIn()) loadNotifications();
 }
 
-// ---- LIGHTBOX s carouselom ----
+// ============================================================
+// LIGHTBOX s carouselom
+// ============================================================
 function openLightbox(images, index = 0, caption = '') {
   state.lightbox = { images, index: Math.max(0, Math.min(index, images.length - 1)), caption };
   updateLightboxDOM();
