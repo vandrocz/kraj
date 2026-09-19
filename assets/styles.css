@@ -1004,3 +1004,162 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 #google-signin-container {
   min-height: 44px;
 }
+
+/* ============ Events ============ */
+.events-list {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 0 12px 24px;
+}
+.event-card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--c-shadow);
+  cursor: pointer;
+  transition: transform .15s;
+  text-align: left;
+}
+.event-card:active { transform: scale(0.99); }
+.event-card-cover {
+  position: relative;
+  aspect-ratio: 16/9;
+  background-color: var(--c-primary-light);
+  background-size: cover;
+  background-position: center;
+}
+.event-card-kind {
+  position: absolute; top: 10px; left: 10px;
+  background: rgba(0,0,0,0.5);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--radius-round);
+  backdrop-filter: blur(4px);
+}
+.event-card-body { padding: 12px 14px 14px; }
+.event-card-date {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 700;
+  color: var(--c-primary-dark);
+  margin-bottom: 6px;
+}
+.event-card-title {
+  font-size: 15.5px; font-weight: 800; line-height: 1.3; margin-bottom: 6px;
+}
+.event-card-loc {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--c-text-muted); margin-bottom: 10px;
+}
+.event-card-business {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; font-weight: 600;
+  color: var(--c-text);
+  padding-top: 10px;
+  border-top: 1px solid var(--c-border);
+}
+.event-card-logo {
+  width: 24px; height: 24px; border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.event-card-logo-init {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--c-primary-light);
+  color: var(--c-primary-dark);
+  font-weight: 800;
+}
+
+/* ============ Business profile tabs ============ */
+.profile-tabs {
+  display: flex; gap: 4px;
+  padding: 0 16px;
+  margin-top: 20px;
+  border-bottom: 1px solid var(--c-border);
+}
+.profile-tab {
+  flex: 1;
+  padding: 12px 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -1px;
+  transition: color .15s, border-color .15s;
+}
+.profile-tab.is-active {
+  color: var(--c-primary-dark);
+  border-bottom-color: var(--c-primary);
+}
+
+/* ============ Lightbox s carouselom ============ */
+.lightbox {
+  position: fixed; inset: 0; background: rgba(6,14,10,0.94); z-index: 100;
+  display: none; align-items: center; justify-content: center; padding: 24px;
+}
+.lightbox.is-open { display: flex; }
+.lightbox-body { max-width: 720px; width: 100%; position: relative; text-align: center; }
+.lightbox-img {
+  width: 100%; max-height: 80vh; object-fit: contain;
+  border-radius: var(--radius-md);
+}
+.lightbox-caption {
+  color: rgba(255,255,255,0.9); font-size: 14px; margin-top: 14px;
+}
+.lightbox-counter {
+  color: rgba(255,255,255,0.6); font-size: 12.5px; margin-top: 6px;
+  font-weight: 700;
+}
+.lightbox-close {
+  position: absolute; top: 20px; right: 20px;
+  width: 42px; height: 42px; border-radius: 50%;
+  background: rgba(255,255,255,0.12); color: white;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 3;
+}
+.lightbox-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(255,255,255,0.12); color: white;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 3;
+}
+.lightbox-prev { left: 12px; }
+.lightbox-next { right: 12px; }
+.lightbox-nav:hover { background: rgba(255,255,255,0.22); }
+.flip-x { transform: scaleX(-1); }
+
+/* ============ Stats bars ============ */
+.stats-bars {
+  display: flex; align-items: flex-end; gap: 4px;
+  height: 80px;
+  padding: 8px 0;
+}
+.stats-bar {
+  flex: 1;
+  min-height: 4px;
+  background: linear-gradient(180deg, var(--c-primary), var(--c-primary-dark));
+  border-radius: 3px 3px 0 0;
+}
+
+/* ============ Bookmark button ============ */
+.post-action.is-bookmarked { color: var(--c-gold); }
+
+/* ============ Post image (multi-photo) ============ */
+.post-carousel { position: relative; }
+.post-carousel-track {
+  display: flex; overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  aspect-ratio: 4/3;
+}
+.post-carousel-slide {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  padding: 0; border: none; background: transparent;
+  overflow: hidden;
+  cursor: zoom-in;
+}
