@@ -386,15 +386,16 @@ async function loadSettings() {
 
 function renderSettingsOverlay() {
   if (!state._settings) loadSettings();
-  const s = state._settings || { push_notifications: true, email_notifications: true, public_profile: true, show_contributions: true };
+  const s = state._settings || { public_profile: true, show_contributions: true };
   return `
     <div class="page-scroll">
       ${renderBackHeader('Nastavení')}
       <div class="profile-section">
         <h3 class="profile-section-title">Notifikace</h3>
-        <label class="settings-toggle"><span>Push notifikace v prohlížeči</span><input type="checkbox" data-action="push-toggle" ${state._pushSubscribed ? 'checked' : ''} /></label>
-        <button class="settings-row" data-action="push-test" style="font-size:12px;color:var(--c-text-muted)">Poslat testovací push</button>
-        <label class="settings-toggle"><span>E-mailové notifikace</span><input type="checkbox" data-action="setting-toggle" data-key="email_notifications" ${s.email_notifications ? 'checked' : ''} /></label>
+        <label class="settings-toggle">
+          <span>Push notifikace v prohlížeči</span>
+          <input type="checkbox" data-action="push-toggle" ${state._pushSubscribed ? 'checked' : ''} />
+        </label>
       </div>
       <div class="profile-section">
         <h3 class="profile-section-title">Soukromí</h3>
