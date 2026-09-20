@@ -18,6 +18,7 @@ import { checkinsRoutes } from './routes/checkins.js';
 import { reviewsRoutes } from './routes/reviews.js';
 import { wishlistRoutes } from './routes/wishlist.js';
 import { nearbyRoutes } from './routes/nearby.js';
+import { pushRoutes } from './routes/push.js';
 import { runDailyDistribution, ensureActiveProjectRotation, cleanupOrphanedR2 } from './cron.js';
 import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUISINE_TYPES } from './regions.js';
 
@@ -57,7 +58,7 @@ app.route('/api/seo', seoRoutes);
 app.route('/api/auth', authRoutes);
 app.route('/api/auth', authGoogleRoutes);
 
-// Wallet
+// Wallet (skryté v UI, ale API existuje)
 app.get('/api/user/wallet', requireAuth, async (c) => {
   const user = c.get('user');
   const row = await c.env.DB.prepare('SELECT credit_balance, status FROM users WHERE id = ?').bind(user.sub).first();
@@ -134,6 +135,13 @@ app.route('/api/wishlist', wishlistRoutes);
 // Nearby (verejné)
 app.route('/api/nearby', nearbyRoutes);
 
+// Push
+app.route('/api/push/vapid-public-key', pushRoutes);
+app.use('/api/push/subscribe', requireAuth);
+app.use('/api/push/unsubscribe', requireAuth);
+app.use('/api/push/test', requireAuth);
+app.route('/api/push', pushRoutes);
+
 // Profile
 app.use('/api/profile/me/*', requireAuth);
 app.use('/api/profile/me', requireAuth);
@@ -161,19 +169,17 @@ app.use('/api/stories/upload', requireAuth);
 app.use('/api/stories', requireAuth);
 app.route('/api/stories', storiesRoutes);
 
-// Admin cron
+// Admin
 app.post('/api/admin/run-distribution-now', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
   return c.json(await runDailyDistribution(c.env));
 });
-
 app.post('/api/admin/r2-cleanup', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
   return c.json(await cleanupOrphanedR2(c.env));
 });
-
 app.use('/api/admin/*', requireAuth);
 app.route('/api/admin', adminRoutes);
 
