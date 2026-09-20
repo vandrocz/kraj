@@ -43,27 +43,13 @@ document.addEventListener('click', (e) => {
     case 'lightbox-prev': lightboxPrev(); break;
     case 'lightbox-next': lightboxNext(); break;
 
-    case 'open-detail': {
-      const id = el.dataset.id, source = el.dataset.source;
-      const project = source === 'active' ? state.collections?.active : state.collections?.waiting?.find((p) => p.id === id);
-      if (!project) break;
-      const sheet = document.getElementById('detail-sheet');
-      if (sheet && typeof buildDetailSheetHtml === 'function') sheet.innerHTML = buildDetailSheetHtml(project);
-      document.getElementById('detail-modal')?.classList.add('is-open');
-      document.body.style.overflow = 'hidden';
-      break;
-    }
-    case 'close-detail':
-      document.getElementById('detail-modal')?.classList.remove('is-open');
-      document.body.style.overflow = '';
-      break;
-
     case 'toggle-comments': toggleSocialComments(el.dataset.id, el.dataset.feed); break;
     case 'toggle-post-like': togglePostLike(el.dataset.id, el.dataset.feed, el); break;
     case 'toggle-bookmark': toggleBookmark(el.dataset.id, el); break;
     case 'share-post': sharePost(el.dataset.id, el.dataset.text); break;
     case 'report-post': reportPost(el.dataset.id); break;
     case 'reply-comment': toggleReplyForm(el.dataset.id); break;
+    case 'edit-post': openEditPost(el.dataset.id, el.dataset.feed); break;
 
     case 'open-profile': if (el.dataset.id) openProfile(el.dataset.kind, el.dataset.id); break;
     case 'close-overlay': closeOverlay(); break;
@@ -146,6 +132,9 @@ document.addEventListener('click', (e) => {
     case 'close-story-viewer': closeStoryViewer(); break;
     case 'story-next': storyNext(); break;
     case 'story-prev': storyPrev(); break;
+    case 'story-reply-open': storyReplyOpen(); break;
+    case 'story-reply-cancel': storyReplyCancel(); break;
+    case 'story-reply-send': storyReplySend(); break;
     case 'trigger-story-file': document.getElementById('story-file-input')?.click(); break;
     case 'rich-cmd': richCmd(el.dataset.cmd); break;
     case 'rich-link': richLink(); break;
@@ -193,6 +182,22 @@ document.addEventListener('click', (e) => {
     // Reviews
     case 'open-create-review': openCreateReview(el.dataset.kind, el.dataset.id); break;
     case 'set-review-rating': setReviewRating(parseInt(el.dataset.value, 10)); break;
+
+    // Onboarding
+    case 'onboarding-next': onboardingNext(); break;
+    case 'onboarding-skip': onboardingSkip(); break;
+    case 'onboarding-toggle-biz': onboardingToggleBiz(el.dataset.kind, el.dataset.id, el.dataset.name); break;
+    case 'onboarding-avatar-pick': onboardingAvatarPick(); break;
+
+    // Verification
+    case 'open-verification-request': openVerificationRequest(el.dataset.kind, el.dataset.id, el.dataset.name); break;
+    case 'trigger-verif-doc': document.getElementById('verif-doc-input')?.click(); break;
+
+    // Push
+    case 'push-test': testPush(); break;
+
+    // Cookies
+    case 'accept-cookies': acceptCookies(); break;
   }
 });
 
@@ -232,6 +237,9 @@ document.addEventListener('change', (e) => {
   }
   else if (a === 'nearby-radius') { state.nearby.radius = parseInt(el.value, 10); loadNearby(); }
   else if (a === 'nearby-kind') { state.nearby.kind = el.value; loadNearby(); }
+  else if (a === 'onboarding-avatar-change') onboardingAvatarChange(el);
+  else if (a === 'verif-doc-selected') onVerifDocSelected(el);
+  else if (a === 'push-toggle') handlePushToggle(el.checked);
 });
 
 document.addEventListener('input', (e) => {
@@ -244,6 +252,15 @@ document.addEventListener('input', (e) => {
     state.events.next_cursor = null;
     clearTimeout(window._eventSearchTimer);
     window._eventSearchTimer = setTimeout(() => loadEvents(), 400);
+    return;
+  }
+  if (el.dataset.action === 'onboarding-bio') {
+    state.overlay.bio = el.value;
+    return;
+  }
+  if (el.dataset.action === 'story-reply-input') {
+    state.overlay.replyText = el.value;
+    return;
   }
 });
 
@@ -279,22 +296,46 @@ document.addEventListener('submit', (e) => {
   else if (a === 'submit-create-story') handleCreateStorySubmit(form);
   else if (a === 'submit-checkin') handleCheckinSubmit(form);
   else if (a === 'submit-review') handleReviewSubmit(form);
+  else if (a === 'submit-edit-post') handleEditPostSubmit(form);
+  else if (a === 'submit-verification-request') handleVerificationSubmit(form);
 });
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (state.lightbox) { closeLightbox(); return; }
+    if (state.overlay?.type === 'story-viewer' && state.overlay.replyOpen) { storyReplyCancel(); return; }
     document.getElementById('detail-modal')?.classList.remove('is-open');
     document.body.style.overflow = '';
     if (state.overlay) closeOverlay();
   }
+  if (e.key === 'Enter' && state.overlay?.type === 'story-viewer' && state.overlay.replyOpen) {
+    const input = document.querySelector('[data-story-reply-input]');
+    if (document.activeElement === input) {
+      e.preventDefault();
+      storyReplySend();
+    }
+  }
 });
 
 async function bootstrap() {
+  state.tab = restoreTab();
+  getFeedTitle(state.tab);
+
   renderApp();
   await loadMetaFromApi();
   renderApp();
-  if (isLoggedIn()) { loadNotifications(); loadStoriesFeed(); }
+
+  if (state.tab === 'organizations') loadSocialFeed('organization');
+  else if (state.tab === 'accommodation') loadSocialFeed('accommodation');
+  else if (state.tab === 'gastro') loadSocialFeed('gastro');
+  else if (state.tab === 'events') loadEvents();
+
+  if (isLoggedIn()) {
+    loadNotifications();
+    loadStoriesFeed();
+    if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
+    if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(state.user);
+  }
 
   const verifyToken = getUrlParam('verify');
   const resetToken = getUrlParam('reset');
