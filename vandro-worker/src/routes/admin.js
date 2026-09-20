@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
-import { newId } from '../auth.js';
+import { newId, generateUniqueHandle, normalizeHandle, validateHandle } from '../auth.js';
 import { runDailyDistribution } from '../cron.js';
+import { sendPushToUser } from '../push.js';
 
 export const adminRoutes = new Hono();
 
@@ -13,13 +14,11 @@ const BUSINESS_TABLES = ['organizations', 'accommodation', 'restaurants'];
 
 adminRoutes.get('/pending', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
-
   const [orgs, acc, rest] = await Promise.all([
     c.env.DB.prepare(`SELECT id, name, type, region, district FROM organizations WHERE is_verified = 0`).all(),
     c.env.DB.prepare(`SELECT id, name, type, region, district FROM accommodation WHERE is_verified = 0`).all(),
     c.env.DB.prepare(`SELECT id, name, type, region, district FROM restaurants WHERE is_verified = 0`).all(),
   ]);
-
   return c.json({
     organizations: orgs.results,
     accommodation: acc.results,
@@ -32,20 +31,19 @@ adminRoutes.post('/verify/:kind/:id', async (c) => {
   const kind = c.req.param('kind');
   const id = c.req.param('id');
   if (!BUSINESS_TABLES.includes(kind)) return c.json({ error: 'Neznámy typ podniku.' }, 400);
-
-  await c.env.DB.prepare(`UPDATE ${kind} SET is_verified = 1 WHERE id = ?`).bind(id).run();
+  await c.env.DB.prepare(`UPDATE ${kind} SET is_verified = 1, verification_status = 'verified' WHERE id = ?`).bind(id).run();
   return c.json({ ok: true });
 });
 
 // ============================================================
-// ŽIADOSTI O VERIFIKÁCIU
+// VERIFIKAČNÉ ŽIADOSTI
 // ============================================================
 
 adminRoutes.get('/verifications', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
   const { results } = await c.env.DB.prepare(
     `SELECT verification_requests.*,
-            users.display_name AS user_name, users.email AS user_email
+            users.display_name AS user_name, users.email AS user_email, users.handle AS user_handle
      FROM verification_requests
      JOIN users ON users.id = verification_requests.user_id
      WHERE verification_requests.status = 'pending'
@@ -56,7 +54,7 @@ adminRoutes.get('/verifications', async (c) => {
 
 adminRoutes.post('/verifications/:id/approve', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
-  const user = c.get('user');
+  const admin = c.get('user');
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
   const note = (body.note || '').slice(0, 500);
@@ -70,18 +68,21 @@ adminRoutes.post('/verifications/:id/approve', async (c) => {
 
   if (BUSINESS_TABLES.includes(req.business_kind)) {
     await c.env.DB.prepare(`UPDATE ${req.business_kind} SET is_verified = 1, verification_status = 'verified' WHERE id = ?`).bind(req.business_id).run();
-    try {
-      await c.env.DB.prepare(
-        `UPDATE organizations SET verification_status = 'verified' WHERE id = ?`,
-      ).bind(req.business_id).run();
-    } catch {}
   }
 
   try {
     await c.env.DB.prepare(
       `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
        VALUES (?, ?, 'verification_approved', ?, 'business', ?, 'Byl(a) jsi ověřen(a)! ✓')`,
-    ).bind(newId('notif'), req.user_id, user.sub, req.business_id).run();
+    ).bind(newId('notif'), req.user_id, admin.sub, req.business_id).run();
+  } catch {}
+
+  try {
+    await sendPushToUser(c.env, req.user_id, {
+      title: 'Účet ověřen',
+      body: 'Tvůj podnik byl úspěšně ověřen.',
+      url: '/?tab=account',
+    });
   } catch {}
 
   return c.json({ ok: true });
@@ -89,7 +90,7 @@ adminRoutes.post('/verifications/:id/approve', async (c) => {
 
 adminRoutes.post('/verifications/:id/reject', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
-  const user = c.get('user');
+  const admin = c.get('user');
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
   const note = (body.note || '').slice(0, 500);
@@ -109,16 +110,41 @@ adminRoutes.post('/verifications/:id/reject', async (c) => {
     await c.env.DB.prepare(
       `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
        VALUES (?, ?, 'verification_rejected', ?, 'business', ?, 'Žádost o ověření byla zamítnuta')`,
-    ).bind(newId('notif'), req.user_id, user.sub, req.business_id).run();
+    ).bind(newId('notif'), req.user_id, admin.sub, req.business_id).run();
   } catch {}
 
   return c.json({ ok: true });
 });
 
 // ============================================================
-// TEST CONTENT — seed & cleanup
+// BACKFILL HANDLES — doplní existujúcim užívateľom bez handle
 // ============================================================
+adminRoutes.post('/backfill-handles', async (c) => {
+  if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
 
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, email, display_name FROM users WHERE handle IS NULL OR handle = '' AND deleted_at IS NULL`,
+  ).all();
+
+  let updated = 0, failed = 0;
+  for (const u of results) {
+    try {
+      const base = (u.email || '').split('@')[0] || u.display_name || 'user';
+      const handle = await generateUniqueHandle(c.env, base);
+      await c.env.DB.prepare('UPDATE users SET handle = ? WHERE id = ?').bind(handle, u.id).run();
+      updated++;
+    } catch (err) {
+      console.error('backfill handle fail:', u.id, err);
+      failed++;
+    }
+  }
+
+  return c.json({ ok: true, total: results.length, updated, failed });
+});
+
+// ============================================================
+// SEED / CLEANUP TEST CONTENT
+// ============================================================
 adminRoutes.post('/seed-test-content', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
   const { seedTestContent } = await import('../seed.js');
@@ -134,9 +160,8 @@ adminRoutes.post('/cleanup-test-content', async (c) => {
 });
 
 // ============================================================
-// Reports + posts + cron (pôvodné)
+// REPORTS + POSTS + CRON
 // ============================================================
-
 adminRoutes.get('/reports', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
   const { results } = await c.env.DB.prepare(
