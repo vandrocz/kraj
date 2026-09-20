@@ -39,7 +39,6 @@ function apiDelete(path, body) { return apiFetch(path, { method: 'DELETE', body:
 function getUrlParam(key) { return new URLSearchParams(location.search).get(key); }
 function clearUrlParams() { if (location.search) history.replaceState(null, '', location.pathname); }
 
-// ---- Kompresia obrázkov ----
 async function compressImage(file, opts = {}) {
   const { maxDim = 1600, quality = 0.82, minBytes = 150 * 1024 } = opts;
   if (!file || !file.type || !file.type.startsWith('image/')) return file;
@@ -117,10 +116,10 @@ async function handleGoogleCredential(credential) {
     state.token = data.token;
     state.user = data.user;
     state.businesses = data.businesses || [];
-    state.wallet = null;
     showToast(`Vítej, ${data.user.display_name}!`);
-    loadWallet();
-    loadNotifications();
+    if (typeof loadNotifications === 'function') loadNotifications();
+    if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(data.user);
+    if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
   } catch (err) {
     showToast(err.message);
   }
@@ -130,24 +129,14 @@ async function handleGoogleCredential(credential) {
 // reCAPTCHA v3
 // ============================================================
 async function getRecaptchaToken(action) {
-  if (!window.grecaptcha || !RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === '6Ldlu8QtAAAAAJoG-6t0lZja1Iagd_ZpjLIDV6Ct') {
-    // Ak reCAPTCHA nie je nastavená, vráť prázdny token — server to zvládne
-    return '';
-  }
+  if (!RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === '6Ldlu8QtAAAAAJoG-6t0lZja1Iagd_ZpjLIDV6Ct') return '';
+  if (!window.grecaptcha) return '';
   return new Promise((resolve) => {
     try {
       grecaptcha.ready(async () => {
-        try {
-          const token = await grecaptcha.execute(RECAPTCHA_SITE_KEY, { action });
-          resolve(token);
-        } catch (err) {
-          console.warn('[recaptcha] execute zlyhal:', err);
-          resolve('');
-        }
+        try { resolve((await grecaptcha.execute(RECAPTCHA_SITE_KEY, { action })) || ''); }
+        catch { resolve(''); }
       });
-    } catch (err) {
-      console.warn('[recaptcha] ready zlyhal:', err);
-      resolve('');
-    }
+    } catch { resolve(''); }
   });
 }
