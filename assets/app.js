@@ -1,8 +1,5 @@
-// ============================================================
-// STAV APLIKÁCIE
-// ============================================================
 const state = {
-  tab: 'events',
+  tab: 'organizations',
   overlay: null,
   overlayStack: [],
 
@@ -27,6 +24,7 @@ const state = {
 
   adminPending: null, adminPendingLoading: false,
   adminReports: null, adminReportsLoading: false,
+  adminVerifications: null,
 
   notifications: null,
   unreadNotifications: 0,
@@ -47,6 +45,13 @@ const state = {
   _wishlist: null,
   _userBadges: null, _userCheckins: null, _businessCheckins: null,
   _checkinStatus: undefined, _wishlistStatus: undefined,
+  _verificationStatus: undefined,
+
+  _onboarding: null,
+  _cookieConsent: false,
+  _pushSubscribed: null,
+  _editingPost: null,
+  _storyReplyOpen: null,
 
   threads: null, threadCurrent: null, threadMessages: null,
   groupsMy: null, groupsDiscover: null, groupCurrent: null,
@@ -146,7 +151,7 @@ const FEED_TITLES = {
   accommodation: [
     'Kde se vyspat?', 'Útulné noclehy', 'Ubytování na cestách', 'Přespání v přírodě',
     'Tipy na přenocování', 'Wellness a klid', 'Víkendový pobyt', 'Nocleh se srdcem',
-    'Hotely, penziony, kempy', 'Kde složit hlavu?',
+    'Hotely, penziony, chaty', 'Kde složit hlavu?',
   ],
   gastro: [
     'Kam na jídlo?', 'Dobroty a chutě', 'Gurmánské tipy', 'Hladový cestovatel',
@@ -161,20 +166,20 @@ function pickRandomTitle(key) {
 }
 
 function getFeedTitle(key) {
-  if (!state.feedTitles[key]) {
-    state.feedTitles[key] = pickRandomTitle(key);
-  }
+  if (!state.feedTitles[key]) state.feedTitles[key] = pickRandomTitle(key);
   return state.feedTitles[key];
 }
 
 const TABS = [
-  { key: 'events', icon: 'calendar', label: 'Akce' },
-  { key: 'map', icon: 'mapPin', label: 'Mapa' },
   { key: 'organizations', icon: 'landmark', label: 'Organizace' },
   { key: 'accommodation', icon: 'bed', label: 'Ubytování' },
   { key: 'gastro', icon: 'coffee', label: 'Gastro' },
-  { key: 'account', icon: 'user', label: 'Účet' },
+  { key: 'map', icon: 'mapPin', label: 'Mapa' },
+  { key: 'events', icon: 'calendar', label: 'Akce' },
+  { key: 'account', icon: 'user', label: 'Profil' },
 ];
+
+const VALID_TABS = ['organizations', 'accommodation', 'gastro', 'map', 'events', 'account'];
 
 function renderBottomNav() {
   const btns = TABS.map((t) => {
@@ -233,9 +238,6 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
     </div>`;
 }
 
-// ============================================================
-// HLAVNÝ RENDER
-// ============================================================
 function renderApp() {
   const root = document.getElementById('root');
   let pageHtml = '';
@@ -268,32 +270,33 @@ function renderApp() {
   else if (state.overlay?.type === 'business-checkins') pageHtml = renderBusinessCheckinsOverlay();
   else if (state.overlay?.type === 'create-checkin') pageHtml = renderCreateCheckinOverlay();
   else if (state.overlay?.type === 'create-review') pageHtml = renderCreateReviewOverlay();
-  else if (state.tab === 'events') pageHtml = renderEventsPage();
-  else if (state.tab === 'map') pageHtml = renderMapPage();
+  else if (state.overlay?.type === 'onboarding') pageHtml = renderOnboardingOverlay();
+  else if (state.overlay?.type === 'edit-post') pageHtml = renderEditPostOverlay();
+  else if (state.overlay?.type === 'verification-request') pageHtml = renderVerificationRequestOverlay();
   else if (state.tab === 'organizations') pageHtml = renderFeedPage('organization', TYPES.organization, false);
   else if (state.tab === 'accommodation') pageHtml = renderFeedPage('accommodation', TYPES.accommodation, false);
   else if (state.tab === 'gastro') pageHtml = renderFeedPage('gastro', TYPES.restaurant, true);
+  else if (state.tab === 'map') pageHtml = renderMapPage();
+  else if (state.tab === 'events') pageHtml = renderEventsPage();
   else if (state.tab === 'account') pageHtml = renderAccountPage();
 
-  const hideChrome = (state.tab === 'map' && !state.overlay) || state.overlay?.type === 'story-viewer';
+  const hideChrome = (state.tab === 'map' && !state.overlay) || state.overlay?.type === 'story-viewer' || state.overlay?.type === 'onboarding';
 
   root.innerHTML = `
     <div class="app-shell">
       ${pageHtml}
-      ${renderBottomNav()}
+      ${hideChrome ? '' : renderBottomNav()}
       ${hideChrome ? '' : renderLightbox()}
+      ${hideChrome ? '' : renderCookieBanner()}
     </div>`;
 
   applySeo();
 
   if (!state.overlay) {
-    if (state.tab === 'events' && state.events.next_cursor) {
-      setupInfiniteScroll(() => loadEvents(true));
-    } else if (['organizations', 'accommodation', 'gastro'].includes(state.tab)) {
+    if (state.tab === 'events' && state.events.next_cursor) setupInfiniteScroll(() => loadEvents(true));
+    else if (['organizations', 'accommodation', 'gastro'].includes(state.tab)) {
       const k = state.tab === 'organizations' ? 'organization' : state.tab;
-      if (state.socialFeeds[k].next_cursor) {
-        setupInfiniteScroll(() => loadSocialFeed(k, true));
-      }
+      if (state.socialFeeds[k].next_cursor) setupInfiniteScroll(() => loadSocialFeed(k, true));
     }
   }
 }
@@ -324,34 +327,18 @@ async function applySeo() {
 }
 
 function openProfile(kind, id) {
-  let k = kind;
-  if (kind === 'organization') k = 'organizations';
-  if (kind === 'gastro') k = 'restaurants';
+  let k = kind; if (kind === 'organization') k = 'organizations'; if (kind === 'gastro') k = 'restaurants';
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'profile', kind: k, id };
-  state._bizProfileTab = 'posts';
-  state._bizEvents = null;
-  state._bizStats = null;
-  state._reviews = null;
-  state._myReview = null;
-  state._checkinStatus = undefined;
-  state._wishlistStatus = undefined;
+  state._bizProfileTab = 'posts'; state._bizEvents = null; state._bizStats = null;
+  state._reviews = null; state._myReview = null;
+  state._checkinStatus = undefined; state._wishlistStatus = undefined; state._verificationStatus = undefined;
   renderApp();
   window.scrollTo(0, 0);
 }
 
-function closeOverlay() {
-  const prev = state.overlayStack.pop();
-  state.overlay = prev || null;
-  renderApp();
-}
-
-function clearOverlay() {
-  state.overlay = null;
-  state.overlayStack = [];
-  renderApp();
-}
-
+function closeOverlay() { const prev = state.overlayStack.pop(); state.overlay = prev || null; renderApp(); }
+function clearOverlay() { state.overlay = null; state.overlayStack = []; renderApp(); }
 function openSettings() { state.overlay = { type: 'settings' }; renderApp(); }
 function openSecurity() { state.overlay = { type: 'security' }; renderApp(); }
 function openNotifications() { state.overlay = { type: 'notifications' }; renderApp(); loadNotifications(); }
@@ -368,10 +355,22 @@ function openBadges() { state.overlay = { type: 'badges' }; state._userBadges = 
 function openUserCheckins(userId) { state.overlay = { type: 'user-checkins', userId }; state._userCheckins = null; renderApp(); loadUserCheckins(userId); }
 function openWishlist() { state.overlay = { type: 'wishlist' }; state._wishlist = null; renderApp(); loadWishlist(); }
 
+function persistTab(tab) {
+  try { localStorage.setItem('naskraj_tab', tab); } catch {}
+}
+function restoreTab() {
+  try {
+    const t = localStorage.getItem('naskraj_tab');
+    if (t && VALID_TABS.includes(t)) return t;
+  } catch {}
+  return 'organizations';
+}
+
 function switchTab(tab) {
   state.overlay = null;
   state.overlayStack = [];
   state.tab = tab;
+  persistTab(tab);
   getFeedTitle(tab);
   renderApp();
   if (tab === 'events' && state.events.items.length === 0) loadEvents();
@@ -381,79 +380,63 @@ function switchTab(tab) {
   if (tab === 'account' && isLoggedIn()) loadNotifications();
 }
 
-// ============================================================
-// LIGHTBOX s carouselom
-// ============================================================
 function openLightbox(images, index = 0, caption = '') {
   state.lightbox = { images, index: Math.max(0, Math.min(index, images.length - 1)), caption };
   updateLightboxDOM();
   document.getElementById('lightbox')?.classList.add('is-open');
   document.body.style.overflow = 'hidden';
 }
-
 function closeLightbox() {
   document.getElementById('lightbox')?.classList.remove('is-open');
-  document.body.style.overflow = '';
-  state.lightbox = null;
+  document.body.style.overflow = ''; state.lightbox = null;
 }
-
-function lightboxPrev() {
-  if (!state.lightbox) return;
-  state.lightbox.index = (state.lightbox.index - 1 + state.lightbox.images.length) % state.lightbox.images.length;
-  updateLightboxDOM();
-}
-
-function lightboxNext() {
-  if (!state.lightbox) return;
-  state.lightbox.index = (state.lightbox.index + 1) % state.lightbox.images.length;
-  updateLightboxDOM();
-}
-
+function lightboxPrev() { if (!state.lightbox) return; state.lightbox.index = (state.lightbox.index - 1 + state.lightbox.images.length) % state.lightbox.images.length; updateLightboxDOM(); }
+function lightboxNext() { if (!state.lightbox) return; state.lightbox.index = (state.lightbox.index + 1) % state.lightbox.images.length; updateLightboxDOM(); }
 function updateLightboxDOM() {
-  const lb = state.lightbox;
-  if (!lb || !lb.images.length) return;
+  const lb = state.lightbox; if (!lb || !lb.images.length) return;
   const img = document.getElementById('lightbox-img');
   const cap = document.getElementById('lightbox-caption');
   const counter = document.getElementById('lightbox-counter');
   const nav = document.querySelectorAll('.lightbox-nav');
   if (img) img.src = lb.images[lb.index];
   if (cap) cap.textContent = lb.caption || '';
-  if (counter) {
-    counter.textContent = lb.images.length > 1 ? `${lb.index + 1} / ${lb.images.length}` : '';
-    counter.style.display = lb.images.length > 1 ? '' : 'none';
-  }
+  if (counter) { counter.textContent = lb.images.length > 1 ? `${lb.index + 1} / ${lb.images.length}` : ''; counter.style.display = lb.images.length > 1 ? '' : 'none'; }
   nav.forEach((n) => { n.style.display = lb.images.length > 1 ? '' : 'none'; });
 }
 
 function renderLightbox() {
+  return `<div class="lightbox" id="lightbox"><button class="lightbox-close" data-action="close-lightbox" aria-label="Zavřít">${icon('close', { size: 22 })}</button><button class="lightbox-nav lightbox-prev" data-action="lightbox-prev" aria-label="Předchozí">${icon('chevronRight', { size: 26, className: 'flip-x' })}</button><button class="lightbox-nav lightbox-next" data-action="lightbox-next" aria-label="Další">${icon('chevronRight', { size: 26 })}</button><div class="lightbox-body"><img src="" alt="" class="lightbox-img" id="lightbox-img" /><p class="lightbox-caption" id="lightbox-caption"></p><p class="lightbox-counter" id="lightbox-counter"></p></div></div>`;
+}
+
+function renderCookieBanner() {
+  if (state._cookieConsent) return '';
+  try { if (localStorage.getItem('naskraj_cookies') === '1') { state._cookieConsent = true; return ''; } } catch {}
   return `
-    <div class="lightbox" id="lightbox">
-      <button class="lightbox-close" data-action="close-lightbox" aria-label="Zavřít">${icon('close', { size: 22 })}</button>
-      <button class="lightbox-nav lightbox-prev" data-action="lightbox-prev" aria-label="Předchozí">${icon('chevronRight', { size: 26, className: 'flip-x' })}</button>
-      <button class="lightbox-nav lightbox-next" data-action="lightbox-next" aria-label="Další">${icon('chevronRight', { size: 26 })}</button>
-      <div class="lightbox-body">
-        <img src="" alt="" class="lightbox-img" id="lightbox-img" />
-        <p class="lightbox-caption" id="lightbox-caption"></p>
-        <p class="lightbox-counter" id="lightbox-counter"></p>
+    <div class="cookie-banner" id="cookie-banner">
+      <div class="cookie-body">
+        <p class="cookie-text"><strong>Cookies a soukromí.</strong> Používáme pouze technicky nezbytné cookies a lokální úložiště pro přihlášení. Žádné reklamní ani analytické cookies třetích stran.</p>
+        <div class="cookie-actions">
+          <button class="cookie-btn cookie-btn-primary" data-action="accept-cookies">Rozumím</button>
+          <a class="cookie-btn" href="/ochrana-osobnich-udaju" target="_blank" rel="noopener">Více info</a>
+        </div>
       </div>
     </div>`;
 }
 
+function acceptCookies() {
+  try { localStorage.setItem('naskraj_cookies', '1'); } catch {}
+  state._cookieConsent = true;
+  document.getElementById('cookie-banner')?.remove();
+}
+
 (function setupLightboxSwipe() {
   let startX = 0, startY = 0;
-  document.addEventListener('touchstart', (e) => {
-    if (!e.target.closest('.lightbox.is-open')) return;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-  }, { passive: true });
+  document.addEventListener('touchstart', (e) => { if (!e.target.closest('.lightbox.is-open')) return; startX = e.touches[0].clientX; startY = e.touches[0].clientY; }, { passive: true });
   document.addEventListener('touchend', (e) => {
     if (!e.target.closest('.lightbox.is-open')) return;
     const dx = e.changedTouches[0].clientX - startX;
     const dy = e.changedTouches[0].clientY - startY;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
-      if (dx < 0) lightboxNext();
-      else lightboxPrev();
-    }
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { if (dx < 0) lightboxNext(); else lightboxPrev(); }
   }, { passive: true });
 })();
 
