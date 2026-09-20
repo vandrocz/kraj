@@ -140,7 +140,6 @@ function renderBackHeader(title, rightHtml) {
     </header>`;
 }
 
-// ---- Náhodné názvy feedov ----
 const FEED_TITLES = {
   events: [
     'Co se děje?', 'Kam dnes vyrazit?', 'Kulturní program', 'Akce v okolí',
@@ -243,9 +242,34 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
 }
 
 // ============================================================
-// HLAVNÝ RENDER
+// HLAVNÝ RENDER — s ochranou focusu search inputu
 // ============================================================
 function renderApp() {
+  // ---- Ulož si focus search inputu PRED prepísaním DOM ----
+  const _active = document.activeElement;
+  let _searchFocus = null;
+  if (_active && _active.dataset && _active.dataset.action === 'search-change') {
+    _searchFocus = {
+      feed: _active.dataset.feed,
+      selStart: _active.selectionStart || 0,
+      selEnd: _active.selectionEnd || 0,
+    };
+  }
+  // Podobne pre iné inputy (komentáre, atď.)
+  let _otherFocus = null;
+  if (_active && _active.dataset && _active.dataset.action && _active.dataset.action !== 'search-change') {
+    if (['INPUT', 'TEXTAREA'].includes(_active.tagName)) {
+      const key = _active.dataset.action + (_active.dataset.id ? ':' + _active.dataset.id : '') + (_active.dataset.feed ? ':' + _active.dataset.feed : '');
+      _otherFocus = {
+        action: _active.dataset.action,
+        id: _active.dataset.id || null,
+        feed: _active.dataset.feed || null,
+        selStart: _active.selectionStart || 0,
+        selEnd: _active.selectionEnd || 0,
+      };
+    }
+  }
+
   const root = document.getElementById('root');
   let pageHtml = '';
 
@@ -287,17 +311,38 @@ function renderApp() {
   else if (state.tab === 'events') pageHtml = renderEventsPage();
   else if (state.tab === 'account') pageHtml = renderAccountPage();
 
-  const hideChrome = (state.tab === 'map' && !state.overlay) || state.overlay?.type === 'story-viewer' || state.overlay?.type === 'onboarding';
+  // Bottom nav sa skrýva len pri story-viewer a onboardingu — NIE pri mape
+  const hideChrome = state.overlay?.type === 'story-viewer' || state.overlay?.type === 'onboarding';
+  // Lightbox skryjeme aj na mape (aby neprekážal, ale bottom nav ostáva)
+  const hideLightbox = hideChrome || (state.tab === 'map' && !state.overlay);
 
   root.innerHTML = `
     <div class="app-shell">
       ${pageHtml}
       ${hideChrome ? '' : renderBottomNav()}
-      ${hideChrome ? '' : renderLightbox()}
+      ${hideLightbox ? '' : renderLightbox()}
       ${hideChrome ? '' : renderCookieBanner()}
     </div>`;
 
   applySeo();
+
+  // ---- Obnov focus search inputu PO prepísaní DOM ----
+  if (_searchFocus) {
+    const newInput = document.querySelector(`[data-action="search-change"][data-feed="${_searchFocus.feed}"]`);
+    if (newInput) {
+      newInput.focus({ preventScroll: true });
+      try { newInput.setSelectionRange(_searchFocus.selStart, _searchFocus.selEnd); } catch {}
+    }
+  } else if (_otherFocus) {
+    let sel = `[data-action="${_otherFocus.action}"]`;
+    if (_otherFocus.id) sel += `[data-id="${_otherFocus.id}"]`;
+    if (_otherFocus.feed) sel += `[data-feed="${_otherFocus.feed}"]`;
+    const newInput = document.querySelector(sel);
+    if (newInput) {
+      newInput.focus({ preventScroll: true });
+      try { newInput.setSelectionRange(_otherFocus.selStart, _otherFocus.selEnd); } catch {}
+    }
+  }
 
   if (!state.overlay) {
     if (state.tab === 'events' && state.events.next_cursor) setupInfiniteScroll(() => loadEvents(true));
@@ -388,7 +433,7 @@ function switchTab(tab) {
 }
 
 // ============================================================
-// LIGHTBOX s carouselom
+// LIGHTBOX
 // ============================================================
 function openLightbox(images, index = 0, caption = '') {
   state.lightbox = { images, index: Math.max(0, Math.min(index, images.length - 1)), caption };
@@ -396,41 +441,24 @@ function openLightbox(images, index = 0, caption = '') {
   document.getElementById('lightbox')?.classList.add('is-open');
   document.body.style.overflow = 'hidden';
 }
-
 function closeLightbox() {
   document.getElementById('lightbox')?.classList.remove('is-open');
   document.body.style.overflow = '';
   state.lightbox = null;
 }
-
-function lightboxPrev() {
-  if (!state.lightbox) return;
-  state.lightbox.index = (state.lightbox.index - 1 + state.lightbox.images.length) % state.lightbox.images.length;
-  updateLightboxDOM();
-}
-
-function lightboxNext() {
-  if (!state.lightbox) return;
-  state.lightbox.index = (state.lightbox.index + 1) % state.lightbox.images.length;
-  updateLightboxDOM();
-}
-
+function lightboxPrev() { if (!state.lightbox) return; state.lightbox.index = (state.lightbox.index - 1 + state.lightbox.images.length) % state.lightbox.images.length; updateLightboxDOM(); }
+function lightboxNext() { if (!state.lightbox) return; state.lightbox.index = (state.lightbox.index + 1) % state.lightbox.images.length; updateLightboxDOM(); }
 function updateLightboxDOM() {
-  const lb = state.lightbox;
-  if (!lb || !lb.images.length) return;
+  const lb = state.lightbox; if (!lb || !lb.images.length) return;
   const img = document.getElementById('lightbox-img');
   const cap = document.getElementById('lightbox-caption');
   const counter = document.getElementById('lightbox-counter');
   const nav = document.querySelectorAll('.lightbox-nav');
   if (img) img.src = lb.images[lb.index];
   if (cap) cap.textContent = lb.caption || '';
-  if (counter) {
-    counter.textContent = lb.images.length > 1 ? `${lb.index + 1} / ${lb.images.length}` : '';
-    counter.style.display = lb.images.length > 1 ? '' : 'none';
-  }
+  if (counter) { counter.textContent = lb.images.length > 1 ? `${lb.index + 1} / ${lb.images.length}` : ''; counter.style.display = lb.images.length > 1 ? '' : 'none'; }
   nav.forEach((n) => { n.style.display = lb.images.length > 1 ? '' : 'none'; });
 }
-
 function renderLightbox() {
   return `
     <div class="lightbox" id="lightbox">
@@ -445,9 +473,6 @@ function renderLightbox() {
     </div>`;
 }
 
-// ============================================================
-// COOKIE BANNER
-// ============================================================
 function renderCookieBanner() {
   if (state._cookieConsent) return '';
   try { if (localStorage.getItem('naskraj_cookies') === '1') { state._cookieConsent = true; return ''; } } catch {}
@@ -469,24 +494,17 @@ function acceptCookies() {
   document.getElementById('cookie-banner')?.remove();
 }
 
-// ============================================================
-// SWIPE + KEYBOARD pre lightbox
-// ============================================================
 (function setupLightboxSwipe() {
   let startX = 0, startY = 0;
   document.addEventListener('touchstart', (e) => {
     if (!e.target.closest('.lightbox.is-open')) return;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
   }, { passive: true });
   document.addEventListener('touchend', (e) => {
     if (!e.target.closest('.lightbox.is-open')) return;
     const dx = e.changedTouches[0].clientX - startX;
     const dy = e.changedTouches[0].clientY - startY;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
-      if (dx < 0) lightboxNext();
-      else lightboxPrev();
-    }
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { if (dx < 0) lightboxNext(); else lightboxPrev(); }
   }, { passive: true });
 })();
 
