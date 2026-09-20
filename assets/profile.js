@@ -116,10 +116,9 @@ function renderBusinessProfile(data, id, kind) {
   const cover = b.cover_url;
   const kindLabel = { organizations: 'Organizace', accommodation: 'Ubytování', restaurants: 'Gastro' }[kind] || '';
   const activeTab = state._bizProfileTab || 'posts';
+  const feedKey = data.feedKey || (kind === 'organizations' ? 'organization' : kind === 'accommodation' ? 'accommodation' : 'gastro');
 
-  if (activeTab === 'reviews' && !state._reviews) {
-    loadReviews(kind, id);
-  }
+  if (activeTab === 'reviews' && !state._reviews) loadReviews(kind, id);
   if (state._checkinStatus === undefined && isLoggedIn()) {
     state._checkinStatus = null;
     apiGet(`/api/checkins/me/status/${kind}/${id}`).then((r) => { state._checkinStatus = r; renderApp(); }).catch(() => {});
@@ -129,20 +128,17 @@ function renderBusinessProfile(data, id, kind) {
     apiGet(`/api/wishlist/me/status/${kind}/${id}`).then((r) => { state._wishlistStatus = r; renderApp(); }).catch(() => {});
   }
 
-  const postsGrid = (data.posts || []).map((post) => {
-    const c = (post.media && post.media[0]) || post.image_url;
-    const many = post.media && post.media.length > 1;
-    return `<button class="profile-grid-item" data-action="open-post" data-post-id="${post.id}" data-kind="${kind}" data-id="${id}">
-      <img src="${c}" alt="" loading="lazy" />
-      ${many ? `<span class="profile-grid-count">${icon('grid', { size: 12 })}${post.media.length}</span>` : ''}
-    </button>`;
-  }).join('');
-
   let tabContent = '';
   if (activeTab === 'posts') {
-    tabContent = postsGrid
-      ? `<div class="profile-grid">${postsGrid}</div>`
-      : '<p class="empty-state">Zatím žádné příspěvky.</p>';
+    // Facebook-style: príspevky pod sebou
+    const posts = data.posts || [];
+    if (posts.length === 0) {
+      tabContent = '<p class="empty-state">Zatím žádné příspěvky.</p>';
+    } else {
+      tabContent = `<div class="post-feed-grid profile-post-feed">
+        ${posts.map((p) => renderSocialPostCard(p, feedKey)).join('')}
+      </div>`;
+    }
   } else if (activeTab === 'events') {
     const events = state._bizEvents;
     tabContent = events === null
