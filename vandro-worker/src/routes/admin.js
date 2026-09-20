@@ -29,7 +29,7 @@ adminRoutes.get('/pending', async (c) => {
 
 adminRoutes.post('/verify/:kind/:id', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
-  const kind = c.req.param('kind'); // 'organizations' | 'accommodation' | 'restaurants'
+  const kind = c.req.param('kind');
   const id = c.req.param('id');
   if (!BUSINESS_TABLES.includes(kind)) return c.json({ error: 'Neznámy typ podniku.' }, 400);
 
@@ -37,22 +37,105 @@ adminRoutes.post('/verify/:kind/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-adminRoutes.post('/projects', async (c) => {
+// ============================================================
+// ŽIADOSTI O VERIFIKÁCIU
+// ============================================================
+
+adminRoutes.get('/verifications', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
+  const { results } = await c.env.DB.prepare(
+    `SELECT verification_requests.*,
+            users.display_name AS user_name, users.email AS user_email
+     FROM verification_requests
+     JOIN users ON users.id = verification_requests.user_id
+     WHERE verification_requests.status = 'pending'
+     ORDER BY verification_requests.created_at DESC LIMIT 100`,
+  ).all();
+  return c.json({ requests: results });
+});
+
+adminRoutes.post('/verifications/:id/approve', async (c) => {
+  if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
+  const user = c.get('user');
+  const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
-  const { organization_id, title, description, cover_image_url, target_amount } = body;
-  if (!organization_id || !title || !target_amount) {
-    return c.json({ error: 'Vyžaduje sa organization_id, title a target_amount.' }, 400);
+  const note = (body.note || '').slice(0, 500);
+
+  const req = await c.env.DB.prepare(`SELECT * FROM verification_requests WHERE id = ?`).bind(id).first();
+  if (!req) return c.json({ error: 'Nenalezeno.' }, 404);
+
+  await c.env.DB.prepare(
+    `UPDATE verification_requests SET status = 'approved', admin_note = ?, resolved_at = datetime('now') WHERE id = ?`,
+  ).bind(note, id).run();
+
+  if (BUSINESS_TABLES.includes(req.business_kind)) {
+    await c.env.DB.prepare(`UPDATE ${req.business_kind} SET is_verified = 1, verification_status = 'verified' WHERE id = ?`).bind(req.business_id).run();
+    try {
+      await c.env.DB.prepare(
+        `UPDATE organizations SET verification_status = 'verified' WHERE id = ?`,
+      ).bind(req.business_id).run();
+    } catch {}
   }
 
-  const id = newId('proj');
-  await c.env.DB.prepare(
-    `INSERT INTO projects (id, organization_id, title, description, cover_image_url, target_amount, current_amount, status)
-     VALUES (?, ?, ?, ?, ?, ?, 0, 'waiting')`,
-  ).bind(id, organization_id, title, description || '', cover_image_url || null, target_amount).run();
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
+       VALUES (?, ?, 'verification_approved', ?, 'business', ?, 'Byl(a) jsi ověřen(a)! ✓')`,
+    ).bind(newId('notif'), req.user_id, user.sub, req.business_id).run();
+  } catch {}
 
-  return c.json({ id }, 201);
+  return c.json({ ok: true });
 });
+
+adminRoutes.post('/verifications/:id/reject', async (c) => {
+  if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
+  const user = c.get('user');
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const note = (body.note || '').slice(0, 500);
+
+  const req = await c.env.DB.prepare(`SELECT * FROM verification_requests WHERE id = ?`).bind(id).first();
+  if (!req) return c.json({ error: 'Nenalezeno.' }, 404);
+
+  await c.env.DB.prepare(
+    `UPDATE verification_requests SET status = 'rejected', admin_note = ?, resolved_at = datetime('now') WHERE id = ?`,
+  ).bind(note, id).run();
+
+  if (BUSINESS_TABLES.includes(req.business_kind)) {
+    await c.env.DB.prepare(`UPDATE ${req.business_kind} SET verification_status = 'rejected' WHERE id = ?`).bind(req.business_id).run();
+  }
+
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
+       VALUES (?, ?, 'verification_rejected', ?, 'business', ?, 'Žádost o ověření byla zamítnuta')`,
+    ).bind(newId('notif'), req.user_id, user.sub, req.business_id).run();
+  } catch {}
+
+  return c.json({ ok: true });
+});
+
+// ============================================================
+// TEST CONTENT — seed & cleanup
+// ============================================================
+
+adminRoutes.post('/seed-test-content', async (c) => {
+  if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
+  const { seedTestContent } = await import('../seed.js');
+  const result = await seedTestContent(c.env);
+  return c.json(result);
+});
+
+adminRoutes.post('/cleanup-test-content', async (c) => {
+  if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
+  const { cleanupTestContent } = await import('../seed.js');
+  const result = await cleanupTestContent(c.env);
+  return c.json(result);
+});
+
+// ============================================================
+// Reports + posts + cron (pôvodné)
+// ============================================================
 
 adminRoutes.get('/reports', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
@@ -84,7 +167,6 @@ adminRoutes.delete('/posts/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-// Manuálne spustenie cronu na testovanie, chránené tajným kľúčom (nie JWT, pre jednoduchosť z CLI)
 adminRoutes.post('/run-distribution-now', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
