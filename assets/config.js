@@ -130,7 +130,7 @@ async function handleGoogleCredential(credential) {
 // reCAPTCHA v3
 // ============================================================
 async function getRecaptchaToken(action) {
-  if (!window.grecaptcha || !RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === 'SEM_VLOZ_SVOJ_RECAPTCHA_SITE_KEY') {
+  if (!window.grecaptcha || !RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === '6Ldlu8QtAAAAAJoG-6t0lZja1Iagd_ZpjLIDV6Ct') {
     // Ak reCAPTCHA nie je nastavená, vráť prázdny token — server to zvládne
     return '';
   }
