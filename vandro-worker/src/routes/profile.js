@@ -1,16 +1,13 @@
 import { Hono } from 'hono';
-import { newId } from '../auth.js';
+import { newId, normalizeHandle, validateHandle } from '../auth.js';
 import { escapeLike } from '../moderation.js';
+import { getUserBadges } from '../badges.js';
 
 export const profileRoutes = new Hono();
 
 const TYPE_TO_TABLE = {
-  user: 'users',
-  organizations: 'organizations',
-  organization: 'organizations',
-  accommodation: 'accommodation',
-  restaurants: 'restaurants',
-  gastro: 'restaurants',
+  user: 'users', organizations: 'organizations', organization: 'organizations',
+  accommodation: 'accommodation', restaurants: 'restaurants', gastro: 'restaurants',
 };
 
 function normalizeType(t) {
@@ -18,126 +15,28 @@ function normalizeType(t) {
   if (t === 'gastro') return 'restaurants';
   return t;
 }
-
 function bizKindFromType(table) {
   if (table === 'organizations') return 'organization';
   if (table === 'accommodation') return 'accommodation';
   if (table === 'restaurants') return 'gastro';
   return null;
 }
-
 async function getFollowCount(env, type, id) {
-  const row = await env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`,
-  ).bind(type, id).first();
+  const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first();
   return row?.n || 0;
 }
 
-import { getUserBadges } from '../badges.js';
-
-// Žiadosť o verifikáciu
-profileRoutes.post('/me/request-verification', async (c) => {
-  const user = c.get('user');
-  const body = await c.req.json().catch(() => ({}));
-  const businessId = (body.business_id || '').toString();
-  const businessKind = (body.business_kind || '').toString();
-  const docUrl = (body.doc_url || '').toString();
-  const note = (body.note || '').toString().slice(0, 1000);
-
-  if (!businessId || !businessKind) return c.json({ error: 'Chýba podnik.' }, 400);
-  if (!['organizations', 'accommodation', 'restaurants'].includes(businessKind)) return c.json({ error: 'Neplatný typ.' }, 400);
-  if (!docUrl) return c.json({ error: 'Nahraj dokument.' }, 400);
-
-  const biz = await c.env.DB.prepare(`SELECT user_id, is_verified FROM ${businessKind} WHERE id = ?`).bind(businessId).first();
-  if (!biz) return c.json({ error: 'Podnik nenalezen.' }, 404);
-  if (biz.user_id !== user.sub) return c.json({ error: 'Nemáš oprávnění.' }, 403);
-  if (biz.is_verified) return c.json({ error: 'Podnik je již ověřen.' }, 400);
-
-  const existing = await c.env.DB.prepare(
-    `SELECT id FROM verification_requests WHERE business_id = ? AND status = 'pending'`,
-  ).bind(businessId).first();
-  if (existing) return c.json({ error: 'Žádost už čeká na schválení.' }, 400);
-
-  const id = newId('vreq');
-  await c.env.DB.prepare(
-    `INSERT INTO verification_requests (id, business_id, business_kind, user_id, doc_url, note)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).bind(id, businessId, businessKind, user.sub, docUrl, note || null).run();
-
-  await c.env.DB.prepare(`UPDATE ${businessKind} SET verification_status = 'pending' WHERE id = ?`).bind(businessId).run();
-
-  return c.json({ id, ok: true }, 201);
-});
-
-// Upload dokumentu
-profileRoutes.post('/me/upload-verification-doc', async (c) => {
-  const user = c.get('user');
-  const form = await c.req.parseBody();
-  const file = form.file;
-  if (!file || typeof file === 'string') return c.json({ error: 'Chýba soubor.' }, 400);
-  if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
-  if (file.size > 10 * 1024 * 1024) return c.json({ error: 'Soubor je příliš velký (max 10 MB).' }, 400);
-
-  const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-  if (!allowedTypes.includes(file.type)) return c.json({ error: 'Povolené formáty: PDF, JPG, PNG, WebP.' }, 400);
-
-  const publicBase = c.env.R2_PUBLIC_BASE || '';
-  const ext = ((file.name || 'doc.pdf').split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const key = `verifications/${newId()}.${ext}`;
-  await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
-  const url = publicBase ? `${publicBase}/${key}` : key;
-  return c.json({ url }, 201);
-});
-
-// Status žiadosti
-profileRoutes.get('/me/verification-status/:kind/:id', async (c) => {
-  const user = c.get('user');
-  const kind = c.req.param('kind');
-  const id = c.req.param('id');
-  const req = await c.env.DB.prepare(
-    `SELECT id, status, admin_note, created_at, resolved_at FROM verification_requests
-     WHERE business_id = ? AND business_kind = ? ORDER BY created_at DESC LIMIT 1`,
-  ).bind(id, kind).first();
-  return c.json({ request: req || null });
-});
-
-// GET /api/profile/:type/:id/badges (user len)
-profileRoutes.get('/:type/:id/badges', async (c) => {
-  const type = c.req.param('type');
-  const id = c.req.param('id');
-  if (type !== 'user' && type !== 'users') return c.json({ error: 'Iba pre userov.' }, 400);
-  const badges = await getUserBadges(c.env, id);
-  return c.json({ badges });
-});
-
-// GET /api/profile/:type/:id/checkins
-profileRoutes.get('/:type/:id/checkins', async (c) => {
-  const id = c.req.param('id');
-  const { results } = await c.env.DB.prepare(
-    `SELECT checkins.*,
-            COALESCE(o.name, a.name, r.name) AS business_name,
-            COALESCE(o.logo_url, a.image_url, r.image_url) AS business_logo,
-            COALESCE(o.region, a.region, r.region) AS region
-     FROM checkins
-     LEFT JOIN organizations o ON o.id = checkins.business_id AND checkins.business_kind = 'organizations'
-     LEFT JOIN accommodation a ON a.id = checkins.business_id AND checkins.business_kind = 'accommodation'
-     LEFT JOIN restaurants r ON r.id = checkins.business_id AND checkins.business_kind = 'restaurants'
-     WHERE checkins.user_id = ?
-     ORDER BY checkins.visited_at DESC LIMIT 200`,
-  ).bind(id).all();
-  return c.json({ checkins: results });
-});
-
 // ============================================================
-// SEARCH — musí byť PRED /:type/:id
+// SEARCH — hľadá aj podľa handle
 // ============================================================
 profileRoutes.get('/search', async (c) => {
   const user = c.get('user');
   const q = (c.req.query('q') || '').trim();
   if (!q || q.length < 2) return c.json({ results: [] });
   const like = `%${escapeLike(q)}%`;
+  const qRaw = q.startsWith('@') ? q.slice(1) : q;
+  const likeHandle = `%${escapeLike(qRaw.toLowerCase())}%`;
 
-  // Zisti blokovaných (obojsmerne)
   const blocked = new Set();
   try {
     const { results: b1 } = await c.env.DB.prepare(`SELECT blocked_id AS id FROM blocks WHERE blocker_id = ?`).bind(user.sub).all();
@@ -147,16 +46,20 @@ profileRoutes.get('/search', async (c) => {
   } catch {}
 
   const { results } = await c.env.DB.prepare(
-    `SELECT 'organizations' AS kind, id, name, type, region, district, city, description, is_verified FROM organizations WHERE name LIKE ? ESCAPE '\\'
+    `SELECT 'organizations' AS kind, id, name, type, region, district, city, description, is_verified, NULL AS handle
+       FROM organizations WHERE name LIKE ? ESCAPE '\\'
      UNION ALL
-     SELECT 'accommodation', id, name, type, region, district, city, description, is_verified FROM accommodation WHERE name LIKE ? ESCAPE '\\'
+     SELECT 'accommodation', id, name, type, region, district, city, description, is_verified, NULL
+       FROM accommodation WHERE name LIKE ? ESCAPE '\\'
      UNION ALL
-     SELECT 'restaurants', id, name, type, region, district, city, description, is_verified FROM restaurants WHERE name LIKE ? ESCAPE '\\'
+     SELECT 'restaurants', id, name, type, region, district, city, description, is_verified, NULL
+       FROM restaurants WHERE name LIKE ? ESCAPE '\\'
      UNION ALL
-     SELECT 'users', id, display_name AS name, role AS type, NULL AS region, NULL AS district, NULL AS city, bio AS description, email_verified AS is_verified
-     FROM users WHERE deleted_at IS NULL AND display_name LIKE ? ESCAPE '\\'
+     SELECT 'users', id, display_name AS name, role AS type, NULL AS region, NULL AS district, NULL AS city, bio AS description, email_verified AS is_verified, handle
+       FROM users
+       WHERE deleted_at IS NULL AND (display_name LIKE ? ESCAPE '\\' OR handle LIKE ? ESCAPE '\\')
      LIMIT 50`,
-  ).bind(like, like, like, like).all();
+  ).bind(like, like, like, like, likeHandle).all();
 
   const filtered = results.filter((r) => !blocked.has(r.id));
   return c.json({ results: filtered });
@@ -173,9 +76,7 @@ profileRoutes.post('/follow', async (c) => {
   if (!TYPE_TO_TABLE[type] || !id) return c.json({ error: 'Neplatný cieľ.' }, 400);
   if (type === 'users' && id === user.sub) return c.json({ error: 'Nemôžeš sledovať sám seba.' }, 400);
 
-  const blocked = await c.env.DB.prepare(
-    `SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?`,
-  ).bind(id, user.sub).first();
+  const blocked = await c.env.DB.prepare(`SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?`).bind(id, user.sub).first();
   if (blocked && type === 'users') return c.json({ error: 'Tento uživatel tě zablokoval.' }, 403);
 
   const existing = await c.env.DB.prepare(
@@ -183,12 +84,10 @@ profileRoutes.post('/follow', async (c) => {
   ).bind(user.sub, type, id).first();
 
   if (existing) {
-    await c.env.DB.prepare(`DELETE FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`)
-      .bind(user.sub, type, id).run();
+    await c.env.DB.prepare(`DELETE FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`).bind(user.sub, type, id).run();
     return c.json({ following: false, followers: await getFollowCount(c.env, type, id) });
   }
-  await c.env.DB.prepare(`INSERT INTO follows (follower_id, target_type, target_id) VALUES (?, ?, ?)`)
-    .bind(user.sub, type, id).run();
+  await c.env.DB.prepare(`INSERT INTO follows (follower_id, target_type, target_id) VALUES (?, ?, ?)`).bind(user.sub, type, id).run();
 
   if (type === 'users') {
     try {
@@ -217,7 +116,7 @@ profileRoutes.get('/:type/:id/followers', async (c) => {
   const type = normalizeType(c.req.param('type'));
   const id = c.req.param('id');
   const { results } = await c.env.DB.prepare(
-    `SELECT users.id, users.display_name, users.avatar_url, users.role, follows.created_at
+    `SELECT users.id, users.display_name, users.handle, users.avatar_url, users.role, follows.created_at
      FROM follows JOIN users ON users.id = follows.follower_id
      WHERE follows.target_type = ? AND follows.target_id = ? AND users.deleted_at IS NULL
      ORDER BY follows.created_at DESC LIMIT 200`,
@@ -229,7 +128,7 @@ profileRoutes.get('/me/following', async (c) => {
   const user = c.get('user');
   const { results } = await c.env.DB.prepare(
     `SELECT follows.target_type, follows.target_id, follows.created_at,
-            users.display_name AS user_name, users.avatar_url AS user_avatar,
+            users.display_name AS user_name, users.handle AS user_handle, users.avatar_url AS user_avatar,
             organizations.name AS org_name, accommodation.name AS acc_name, restaurants.name AS rest_name
      FROM follows
      LEFT JOIN users ON users.id = follows.target_id AND follows.target_type = 'users'
@@ -263,7 +162,7 @@ profileRoutes.delete('/block/:id', async (c) => {
 profileRoutes.get('/me/blocks', async (c) => {
   const user = c.get('user');
   const { results } = await c.env.DB.prepare(
-    `SELECT users.id, users.display_name, users.avatar_url, blocks.created_at
+    `SELECT users.id, users.display_name, users.handle, users.avatar_url, blocks.created_at
      FROM blocks JOIN users ON users.id = blocks.blocked_id
      WHERE blocks.blocker_id = ? ORDER BY blocks.created_at DESC`,
   ).bind(user.sub).all();
@@ -292,26 +191,49 @@ profileRoutes.patch('/me/settings', async (c) => {
 });
 
 // ============================================================
-// UPDATE USER
+// UPDATE USER — s podporou handle
 // ============================================================
 profileRoutes.patch('/me/user', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
-  const fields = ['display_name', 'bio', 'location', 'website', 'phone'];
   const sets = [], params = [];
+
+  // Zmena handle
+  if ('handle' in body) {
+    const normalized = normalizeHandle(body.handle);
+    const valid = validateHandle(normalized);
+    if (!valid.ok) {
+      const messages = {
+        empty: 'Handle nesmí být prázdný.',
+        invalid_format: 'Handle musí mít 3–30 znaků (a–z, 0–9, tečka, podtržítko, pomlčka) a začínat písmenem nebo číslem.',
+        reserved: 'Tento handle je rezervovaný.',
+      };
+      return c.json({ error: messages[valid.reason] || 'Neplatný handle.' }, 400);
+    }
+    const taken = await c.env.DB.prepare('SELECT 1 FROM users WHERE handle = ? AND id != ?').bind(normalized, user.sub).first();
+    if (taken) return c.json({ error: 'Tento handle je již obsazený.' }, 409);
+    sets.push('handle = ?');
+    params.push(normalized);
+  }
+
+  const fields = ['display_name', 'bio', 'location', 'website', 'phone'];
   for (const f of fields) if (f in body) { sets.push(`${f} = ?`); params.push(body[f] ?? null); }
+
+  if ('onboarding_done' in body) {
+    sets.push('onboarding_done = ?');
+    params.push(body.onboarding_done ? 1 : 0);
+  }
+
   if (sets.length === 0) return c.json({ error: 'Žiadne polia.' }, 400);
   params.push(user.sub);
   await c.env.DB.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run();
+
   const updated = await c.env.DB.prepare(
-    `SELECT id, email, role, display_name, bio, avatar_url, cover_url, location, website, phone, email_verified, totp_enabled FROM users WHERE id = ?`,
+    `SELECT id, email, role, display_name, handle, bio, avatar_url, cover_url, location, website, phone, email_verified, totp_enabled, onboarding_done FROM users WHERE id = ?`,
   ).bind(user.sub).first();
   return c.json({ user: updated });
 });
 
-// ============================================================
-// UPDATE BUSINESS
-// ============================================================
 profileRoutes.patch('/me/:type/:id', async (c) => {
   const user = c.get('user');
   const table = TYPE_TO_TABLE[normalizeType(c.req.param('type'))];
@@ -338,7 +260,7 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
 });
 
 // ============================================================
-// UPLOAD (avatar/cover)
+// UPLOAD
 // ============================================================
 profileRoutes.post('/me/upload', async (c) => {
   const user = c.get('user');
@@ -370,6 +292,70 @@ profileRoutes.post('/me/upload', async (c) => {
   return c.json({ url, field: col });
 });
 
+// Upload verifikačného dokumentu
+profileRoutes.post('/me/upload-verification-doc', async (c) => {
+  const user = c.get('user');
+  const form = await c.req.parseBody();
+  const file = form.file;
+  if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
+  if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
+  if (file.size > 10 * 1024 * 1024) return c.json({ error: 'Soubor je příliš velký (max 10 MB).' }, 400);
+
+  const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) return c.json({ error: 'Povolené formáty: PDF, JPG, PNG, WebP.' }, 400);
+
+  const publicBase = c.env.R2_PUBLIC_BASE || '';
+  const ext = ((file.name || 'doc.pdf').split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const key = `verifications/${newId()}.${ext}`;
+  await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+  const url = publicBase ? `${publicBase}/${key}` : key;
+  return c.json({ url }, 201);
+});
+
+// Žiadosť o verifikáciu
+profileRoutes.post('/me/request-verification', async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json().catch(() => ({}));
+  const businessId = (body.business_id || '').toString();
+  const businessKind = (body.business_kind || '').toString();
+  const docUrl = (body.doc_url || '').toString();
+  const note = (body.note || '').toString().slice(0, 1000);
+
+  if (!businessId || !businessKind) return c.json({ error: 'Chýba podnik.' }, 400);
+  if (!['organizations', 'accommodation', 'restaurants'].includes(businessKind)) return c.json({ error: 'Neplatný typ.' }, 400);
+  if (!docUrl) return c.json({ error: 'Nahraj dokument.' }, 400);
+
+  const biz = await c.env.DB.prepare(`SELECT user_id, is_verified FROM ${businessKind} WHERE id = ?`).bind(businessId).first();
+  if (!biz) return c.json({ error: 'Podnik nenalezen.' }, 404);
+  if (biz.user_id !== user.sub) return c.json({ error: 'Nemáš oprávnění.' }, 403);
+  if (biz.is_verified) return c.json({ error: 'Podnik je již ověřen.' }, 400);
+
+  const existing = await c.env.DB.prepare(
+    `SELECT id FROM verification_requests WHERE business_id = ? AND status = 'pending'`,
+  ).bind(businessId).first();
+  if (existing) return c.json({ error: 'Žádost už čeká na schválení.' }, 400);
+
+  const id = newId('vreq');
+  await c.env.DB.prepare(
+    `INSERT INTO verification_requests (id, business_id, business_kind, user_id, doc_url, note)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).bind(id, businessId, businessKind, user.sub, docUrl, note || null).run();
+
+  await c.env.DB.prepare(`UPDATE ${businessKind} SET verification_status = 'pending' WHERE id = ?`).bind(businessId).run();
+  return c.json({ id, ok: true }, 201);
+});
+
+profileRoutes.get('/me/verification-status/:kind/:id', async (c) => {
+  const user = c.get('user');
+  const kind = c.req.param('kind');
+  const id = c.req.param('id');
+  const req = await c.env.DB.prepare(
+    `SELECT id, status, admin_note, created_at, resolved_at FROM verification_requests
+     WHERE business_id = ? AND business_kind = ? ORDER BY created_at DESC LIMIT 1`,
+  ).bind(id, kind).first();
+  return c.json({ request: req || null });
+});
+
 // ============================================================
 // DELETE ACCOUNT
 // ============================================================
@@ -394,7 +380,7 @@ profileRoutes.delete('/me/account', async (c) => {
 });
 
 // ============================================================
-// EXPORT (GDPR)
+// EXPORT
 // ============================================================
 profileRoutes.get('/me/export', async (c) => {
   const user = c.get('user');
@@ -432,7 +418,7 @@ profileRoutes.get('/me/export', async (c) => {
 profileRoutes.get('/me/notifications', async (c) => {
   const user = c.get('user');
   const { results } = await c.env.DB.prepare(
-    `SELECT notifications.*, users.display_name AS actor_name, users.avatar_url AS actor_avatar
+    `SELECT notifications.*, users.display_name AS actor_name, users.handle AS actor_handle, users.avatar_url AS actor_avatar
      FROM notifications LEFT JOIN users ON users.id = notifications.actor_id
      WHERE notifications.user_id = ?
      ORDER BY notifications.created_at DESC LIMIT 100`,
@@ -501,7 +487,35 @@ profileRoutes.post('/me/change-email', async (c) => {
 });
 
 // ============================================================
-// STATS (vlastník)
+// BADGES + CHECKINS (pomocné routy pre profil)
+// ============================================================
+profileRoutes.get('/:type/:id/badges', async (c) => {
+  const type = c.req.param('type');
+  const id = c.req.param('id');
+  if (type !== 'user' && type !== 'users') return c.json({ error: 'Iba pre userov.' }, 400);
+  const badges = await getUserBadges(c.env, id);
+  return c.json({ badges });
+});
+
+profileRoutes.get('/:type/:id/checkins', async (c) => {
+  const id = c.req.param('id');
+  const { results } = await c.env.DB.prepare(
+    `SELECT checkins.*,
+            COALESCE(o.name, a.name, r.name) AS business_name,
+            COALESCE(o.logo_url, a.image_url, r.image_url) AS business_logo,
+            COALESCE(o.region, a.region, r.region) AS region
+     FROM checkins
+     LEFT JOIN organizations o ON o.id = checkins.business_id AND checkins.business_kind = 'organizations'
+     LEFT JOIN accommodation a ON a.id = checkins.business_id AND checkins.business_kind = 'accommodation'
+     LEFT JOIN restaurants r ON r.id = checkins.business_id AND checkins.business_kind = 'restaurants'
+     WHERE checkins.user_id = ?
+     ORDER BY checkins.visited_at DESC LIMIT 200`,
+  ).bind(id).all();
+  return c.json({ checkins: results });
+});
+
+// ============================================================
+// STATS
 // ============================================================
 profileRoutes.get('/:type/:id/stats', async (c) => {
   const type = normalizeType(c.req.param('type'));
@@ -545,7 +559,7 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
 });
 
 // ============================================================
-// GET /:type/:id (POSLEDNÁ — matchuje všetko ostatné)
+// GET /:type/:id (POSLEDNÁ)
 // ============================================================
 profileRoutes.get('/:type/:id', async (c) => {
   const type = normalizeType(c.req.param('type'));
@@ -555,7 +569,7 @@ profileRoutes.get('/:type/:id', async (c) => {
 
   if (table === 'users') {
     const user = await c.env.DB.prepare(
-      `SELECT id, display_name, bio, avatar_url, cover_url, location, website, role, created_at, email_verified, totp_enabled
+      `SELECT id, display_name, handle, bio, avatar_url, cover_url, location, website, role, created_at, email_verified, totp_enabled
        FROM users WHERE id = ? AND deleted_at IS NULL`,
     ).bind(id).first();
     if (!user) return c.json({ error: 'Užívateľ nenájdený.' }, 404);
