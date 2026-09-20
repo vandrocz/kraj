@@ -18,25 +18,30 @@ document.addEventListener('click', (e) => {
       const img = el.dataset.img;
 
       let images = [img].filter(Boolean);
+      let post = null;
+
       if (postId) {
+        // 1) Skús socialFeeds
         for (const key of Object.keys(state.socialFeeds)) {
           const p = state.socialFeeds[key].items.find((x) => x.id === postId);
-          if (p && p.media?.length) { images = p.media; break; }
+          if (p) { post = p; post.__feedKey = key === 'organization' ? 'organization' : key; break; }
         }
-        if (images.length <= 1) {
+        // 2) Skús profiles
+        if (!post) {
           for (const k of Object.keys(state.profiles)) {
             const d = state.profiles[k];
             if (d?.posts) {
               const p = d.posts.find((x) => x.id === postId);
-              if (p && p.media?.length) { images = p.media; break; }
+              if (p) { post = p; post.__feedKey = d.feedKey || null; break; }
             }
           }
         }
+        if (post?.media?.length) images = post.media;
         if (images.length === 0) return;
         apiPost(`/api/feed/${postId}/view`, {}).catch(() => {});
       }
       if (images.length === 0) return;
-      openLightbox(images, index, caption);
+      openLightbox(images, index, caption, post);
       break;
     }
     case 'close-lightbox': closeLightbox(); break;
