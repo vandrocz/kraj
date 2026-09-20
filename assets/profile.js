@@ -66,6 +66,7 @@ function renderUserProfile(data, id) {
           ${isOwn ? `<button class="profile-avatar-edit" data-action="upload-avatar" data-target="user" data-field="avatar">${icon('camera', { size: 14 })}</button>` : ''}
         </div>
         <p class="profile-name">${escapeHtml(p.display_name)}</p>
+        ${p.handle ? `<p class="profile-handle">@${escapeHtml(p.handle)}</p>` : ''}
         <span class="account-role-chip">${roleLabel}</span>
         ${p.bio ? `<p class="profile-bio">${escapeHtml(p.bio)}</p>` : (isOwn ? '<p class="profile-bio" style="color:var(--c-text-muted)">Zatím žádné bio.</p>' : '')}
         <div class="profile-meta">
@@ -263,6 +264,11 @@ function renderEditProfileForm() {
   if (kind === 'user') {
     return `
       <form data-action="submit-edit-profile" data-kind="user" data-id="${id}" class="edit-profile-form">
+        <div class="form-field">
+          <label class="form-label">Handle (@username)</label>
+          <input class="form-input" name="handle" value="${escapeAttr(p.handle || '')}" pattern="[a-zA-Z0-9._-]{3,30}" minlength="3" maxlength="30" placeholder="napr. jan.novak" />
+          <p class="form-hint">3–30 znaků: písmena, čísla, tečka, podtržítko, pomlčka. Musí být unikátní. Ostatní tě mohou zmínit pomocí @${escapeHtml(p.handle || 'handle')}.</p>
+        </div>
         <div class="form-field"><label class="form-label">Jméno</label><input class="form-input" name="display_name" value="${escapeAttr(p.display_name || '')}" /></div>
         <div class="form-field"><label class="form-label">Bio</label><textarea class="form-textarea" name="bio" maxlength="280">${escapeHtml(p.bio || '')}</textarea></div>
         <div class="form-field"><label class="form-label">Lokace</label><input class="form-input" name="location" value="${escapeAttr(p.location || '')}" /></div>
@@ -551,8 +557,11 @@ function renderFollowersOverlay() {
             <button class="user-list-item" data-action="open-profile" data-kind="user" data-id="${u.id}">
               ${u.avatar_url ? `<img src="${u.avatar_url}" class="user-list-avatar" alt="" />`
                 : `<span class="user-list-avatar user-list-avatar-init">${(u.display_name || '?').charAt(0).toUpperCase()}</span>`}
-              <div style="flex:1"><p class="user-list-name">${escapeHtml(u.display_name || '')}</p>
-              <p class="user-list-meta">${u.role === 'organization' ? 'Organizace' : u.role === 'hotelier' ? 'Podnik' : 'Turista'}</p></div>
+              <div style="flex:1">
+                <p class="user-list-name">${escapeHtml(u.display_name || '')}</p>
+                ${u.handle ? `<p class="user-list-meta">@${escapeHtml(u.handle)}</p>` : ''}
+                <p class="user-list-meta">${u.role === 'organization' ? 'Organizace' : u.role === 'hotelier' ? 'Podnik' : 'Turista'}</p>
+              </div>
               ${icon('chevronRight', { size: 16 })}
             </button>`).join('')}
       </div>
@@ -578,8 +587,11 @@ function renderFollowingOverlay() {
             const name = it.user_name || it.org_name || it.acc_name || it.rest_name || '?';
             return `<button class="user-list-item" data-action="open-profile" data-kind="${kind}" data-id="${it.target_id}">
               <span class="user-list-avatar user-list-avatar-init">${name.charAt(0).toUpperCase()}</span>
-              <div style="flex:1"><p class="user-list-name">${escapeHtml(name)}</p>
-              <p class="user-list-meta">${kind === 'users' ? 'Uživatel' : kind === 'organizations' ? 'Organizace' : kind === 'accommodation' ? 'Ubytování' : 'Gastro'}</p></div>
+              <div style="flex:1">
+                <p class="user-list-name">${escapeHtml(name)}</p>
+                ${it.user_handle ? `<p class="user-list-meta">@${escapeHtml(it.user_handle)}</p>` : ''}
+                <p class="user-list-meta">${kind === 'users' ? 'Uživatel' : kind === 'organizations' ? 'Organizace' : kind === 'accommodation' ? 'Ubytování' : 'Gastro'}</p>
+              </div>
               ${icon('chevronRight', { size: 16 })}
             </button>`;
           }).join('')}
@@ -604,7 +616,10 @@ function renderBlocksOverlay() {
           : list.map((u) => `
             <div class="user-list-item">
               <span class="user-list-avatar user-list-avatar-init">${(u.display_name || '?').charAt(0).toUpperCase()}</span>
-              <div style="flex:1"><p class="user-list-name">${escapeHtml(u.display_name || '')}</p></div>
+              <div style="flex:1">
+                <p class="user-list-name">${escapeHtml(u.display_name || '')}</p>
+                ${u.handle ? `<p class="user-list-meta">@${escapeHtml(u.handle)}</p>` : ''}
+              </div>
               <button class="admin-delete-btn" data-action="unblock-user" data-id="${u.id}">Odblokovat</button>
             </div>`).join('')}
       </div>
@@ -649,8 +664,10 @@ function renderNotificationsOverlay() {
             <div class="notif-item ${n.read_at ? '' : 'is-unread'}">
               ${n.actor_avatar ? `<img class="user-list-avatar" src="${n.actor_avatar}" alt="" />`
                 : `<span class="user-list-avatar user-list-avatar-init">${(n.actor_name || '?').charAt(0).toUpperCase()}</span>`}
-              <div style="flex:1"><p class="notif-text"><strong>${escapeHtml(n.actor_name || 'Někdo')}</strong> ${escapeHtml(n.text || '')}</p>
-              <p class="notif-time">${timeAgo(n.created_at)}</p></div>
+              <div style="flex:1">
+                <p class="notif-text"><strong>${escapeHtml(n.actor_name || 'Někdo')}</strong> ${escapeHtml(n.text || '')}</p>
+                <p class="notif-time">${timeAgo(n.created_at)}</p>
+              </div>
               ${!n.read_at ? `<span class="notif-dot"></span>` : ''}
             </div>`).join('')}
       </div>
@@ -686,8 +703,11 @@ function renderSearchOverlay() {
             if (kind === 'restaurants') kind = 'gastro';
             return `<button class="user-list-item" data-action="open-profile" data-kind="${kind}" data-id="${r.id}">
               <span class="user-list-avatar user-list-avatar-init">${(r.name || '?').charAt(0).toUpperCase()}</span>
-              <div style="flex:1"><p class="user-list-name">${escapeHtml(r.name || '')}</p>
-              <p class="user-list-meta">${r.kind === 'users' ? 'Uživatel' : r.kind === 'organizations' ? 'Organizace' : r.kind === 'accommodation' ? 'Ubytování' : 'Gastro'}${r.city ? ` · ${r.city}` : ''}${r.region ? ` · ${r.region}` : ''}</p></div>
+              <div style="flex:1">
+                <p class="user-list-name">${escapeHtml(r.name || '')}</p>
+                ${r.handle ? `<p class="user-list-meta">@${escapeHtml(r.handle)}</p>` : ''}
+                <p class="user-list-meta">${r.kind === 'users' ? 'Uživatel' : r.kind === 'organizations' ? 'Organizace' : r.kind === 'accommodation' ? 'Ubytování' : 'Gastro'}${r.city ? ` · ${r.city}` : ''}${r.region ? ` · ${r.region}` : ''}</p>
+              </div>
               ${icon('chevronRight', { size: 16 })}
             </button>`;
           }).join('')}
