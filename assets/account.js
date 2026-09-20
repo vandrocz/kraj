@@ -237,6 +237,7 @@ function handleLogout() {
   state.businesses = [];
   state.adminPending = null;
   state.adminReports = null;
+  state.adminVerifications = null;
   state.overlay = null;
   state.unreadNotifications = 0;
   state._pushSubscribed = false;
@@ -251,11 +252,13 @@ function renderAccountHeaderCard() {
   const avatar = state.user.avatar_url
     ? `<img src="${state.user.avatar_url}" alt="" class="account-avatar" style="object-fit:cover" />`
     : `<div class="account-avatar">${initial}</div>`;
+  const handleHtml = state.user.handle ? `<p style="font-size:12px;color:var(--c-text-muted);margin-top:2px">@${escapeHtml(state.user.handle)}</p>` : '';
   return `
     <div class="account-header" data-action="open-profile" data-kind="user" data-id="${state.user.id}" style="cursor:pointer">
       ${avatar}
       <div style="flex:1">
         <p class="account-name">${escapeHtml(state.user.display_name)}</p>
+        ${handleHtml}
         <span class="account-role-chip">${roleLabel}</span>
       </div>
       ${icon('chevronRight', { size: 18 })}
@@ -279,6 +282,7 @@ function renderUserAboutSection() {
     <div class="profile-section">
       <h3 class="profile-section-title">O mně</h3>
       <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:16px;">
+        ${u.handle ? `<p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:8px">@${escapeHtml(u.handle)}</p>` : ''}
         ${u.bio
           ? `<p style="font-size:14px;line-height:1.6">${escapeHtml(u.bio)}</p>`
           : '<p style="color:var(--c-text-muted);font-size:13.5px">Zatím žádné bio. Klikni na „Upravit profil".</p>'}
@@ -320,7 +324,7 @@ function renderUserAboutSection() {
 }
 
 // ============================================================
-// ROLA: BUSINESS (organizace / hotelier)
+// ROLA: BUSINESS
 // ============================================================
 
 function renderBusinessDashboard() {
@@ -330,7 +334,6 @@ function renderBusinessDashboard() {
   const selected = businesses.find((b) => b.id === accountFormState.postTargetBusiness) || businesses[0];
   const targetFeed = selected.kind;
 
-  // Načítaj status verifikácie, ak nie je cached
   if (state._verificationStatus === undefined) {
     state._verificationStatus = null;
     apiGet(`/api/profile/me/verification-status/${targetFeed}/${selected.id}`)
@@ -609,7 +612,7 @@ async function handleTwoFALogin(form) {
 }
 
 // ============================================================
-// ADMIN
+// ADMIN PANEL
 // ============================================================
 
 async function loadAdminPending() {
@@ -624,16 +627,48 @@ async function loadAdminReports() {
   finally { state.adminReportsLoading = false; if (state.tab === 'account') renderApp(); }
 }
 
+async function loadAdminVerifications() {
+  try { const d = await apiGet('/api/admin/verifications'); state.adminVerifications = d.requests || []; }
+  catch { state.adminVerifications = []; }
+  finally { if (state.tab === 'account') renderApp(); }
+}
+
 function renderAdminPanel() {
   if (state.adminPending === null && !state.adminPendingLoading) { state.adminPendingLoading = true; loadAdminPending(); }
   if (state.adminReports === null && !state.adminReportsLoading) { state.adminReportsLoading = true; loadAdminReports(); }
+  if (state.adminVerifications === null) loadAdminVerifications();
+
   const pending = state.adminPending;
   const items = pending ? [
     ...(pending.organizations || []).map((o) => ({ ...o, kind: 'organizations' })),
     ...(pending.accommodation || []).map((o) => ({ ...o, kind: 'accommodation' })),
     ...(pending.restaurants || []).map((o) => ({ ...o, kind: 'restaurants' })),
   ] : [];
+
+  const verifs = state.adminVerifications;
+
   return `
+    <div class="profile-section">
+      <h3 class="profile-section-title">Žádosti o ověření (${verifs ? verifs.length : '…'})</h3>
+      ${verifs === null ? '<p class="empty-state">Načítám…</p>'
+        : verifs.length === 0 ? '<p class="empty-state">Žádné žádosti.</p>'
+        : verifs.map((v) => `
+          <div class="admin-list-item" style="flex-direction:column;align-items:stretch;gap:8px">
+            <div class="admin-list-info">
+              <p class="admin-list-title">${escapeHtml(v.user_name || v.user_handle || 'Uživatel')}</p>
+              <p class="admin-list-meta">Podnik ID: ${escapeHtml(v.business_id)} · ${v.business_kind}</p>
+              <p class="admin-list-meta">${escapeHtml(v.user_email || '')}</p>
+              ${v.note ? `<p class="admin-list-meta" style="font-style:italic">„${escapeHtml(v.note)}"</p>` : ''}
+              <p class="admin-list-meta">Předloženo: ${timeAgo(v.created_at)}</p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <a class="profile-action-btn" href="${escapeAttr(v.doc_url)}" target="_blank" rel="noopener">${icon('image', { size: 14 })} Zobrazit dokument</a>
+              <button class="admin-approve-btn" data-action="approve-verification" data-id="${v.id}">Schválit</button>
+              <button class="admin-delete-btn" data-action="reject-verification" data-id="${v.id}">Zamítnout</button>
+            </div>
+          </div>`).join('')}
+    </div>
+
     <div class="profile-section">
       <h3 class="profile-section-title">Čekající na ověření (${pending ? items.length : '…'})</h3>
       ${pending === null ? '<p class="empty-state">Načítám…</p>'
@@ -647,6 +682,7 @@ function renderAdminPanel() {
             <button class="admin-approve-btn" data-action="verify-business" data-kind="${it.kind}" data-id="${it.id}">Ověřit</button>
           </div>`).join('')}
     </div>
+
     <div class="profile-section">
       <h3 class="profile-section-title">Nahlášené příspěvky (${state.adminReports ? state.adminReports.length : '…'})</h3>
       ${state.adminReports === null ? '<p class="empty-state">Načítám…</p>'
@@ -659,6 +695,13 @@ function renderAdminPanel() {
             </div>
             <button class="admin-delete-btn" data-action="delete-reported-post" data-post-id="${r.post_id}" data-report-id="${r.id}">Smazat</button>
           </div>`).join('')}
+    </div>
+
+    <div class="profile-section">
+      <h3 class="profile-section-title">Nástroje</h3>
+      <button class="settings-row" data-action="admin-backfill-handles">${icon('edit', { size: 17 })} Doplň handles existujícím uživatelům</button>
+      <button class="settings-row" data-action="admin-seed-test">${icon('plus', { size: 17 })} Vytvořit testovací obsah</button>
+      <button class="settings-row" data-action="admin-cleanup-test" style="color:#B3273C">${icon('trash', { size: 17 })} Odstranit testovací obsah</button>
     </div>`;
 }
 
@@ -680,6 +723,50 @@ async function deleteReportedPost(postId, reportId) {
     state.adminReports = null;
     state.adminReportsLoading = false;
     renderApp();
+  } catch (err) { showToast(err.message); }
+}
+
+async function approveVerification(id) {
+  const note = prompt('Volitelná poznámka pro žadatele:', '') || '';
+  try {
+    await apiPost(`/api/admin/verifications/${id}/approve`, { note });
+    showToast('Žádost schválena.');
+    state.adminVerifications = null;
+    renderApp();
+  } catch (err) { showToast(err.message); }
+}
+
+async function rejectVerification(id) {
+  const note = prompt('Důvod zamítnutí (nepovinné):', '') || '';
+  try {
+    await apiPost(`/api/admin/verifications/${id}/reject`, { note });
+    showToast('Žádost zamítnuta.');
+    state.adminVerifications = null;
+    renderApp();
+  } catch (err) { showToast(err.message); }
+}
+
+async function adminBackfillHandles() {
+  if (!confirm('Doplnit handles všem uživatelům bez handle?')) return;
+  try {
+    const r = await apiPost('/api/admin/backfill-handles', {});
+    showToast(`Hotovo: ${r.updated} / ${r.total} (chyby: ${r.failed})`);
+  } catch (err) { showToast(err.message); }
+}
+
+async function adminSeedTest() {
+  if (!confirm('Vytvořit testovací obsah?')) return;
+  try {
+    const r = await apiPost('/api/admin/seed-test-content', {});
+    showToast(`Vytvořeno: ${r.users || 0} užív., ${r.businesses || 0} podniků, ${r.posts || 0} příspěvků`);
+  } catch (err) { showToast(err.message); }
+}
+
+async function adminCleanupTest() {
+  if (!confirm('Smazat všechen testovací obsah (prefix test_)?')) return;
+  try {
+    const r = await apiPost('/api/admin/cleanup-test-content', {});
+    showToast('Testovací obsah odstraněn.');
   } catch (err) { showToast(err.message); }
 }
 
@@ -736,7 +823,6 @@ async function onVerifDocSelected(inputEl) {
 async function handleVerificationSubmit(form) {
   const { kind, id, docFile } = state.overlay;
   if (!docFile) { showToast('Vyber dokument.'); return; }
-
   state.overlay.uploading = true;
   renderApp();
 
