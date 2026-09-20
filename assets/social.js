@@ -172,7 +172,7 @@ function renderSocialPostCard(post, feedKey) {
       </div>
       <div class="post-body">
         <p class="post-likes" data-like-count="${post.id}">${fmt(post.likes || 0)} páči sa mi${post.views ? ` · ${fmt(post.views)} zobrazení` : ''}</p>
-        <p class="post-caption"><strong>${escapeHtml(post.business.name)}</strong> <span class="rich-text">${post.html || escapeHtml(post.text || '')}</span></p>
+        <p class="post-caption"><strong>${escapeHtml(post.business.name)}</strong> <span class="rich-text">${shortenLinksInHtml(post.html || escapeHtml(post.text || ''))}</span></p>
         ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
         ${post.comment_count > 0 ? `<button class="post-comments-link" data-action="toggle-comments" data-id="${post.id}" data-feed="${feedKey}">Zobrazit všech ${post.comment_count} komentářů</button>` : ''}
         <div class="post-comments" data-comments-list="${post.id}" style="display:none">${commentsHtml}</div>
