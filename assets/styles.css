@@ -1324,3 +1324,12 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 
 /* ============ Verification ============ */
 .file-drop input[type="file"] { display: none; }
+
+.profile-handle {
+  font-size: 13.5px;
+  color: var(--c-text-muted);
+  margin-top: -2px;
+  margin-bottom: 6px;
+  font-family: 'Inter', monospace;
+  letter-spacing: 0.01em;
+}
