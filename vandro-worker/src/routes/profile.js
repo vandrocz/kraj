@@ -35,6 +35,72 @@ async function getFollowCount(env, type, id) {
 
 import { getUserBadges } from '../badges.js';
 
+// Žiadosť o verifikáciu
+profileRoutes.post('/me/request-verification', async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json().catch(() => ({}));
+  const businessId = (body.business_id || '').toString();
+  const businessKind = (body.business_kind || '').toString();
+  const docUrl = (body.doc_url || '').toString();
+  const note = (body.note || '').toString().slice(0, 1000);
+
+  if (!businessId || !businessKind) return c.json({ error: 'Chýba podnik.' }, 400);
+  if (!['organizations', 'accommodation', 'restaurants'].includes(businessKind)) return c.json({ error: 'Neplatný typ.' }, 400);
+  if (!docUrl) return c.json({ error: 'Nahraj dokument.' }, 400);
+
+  const biz = await c.env.DB.prepare(`SELECT user_id, is_verified FROM ${businessKind} WHERE id = ?`).bind(businessId).first();
+  if (!biz) return c.json({ error: 'Podnik nenalezen.' }, 404);
+  if (biz.user_id !== user.sub) return c.json({ error: 'Nemáš oprávnění.' }, 403);
+  if (biz.is_verified) return c.json({ error: 'Podnik je již ověřen.' }, 400);
+
+  const existing = await c.env.DB.prepare(
+    `SELECT id FROM verification_requests WHERE business_id = ? AND status = 'pending'`,
+  ).bind(businessId).first();
+  if (existing) return c.json({ error: 'Žádost už čeká na schválení.' }, 400);
+
+  const id = newId('vreq');
+  await c.env.DB.prepare(
+    `INSERT INTO verification_requests (id, business_id, business_kind, user_id, doc_url, note)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).bind(id, businessId, businessKind, user.sub, docUrl, note || null).run();
+
+  await c.env.DB.prepare(`UPDATE ${businessKind} SET verification_status = 'pending' WHERE id = ?`).bind(businessId).run();
+
+  return c.json({ id, ok: true }, 201);
+});
+
+// Upload dokumentu
+profileRoutes.post('/me/upload-verification-doc', async (c) => {
+  const user = c.get('user');
+  const form = await c.req.parseBody();
+  const file = form.file;
+  if (!file || typeof file === 'string') return c.json({ error: 'Chýba soubor.' }, 400);
+  if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
+  if (file.size > 10 * 1024 * 1024) return c.json({ error: 'Soubor je příliš velký (max 10 MB).' }, 400);
+
+  const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) return c.json({ error: 'Povolené formáty: PDF, JPG, PNG, WebP.' }, 400);
+
+  const publicBase = c.env.R2_PUBLIC_BASE || '';
+  const ext = ((file.name || 'doc.pdf').split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const key = `verifications/${newId()}.${ext}`;
+  await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+  const url = publicBase ? `${publicBase}/${key}` : key;
+  return c.json({ url }, 201);
+});
+
+// Status žiadosti
+profileRoutes.get('/me/verification-status/:kind/:id', async (c) => {
+  const user = c.get('user');
+  const kind = c.req.param('kind');
+  const id = c.req.param('id');
+  const req = await c.env.DB.prepare(
+    `SELECT id, status, admin_note, created_at, resolved_at FROM verification_requests
+     WHERE business_id = ? AND business_kind = ? ORDER BY created_at DESC LIMIT 1`,
+  ).bind(id, kind).first();
+  return c.json({ request: req || null });
+});
+
 // GET /api/profile/:type/:id/badges (user len)
 profileRoutes.get('/:type/:id/badges', async (c) => {
   const type = c.req.param('type');
