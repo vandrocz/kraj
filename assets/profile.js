@@ -135,7 +135,7 @@ function renderBusinessProfile(data, id, kind) {
     if (posts.length === 0) {
       tabContent = '<p class="empty-state">Zatím žádné příspěvky.</p>';
     } else {
-      tabContent = `<div class="post-feed-grid profile-post-feed">
+      tabContent = `<div class="profile-post-feed">
         ${posts.map((p) => renderSocialPostCard(p, feedKey)).join('')}
       </div>`;
     }
