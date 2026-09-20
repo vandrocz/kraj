@@ -245,7 +245,6 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
 // HLAVNÝ RENDER — s ochranou focusu search inputu
 // ============================================================
 function renderApp() {
-  // ---- Ulož si focus search inputu PRED prepísaním DOM ----
   const _active = document.activeElement;
   let _searchFocus = null;
   if (_active && _active.dataset && _active.dataset.action === 'search-change') {
@@ -255,11 +254,9 @@ function renderApp() {
       selEnd: _active.selectionEnd || 0,
     };
   }
-  // Podobne pre iné inputy (komentáre, atď.)
   let _otherFocus = null;
   if (_active && _active.dataset && _active.dataset.action && _active.dataset.action !== 'search-change') {
     if (['INPUT', 'TEXTAREA'].includes(_active.tagName)) {
-      const key = _active.dataset.action + (_active.dataset.id ? ':' + _active.dataset.id : '') + (_active.dataset.feed ? ':' + _active.dataset.feed : '');
       _otherFocus = {
         action: _active.dataset.action,
         id: _active.dataset.id || null,
@@ -311,22 +308,21 @@ function renderApp() {
   else if (state.tab === 'events') pageHtml = renderEventsPage();
   else if (state.tab === 'account') pageHtml = renderAccountPage();
 
-  // Bottom nav sa skrýva len pri story-viewer a onboardingu — NIE pri mape
-  const hideChrome = state.overlay?.type === 'story-viewer' || state.overlay?.type === 'onboarding';
-  // Lightbox skryjeme aj na mape (aby neprekážal, ale bottom nav ostáva)
-  const hideLightbox = hideChrome || (state.tab === 'map' && !state.overlay);
+  const isMapTab = state.tab === 'map' && !state.overlay;
+  const hideAll = state.overlay?.type === 'story-viewer' || state.overlay?.type === 'onboarding';
+  const hideCookieBanner = hideAll || isMapTab;
+  const hideLightbox = hideAll || isMapTab;
 
   root.innerHTML = `
     <div class="app-shell">
       ${pageHtml}
-      ${hideChrome ? '' : renderBottomNav()}
+      ${hideAll ? '' : renderBottomNav()}
       ${hideLightbox ? '' : renderLightbox()}
-      ${hideChrome ? '' : renderCookieBanner()}
+      ${hideCookieBanner ? '' : renderCookieBanner()}
     </div>`;
 
   applySeo();
 
-  // ---- Obnov focus search inputu PO prepísaní DOM ----
   if (_searchFocus) {
     const newInput = document.querySelector(`[data-action="search-change"][data-feed="${_searchFocus.feed}"]`);
     if (newInput) {
