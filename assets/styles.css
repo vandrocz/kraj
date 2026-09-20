@@ -1333,3 +1333,73 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   font-family: 'Inter', monospace;
   letter-spacing: 0.01em;
 }
+
+/* ============ Fix pretekania textu a dlhých URL ============ */
+.post-caption {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.post-caption a,
+.rich-text a,
+.comment-text a {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+.post-caption strong {
+  word-break: break-word;
+}
+.post-caption .rich-text {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.post-caption .rich-text p {
+  margin: 0;
+  display: inline;
+}
+.post-comment-row {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.notif-text {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* ============ 3-stĺpcový grid na desktope — oprava medzier ============ */
+@media (min-width: 1080px) {
+  .post-feed-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 0 16px;
+    align-items: start;
+  }
+  .post-card {
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+  }
+  .post-image,
+  .post-carousel-track {
+    max-height: none;
+  }
+}
+
+/* Prázdne karty — fallback pre chýbajúce obrázky */
+.post-image-wrap,
+.post-carousel-track {
+  background: linear-gradient(135deg, var(--c-primary-light), var(--c-border));
+}
+.post-image-wrap img,
+.post-carousel-slide img {
+  min-height: 120px;
+}
+
+/* Karty rôznej výšky — zabráni prázdnym miestam */
+.post-card {
+  align-self: start;
+}
+
+/* Feed grid má medzery aj na mobile, aby dýchal */
+.post-feed-grid {
+  padding: 0 4px;
+}
