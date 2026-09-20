@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 
 export const geoRoutes = new Hono();
 
-// Nominatim reverse — mesto/obec podľa súradníc
+// Reverse geocoding — mesto podľa súradníc
 geoRoutes.get('/reverse', async (c) => {
   const lat = parseFloat(c.req.query('lat') || '');
   const lng = parseFloat(c.req.query('lng') || '');
@@ -24,7 +24,7 @@ geoRoutes.get('/reverse', async (c) => {
   }
 });
 
-// Uloženie polohy usera
+// Uloženie polohy
 geoRoutes.post('/save', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -37,82 +37,81 @@ geoRoutes.post('/save', async (c) => {
 });
 
 // ============================================================
-// OBCE — zoznam obcí v okrese
-// Cache v KV na 7 dní
+// OBCE — priamo Overpass API (bez Nominatim medzistupňa)
 // ============================================================
 geoRoutes.get('/cities', async (c) => {
   const district = (c.req.query('district') || '').trim();
   const q = (c.req.query('q') || '').trim().toLowerCase();
+  const debug = c.req.query('debug') === '1';
 
   if (!district) return c.json({ cities: [] });
 
-  const cacheKey = `cities:v2:${district}`;
+  const cacheKey = `cities:v3:${district}`;
   let cities = null;
 
+  // Skús KV cache
   try {
     const cached = await c.env.NASKRAJ_LAJKY.get(cacheKey);
-    if (cached) cities = JSON.parse(cached);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) cities = parsed;
+    }
   } catch {}
 
   if (!cities) {
+    // Overpass API — nájdi okres a všetky obce v ňom
+    // Okresy ČR: admin_level=7 (okresy), admin_level=6 (kraje), Praha je admin_level=6
+    const isPraha = district.toLowerCase() === 'praha' || district.toLowerCase() === 'praha-město';
+
+    // Použijeme názov okresu. Okresy sa v OSM volajú "Okres X" alebo len "X"
+    const ovQuery = isPraha
+      ? `[out:json][timeout:30];
+         area["name"="Praha"]["admin_level"="6"]->.a;
+         node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|quarter)$"](area.a);
+         out tags 300;`
+      : `[out:json][timeout:30];
+         area["name"="${district.replace(/"/g, '')}"]["boundary"="administrative"]["admin_level"="7"]->.a;
+         node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|quarter)$"](area.a);
+         out tags 500;`;
+
     try {
-      // 1) Nájdi okres v Nominatim
-      const searchUrl = `https://nominatim.openstreetmap.org/search?` + new URLSearchParams({
-        q: `${district}, Czech Republic`,
-        format: 'json',
-        limit: '1',
-        addressdetails: '1',
+      const ovRes = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        headers: {
+          'User-Agent': 'Naskraj/1.0 (naskraj.vandro.cz)',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'data=' + encodeURIComponent(ovQuery),
       });
-      const res = await fetch(searchUrl, { headers: { 'User-Agent': 'Naskraj/1.0 (naskraj.vandro.cz)' } });
-      if (!res.ok) throw new Error('Nominatim ' + res.status);
-      const arr = await res.json();
-      if (!arr || arr.length === 0) cities = [];
 
-      if (!cities || cities.length === 0) {
-        const hit = arr[0];
-        const osmId = hit?.osm_id;
-        const osmType = hit?.osm_type;
-
-        if (osmId && osmType) {
-          // 2) Overpass API — nájdi všetky sídla v okrese
-          const areaId = osmType === 'relation' ? 3600000000 + osmId : osmId;
-          const ovQuery = `
-            [out:json][timeout:25];
-            area(${areaId})->.a;
-            (
-              node["place"~"^(city|town|village|hamlet|suburb|neighbourhood)$"](area.a);
-            );
-            out tags 300;
-          `;
-          const ovRes = await fetch('https://overpass-api.de/api/interpreter', {
-            method: 'POST',
-            headers: { 'User-Agent': 'Naskraj/1.0 (naskraj.vandro.cz)' },
-            body: 'data=' + encodeURIComponent(ovQuery),
-          });
-          if (ovRes.ok) {
-            const ovData = await ovRes.json();
-            const seen = new Set();
-            cities = (ovData.elements || [])
-              .map((el) => el.tags?.name)
-              .filter((name) => name && !seen.has(name) && (seen.add(name), true))
-              .sort((a, b) => a.localeCompare(b, 'cs'));
-          } else {
-            cities = [];
-          }
-        }
+      if (!ovRes.ok) {
+        console.error('Overpass HTTP:', ovRes.status, await ovRes.text().catch(() => ''));
+        cities = [];
+      } else {
+        const ovData = await ovRes.json();
+        const seen = new Set();
+        cities = (ovData.elements || [])
+          .map((el) => el.tags?.name)
+          .filter((name) => name && !seen.has(name) && (seen.add(name), true))
+          .sort((a, b) => a.localeCompare(b, 'cs'));
+        if (debug) console.log('Overpass returned', cities.length, 'cities for', district);
       }
 
-      // Cache na 7 dní
-      try {
-        await c.env.NASKRAJ_LAJKY.put(cacheKey, JSON.stringify(cities || []), { expirationTtl: 604800 });
-      } catch {}
+      // Cache na 30 dní
+      if (cities.length > 0) {
+        try { await c.env.NASKRAJ_LAJKY.put(cacheKey, JSON.stringify(cities), { expirationTtl: 2592000 }); } catch {}
+      }
     } catch (err) {
-      console.error('cities fetch error:', err);
+      console.error('Overpass error:', err);
       cities = [];
     }
   }
 
   let out = cities || [];
   if (q) out = out.filter((name) => name.toLowerCase().includes(q));
+
+  if (debug) {
+    return c.json({ cities: out.slice(0, 300), _debug: { district, total: cities.length, cached: cities !== null } });
+  }
   return c.json({ cities: out.slice(0, 300) });
 });
