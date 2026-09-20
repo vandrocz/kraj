@@ -1546,3 +1546,59 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   font-size: 12.5px;
   font-weight: 600;
 }
+
+/* ============================================================
+   FEED GRID — definitívny fix pre 3 stĺpce aj vo viacerých riadkoch
+   ============================================================ */
+
+.post-feed-grid,
+.profile-post-feed,
+.events-list {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  grid-auto-flow: row !important;
+  gap: 16px !important;
+  align-items: start !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.post-feed-grid > *,
+.profile-post-feed > *,
+.events-list > * {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  grid-column: auto / span 1 !important;
+  box-sizing: border-box !important;
+}
+
+@media (min-width: 720px) {
+  .post-feed-grid,
+  .profile-post-feed,
+  .events-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    padding: 0 16px !important;
+  }
+}
+
+@media (min-width: 1080px) {
+  .post-feed-grid,
+  .profile-post-feed,
+  .events-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    padding: 0 24px !important;
+    gap: 20px !important;
+  }
+}
+
+/* Post card v gride */
+.post-feed-grid .post-card,
+.profile-post-feed .post-card,
+.events-list .event-card {
+  margin: 0 !important;
+  max-width: none !important;
+  width: 100% !important;
+  align-self: start !important;
+}
