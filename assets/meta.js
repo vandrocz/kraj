@@ -28,7 +28,13 @@ const FALLBACK_TYPES = {
   accommodation: [
     { value: 'hotel', label: 'Hotel' },
     { value: 'penzion', label: 'Penzion' },
+    { value: 'chata', label: 'Chata' },
+    { value: 'chalupa', label: 'Chalupa' },
     { value: 'kemp', label: 'Kemp' },
+    { value: 'apartman', label: 'Apartmán' },
+    { value: 'glamping', label: 'Glamping' },
+    { value: 'hostel', label: 'Hostel' },
+    { value: 'ubytovna', label: 'Ubytovna' },
   ],
   restaurant: [
     { value: 'restaurace', label: 'Restaurace' },
@@ -45,7 +51,6 @@ const FALLBACK_TYPES = {
   ],
 };
 
-// Naplní sa pri štarte appky z /api/meta/regions a /api/meta/types; kým sa nenačíta, používa fallback vyššie.
 let REGIONS = FALLBACK_REGIONS;
 let TYPES = FALLBACK_TYPES;
 
@@ -59,5 +64,23 @@ async function loadMetaFromApi() {
     if (typesRes) TYPES = typesRes;
   } catch (err) {
     console.warn('Číselníky sa nepodarilo natiahnuť z API, používam lokálny fallback:', err.message);
+  }
+}
+
+// ============================================================
+// OBCE — načítanie z API (cache v KV na 7 dní)
+// ============================================================
+const _citiesCache = {};
+async function loadCitiesForDistrict(district) {
+  if (!district) return [];
+  if (_citiesCache[district]) return _citiesCache[district];
+  try {
+    const data = await apiGet(`/api/geo/cities?district=${encodeURIComponent(district)}`);
+    _citiesCache[district] = data.cities || [];
+    return _citiesCache[district];
+  } catch (err) {
+    console.warn('Obce sa nepodarilo načítať:', err.message);
+    _citiesCache[district] = [];
+    return [];
   }
 }
