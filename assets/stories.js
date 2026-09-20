@@ -1,3 +1,7 @@
+// ============================================================
+// STORIES
+// ============================================================
+
 async function loadStoriesFeed() {
   if (!isLoggedIn()) { state.stories = { groups: [] }; return; }
   try {
@@ -6,7 +10,7 @@ async function loadStoriesFeed() {
   } catch (err) {
     state.stories = { groups: [] };
   }
-  if (state.tab === 'organizations' || state.tab === 'accommodation' || state.tab === 'gastro' || state.tab === 'collections') renderApp();
+  if (['organizations', 'accommodation', 'gastro'].includes(state.tab)) renderApp();
 }
 
 function renderStoriesBar() {
@@ -42,15 +46,14 @@ function renderStoriesBar() {
     <div class="stories-bar">
       ${meCircle}
       ${othersHtml}
-    </div>
-  `;
+    </div>`;
 }
 
 function openStoryViewer(groupKey) {
   const groups = state.stories?.groups || [];
   const group = groups.find((g) => g.key === groupKey);
   if (!group || group.stories.length === 0) return;
-  state.overlay = { type: 'story-viewer', groupKey, index: 0 };
+  state.overlay = { type: 'story-viewer', groupKey, index: 0, replyOpen: false, replyText: '' };
   renderApp();
   markStoryViewed(group);
 }
@@ -62,11 +65,12 @@ function markStoryViewed(group) {
 }
 
 function renderStoryViewerOverlay() {
-  const { groupKey, index } = state.overlay;
+  const { groupKey, index, replyOpen, replyText } = state.overlay;
   const groups = state.stories?.groups || [];
   const group = groups.find((g) => g.key === groupKey);
   if (!group || !group.stories[index]) { setTimeout(() => closeOverlay(), 0); return ''; }
   const story = group.stories[index];
+  const isMe = group.is_me;
 
   const bars = group.stories.map((_, i) => `<span class="story-progress-bar ${i < index ? 'is-done' : i === index ? 'is-active' : ''}"></span>`).join('');
 
@@ -87,8 +91,54 @@ function renderStoryViewerOverlay() {
       </div>
       <div class="story-viewer-nav story-viewer-prev" data-action="story-prev"></div>
       <div class="story-viewer-nav story-viewer-next" data-action="story-next"></div>
-    </div>
-  `;
+      ${!isMe ? `
+        ${!replyOpen ? `
+          <button class="story-reply-trigger" data-action="story-reply-open">
+            ${icon('chat', { size: 18 })} Odpovědět
+          </button>
+        ` : `
+          <div class="story-reply-box">
+            <input type="text" class="story-reply-input" placeholder="Odpověz…" value="${escapeAttr(replyText)}" data-story-reply-input maxlength="500" autofocus />
+            <button class="story-reply-send" data-action="story-reply-send">${icon('send', { size: 18 })}</button>
+            <button class="story-reply-cancel" data-action="story-reply-cancel">${icon('close', { size: 18 })}</button>
+          </div>
+        `}
+      ` : ''}
+    </div>`;
+}
+
+function storyReplyOpen() {
+  if (state.overlay?.type !== 'story-viewer') return;
+  state.overlay.replyOpen = true;
+  renderApp();
+  setTimeout(() => document.querySelector('[data-story-reply-input]')?.focus(), 50);
+}
+
+function storyReplyCancel() {
+  if (state.overlay?.type !== 'story-viewer') return;
+  state.overlay.replyOpen = false;
+  state.overlay.replyText = '';
+  renderApp();
+}
+
+async function storyReplySend() {
+  if (state.overlay?.type !== 'story-viewer') return;
+  const group = state.stories.groups.find((g) => g.key === state.overlay.groupKey);
+  if (!group) return;
+  const story = group.stories[state.overlay.index];
+  if (!story) return;
+
+  const input = document.querySelector('[data-story-reply-input]');
+  const text = (input?.value || '').trim();
+  if (!text) return;
+
+  try {
+    await apiPost(`/api/stories/${story.id}/reply`, { text });
+    showToast('Odpověď odeslána.');
+    state.overlay.replyOpen = false;
+    state.overlay.replyText = '';
+    renderApp();
+  } catch (err) { showToast(err.message); }
 }
 
 function storyNext() {
@@ -97,7 +147,7 @@ function storyNext() {
   const group = state.stories.groups.find((g) => g.key === groupKey);
   if (!group) return;
   if (index + 1 < group.stories.length) {
-    state.overlay = { ...state.overlay, index: index + 1 };
+    state.overlay = { ...state.overlay, index: index + 1, replyOpen: false, replyText: '' };
     renderApp();
   } else {
     closeOverlay();
@@ -107,7 +157,7 @@ function storyNext() {
 function storyPrev() {
   if (state.overlay?.type !== 'story-viewer') return;
   if (state.overlay.index > 0) {
-    state.overlay = { ...state.overlay, index: state.overlay.index - 1 };
+    state.overlay = { ...state.overlay, index: state.overlay.index - 1, replyOpen: false, replyText: '' };
     renderApp();
   }
 }
@@ -136,12 +186,11 @@ function renderCreateStoryOverlay() {
             <input class="form-input" name="caption" maxlength="200" />
           </div>
           <button class="form-submit-btn" type="submit" ${state.overlay.file ? '' : 'disabled'}>
-            ${state.overlay.uploading ? 'Nahrávám…' : 'Zveřejnit story (24 h)'}
+            ${state.overlay.uploading ? 'Nahrávam…' : 'Zveřejnit story (24 h)'}
           </button>
         </form>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 async function onStoryFileSelected(inputEl) {
