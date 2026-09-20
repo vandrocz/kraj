@@ -2,11 +2,7 @@
 // RICH-TEXT EDITOR (contenteditable + toolbar)
 // ============================================================
 
-const editorState = {
-  quill: null, // nepoužívame Quill, ale vlastný contenteditable
-};
-
-function renderRichEditor(name = 'text_html', placeholder = 'Co je nového?') {
+function renderRichEditor(name = 'text_html', placeholder = 'Co je nového?', initialHtml = '') {
   return `
     <div class="rich-editor" data-editor-wrap>
       <div class="rich-toolbar">
@@ -21,10 +17,9 @@ function renderRichEditor(name = 'text_html', placeholder = 'Co je nového?') {
         <button type="button" class="rich-btn" data-action="rich-link" title="Odkaz">🔗</button>
         <button type="button" class="rich-btn" data-action="rich-emoji" title="Emoji">😀</button>
       </div>
-      <div class="rich-content" contenteditable="true" data-rich-content data-placeholder="${escapeAttr(placeholder)}"></div>
-      <input type="hidden" name="${name}" data-rich-hidden />
-    </div>
-  `;
+      <div class="rich-content" contenteditable="true" data-rich-content data-placeholder="${escapeAttr(placeholder)}">${initialHtml || ''}</div>
+      <input type="hidden" name="${name}" data-rich-hidden value="${escapeAttr(initialHtml || '')}" />
+    </div>`;
 }
 
 function bindRichEditor(wrap) {
@@ -34,14 +29,12 @@ function bindRichEditor(wrap) {
   const sync = () => { hidden.value = content.innerHTML; };
   content.addEventListener('input', sync);
   content.addEventListener('blur', sync);
-  // Vlož čistý text bez HTML pri paste
   content.addEventListener('paste', (e) => {
     e.preventDefault();
     const text = (e.clipboardData || window.clipboardData).getData('text/plain');
     document.execCommand('insertText', false, text);
     sync();
   });
-  // @mention na klávesnici
   content.addEventListener('keydown', (e) => {
     if (e.key === '@') { setTimeout(() => openMentionPicker(content), 10); }
   });
@@ -63,10 +56,7 @@ function richLink() {
   return false;
 }
 
-function richEmoji() {
-  openEmojiPicker();
-  return false;
-}
+function richEmoji() { openEmojiPicker(); return false; }
 
 function getEditorHtml(form) {
   const c = form.querySelector('[data-rich-content]');
