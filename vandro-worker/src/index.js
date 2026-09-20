@@ -24,6 +24,23 @@ import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUI
 
 const app = new Hono();
 
+app.get('/api/debug/r2', async (c) => {
+  const out = { has_media: !!c.env.MEDIA, r2_public_base: c.env.R2_PUBLIC_BASE || null };
+  if (c.env.MEDIA) {
+    try {
+      const key = `debug/test-${Date.now()}.txt`;
+      await c.env.MEDIA.put(key, new TextEncoder().encode('ok'), { httpMetadata: { contentType: 'text/plain' } });
+      const obj = await c.env.MEDIA.get(key);
+      out.put_ok = true;
+      out.get_ok = !!obj;
+      await c.env.MEDIA.delete(key);
+      out.delete_ok = true;
+      out.example_url = c.env.R2_PUBLIC_BASE ? `${c.env.R2_PUBLIC_BASE}/${key}` : null;
+    } catch (err) { out.error = err.message; out.put_ok = false; }
+  }
+  return c.json(out);
+});
+
 app.get('/api/debug/vapid', (c) => c.json({
   public_set: !!c.env.VAPID_PUBLIC_KEY,
   private_set: !!c.env.VAPID_PRIVATE_KEY,
