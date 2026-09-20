@@ -155,14 +155,27 @@ function renderSocialPostCard(post, feedKey) {
 
 async function togglePostLike(postId, feedKey, btnEl) {
   if (!isLoggedIn()) { showToast('Pro lajkování se musíš přihlásit.'); switchTab('account'); return; }
-  const post = state.socialFeeds[feedKey].items.find((p) => p.id === postId);
+
+  // Nájdi post v socialFeeds ALEBO v profiles
+  let post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
+  if (!post) {
+    for (const k of Object.keys(state.profiles)) {
+      const d = state.profiles[k];
+      if (d?.posts) {
+        const p = d.posts.find((x) => x.id === postId);
+        if (p) { post = p; break; }
+      }
+    }
+  }
   if (!post || post.__liked) return;
+
   post.__liked = true;
   post.likes = (post.likes || 0) + 1;
   btnEl.classList.add('is-liked');
   btnEl.innerHTML = icon('heart', { size: 22, filled: true });
   const likesEl = document.querySelector(`[data-like-count="${postId}"]`);
   if (likesEl) likesEl.textContent = `${fmt(post.likes)} páči sa mi`;
+
   try {
     const data = await apiPost(`/api/feed/${postId}/like`, {});
     post.likes = data.likes;
@@ -177,6 +190,14 @@ async function toggleBookmark(postId, btnEl) {
     if (btnEl) {
       btnEl.classList.toggle('is-bookmarked', data.bookmarked);
       btnEl.innerHTML = icon('bookmark', { size: 20, filled: data.bookmarked });
+    }
+    // Sync do profiles
+    for (const k of Object.keys(state.profiles)) {
+      const d = state.profiles[k];
+      if (d?.posts) {
+        const p = d.posts.find((x) => x.id === postId);
+        if (p) p.__bookmarked = data.bookmarked;
+      }
     }
     showToast(data.bookmarked ? 'Uloženo.' : 'Odebráno z uložených.');
   } catch (err) { showToast(err.message); }
@@ -226,7 +247,17 @@ async function toggleSocialComments(postId, feedKey) {
   if (isHidden && list.dataset.loaded !== 'true') {
     try {
       const data = await apiGet(`/api/feed/${postId}/comments`);
-      const post = state.socialFeeds[feedKey].items.find((p) => p.id === postId);
+      // Skús v socialFeeds
+      let post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
+      if (!post) {
+        for (const k of Object.keys(state.profiles)) {
+          const d = state.profiles[k];
+          if (d?.posts) {
+            const p = d.posts.find((x) => x.id === postId);
+            if (p) { post = p; break; }
+          }
+        }
+      }
       if (post) post.__comments = data.comments;
       list.innerHTML = (data.comments || []).map((c) => renderCommentRow(c, feedKey, postId)).join('') ||
         '<p class="post-comment-row" style="color:var(--c-text-muted)">Zatím žádné komentáře.</p>';
