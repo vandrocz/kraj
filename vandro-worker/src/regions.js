@@ -31,7 +31,13 @@ export const ORGANIZATION_TYPES = [
 export const ACCOMMODATION_TYPES = [
   { value: 'hotel', label: 'Hotel' },
   { value: 'penzion', label: 'Penzion' },
+  { value: 'chata', label: 'Chata' },
+  { value: 'chalupa', label: 'Chalupa' },
   { value: 'kemp', label: 'Kemp' },
+  { value: 'apartman', label: 'Apartmán' },
+  { value: 'glamping', label: 'Glamping' },
+  { value: 'hostel', label: 'Hostel' },
+  { value: 'ubytovna', label: 'Ubytovna' },
 ];
 
 export const RESTAURANT_TYPES = [
