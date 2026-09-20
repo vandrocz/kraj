@@ -1403,3 +1403,52 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .post-feed-grid {
   padding: 0 4px;
 }
+
+/* ============ Fix search focusu a map ============ */
+
+/* Mapa má mať bottom nav viditeľný — žiadne extra pravidlo netreba, */
+
+/* Profile post feed — Facebook style */
+.profile-post-feed {
+  padding: 0 12px 24px;
+  grid-template-columns: 1fr !important;
+  display: flex !important;
+  flex-direction: column;
+  gap: 16px;
+}
+.profile-post-feed .post-card {
+  max-width: 640px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Fix text pretekánia v postoch */
+.post-caption {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.post-caption a,
+.rich-text a {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+.post-comment-row { word-break: break-word; }
+
+/* Placeholder pre príspevky bez fotky */
+.post-image-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--c-primary-light), var(--c-border));
+  color: var(--c-text-muted);
+  aspect-ratio: 4/3;
+}
+.post-image-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
