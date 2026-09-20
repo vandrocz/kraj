@@ -247,6 +247,25 @@ document.addEventListener('change', (e) => {
   else if (a === 'onboarding-avatar-change') onboardingAvatarChange(el);
   else if (a === 'verif-doc-selected') onVerifDocSelected(el);
   else if (a === 'push-toggle') handlePushToggle(el.checked);
+    else if (a === 'district-change') {
+    const form = el.closest('form');
+    const citySelect = form.querySelector('select[name="city"]');
+    const district = el.value;
+    if (!citySelect) return;
+    if (!district) {
+      citySelect.innerHTML = '<option value="">Nejprve vyberte okres</option>';
+      return;
+    }
+    citySelect.innerHTML = '<option value="">Načítám obce…</option>';
+    loadCitiesForDistrict(district).then((cities) => {
+      if (cities.length === 0) {
+        citySelect.innerHTML = '<option value="">(žádné obce)</option>';
+      } else {
+        citySelect.innerHTML = '<option value="">Vyberte obec…</option>' +
+          cities.map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join('');
+      }
+    });
+  }
 });
 
 document.addEventListener('input', (e) => {
