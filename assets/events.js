@@ -189,9 +189,16 @@ document.addEventListener('click', (e) => {
     case 'onboarding-toggle-biz': onboardingToggleBiz(el.dataset.kind, el.dataset.id, el.dataset.name); break;
     case 'onboarding-avatar-pick': onboardingAvatarPick(); break;
 
-    // Verification
+    // Verification (business)
     case 'open-verification-request': openVerificationRequest(el.dataset.kind, el.dataset.id, el.dataset.name); break;
     case 'trigger-verif-doc': document.getElementById('verif-doc-input')?.click(); break;
+
+    // Admin — verifications
+    case 'approve-verification': approveVerification(el.dataset.id); break;
+    case 'reject-verification': rejectVerification(el.dataset.id); break;
+    case 'admin-backfill-handles': adminBackfillHandles(); break;
+    case 'admin-seed-test': adminSeedTest(); break;
+    case 'admin-cleanup-test': adminCleanupTest(); break;
 
     // Push
     case 'push-test': testPush(); break;
@@ -317,6 +324,9 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// ============================================================
+// BOOTSTRAP
+// ============================================================
 async function bootstrap() {
   state.tab = restoreTab();
   getFeedTitle(state.tab);
