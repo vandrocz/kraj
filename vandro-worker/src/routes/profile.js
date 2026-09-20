@@ -484,10 +484,27 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
     const table = TYPE_TO_TABLE[type];
     if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
 
-    const user = c.get('user');
+    // Bezpečné získanie usera — skús middleware, ak nič, over token priamo
+    let user = c.get('user');
+    if (!user || !user.sub) {
+      const h = c.req.header('Authorization') || '';
+      const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+      if (token) {
+        try {
+          const { verify } = await import('hono/jwt');
+          user = await verify(token, c.env.JWT_SECRET, 'HS256');
+        } catch (e) {
+          console.warn('stats: token verify failed:', e.message);
+        }
+      }
+    }
+    if (!user || !user.sub) return c.json({ error: 'Chýba prihlásenie.' }, 401);
+
     const biz = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(id).first();
     if (!biz) return c.json({ error: 'Nenalezeno.' }, 404);
-    if (biz.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
+    if (biz.user_id !== user.sub && user.role !== 'admin') {
+      return c.json({ error: 'Nemáš oprávnění.' }, 403);
+    }
 
     let posts = 0, events = 0, followers = 0, likes = 0, comments = 0;
     let recent = [];
