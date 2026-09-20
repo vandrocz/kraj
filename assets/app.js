@@ -431,40 +431,111 @@ function switchTab(tab) {
 // ============================================================
 // LIGHTBOX
 // ============================================================
-function openLightbox(images, index = 0, caption = '') {
-  state.lightbox = { images, index: Math.max(0, Math.min(index, images.length - 1)), caption };
+// ============================================================
+// LIGHTBOX s info panelom
+// ============================================================
+
+function openLightbox(images, index = 0, caption = '', post = null) {
+  state.lightbox = {
+    images,
+    index: Math.max(0, Math.min(index, images.length - 1)),
+    caption,
+    post,
+  };
   updateLightboxDOM();
   document.getElementById('lightbox')?.classList.add('is-open');
   document.body.style.overflow = 'hidden';
 }
+
 function closeLightbox() {
   document.getElementById('lightbox')?.classList.remove('is-open');
   document.body.style.overflow = '';
   state.lightbox = null;
 }
-function lightboxPrev() { if (!state.lightbox) return; state.lightbox.index = (state.lightbox.index - 1 + state.lightbox.images.length) % state.lightbox.images.length; updateLightboxDOM(); }
-function lightboxNext() { if (!state.lightbox) return; state.lightbox.index = (state.lightbox.index + 1) % state.lightbox.images.length; updateLightboxDOM(); }
-function updateLightboxDOM() {
-  const lb = state.lightbox; if (!lb || !lb.images.length) return;
-  const img = document.getElementById('lightbox-img');
-  const cap = document.getElementById('lightbox-caption');
-  const counter = document.getElementById('lightbox-counter');
-  const nav = document.querySelectorAll('.lightbox-nav');
-  if (img) img.src = lb.images[lb.index];
-  if (cap) cap.textContent = lb.caption || '';
-  if (counter) { counter.textContent = lb.images.length > 1 ? `${lb.index + 1} / ${lb.images.length}` : ''; counter.style.display = lb.images.length > 1 ? '' : 'none'; }
-  nav.forEach((n) => { n.style.display = lb.images.length > 1 ? '' : 'none'; });
+
+function lightboxPrev() {
+  if (!state.lightbox) return;
+  state.lightbox.index = (state.lightbox.index - 1 + state.lightbox.images.length) % state.lightbox.images.length;
+  updateLightboxDOM();
 }
+
+function lightboxNext() {
+  if (!state.lightbox) return;
+  state.lightbox.index = (state.lightbox.index + 1) % state.lightbox.images.length;
+  updateLightboxDOM();
+}
+
+function updateLightboxDOM() {
+  const lb = state.lightbox;
+  if (!lb || !lb.images.length) return;
+  const img = document.getElementById('lightbox-img');
+  const counter = document.getElementById('lightbox-counter');
+  const info = document.getElementById('lightbox-info');
+  const navPrev = document.querySelector('.lightbox-prev');
+  const navNext = document.querySelector('.lightbox-next');
+
+  if (img) img.src = lb.images[lb.index];
+  if (counter) {
+    counter.textContent = lb.images.length > 1 ? `${lb.index + 1} / ${lb.images.length}` : '';
+    counter.style.display = lb.images.length > 1 ? '' : 'none';
+  }
+
+  // Šípky — viditeľné len ak viac ako 1 fotka
+  if (navPrev) navPrev.style.display = lb.images.length > 1 ? '' : 'none';
+  if (navNext) navNext.style.display = lb.images.length > 1 ? '' : 'none';
+
+  // Info panel
+  if (info) {
+    const post = lb.post;
+    if (!post) {
+      info.innerHTML = lb.caption ? `<p class="lightbox-caption">${escapeHtml(lb.caption)}</p>` : '';
+    } else {
+      const biz = post.business || {};
+      info.innerHTML = `
+        <header class="lightbox-post-head">
+          <button class="post-avatar" data-action="open-profile" data-kind="${post.__feedKey || ''}" data-id="${biz.id || ''}"
+                  style="display:flex;align-items:center;justify-content:center;background:var(--c-primary-light);color:var(--c-primary-dark);font-weight:800;font-size:15px;border-radius:var(--radius-round);width:40px;height:40px;flex-shrink:0;border:none;">
+            ${(biz.name || '?').charAt(0).toUpperCase()}
+          </button>
+          <div style="flex:1;min-width:0">
+            <p class="post-author">${escapeHtml(biz.name || '')} ${biz.is_verified ? icon('check', { size: 12, className: 'verified-badge-inline' }) : ''}</p>
+            <p class="post-time">${biz.city ? `${escapeHtml(biz.city)}, ` : ''}${biz.district ? escapeHtml(biz.district) : ''} · ${timeAgo(post.created_at)}</p>
+          </div>
+        </header>
+        <div class="lightbox-post-body">
+          <p class="lightbox-post-text rich-text">${post.html || escapeHtml(post.text || '')}</p>
+          ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
+        </div>
+        <div class="lightbox-post-actions">
+          <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
+            ${icon('heart', { size: 22, filled: !!post.__liked })}
+          </button>
+          <span class="lightbox-stat">${fmt(post.likes || 0)}</span>
+          <button class="post-action" data-action="toggle-comments" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
+            ${icon('comment', { size: 21 })}
+          </button>
+          <span class="lightbox-stat">${fmt(post.comment_count || 0)}</span>
+          <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(post.text || '')}">
+            ${icon('share', { size: 21 })}
+          </button>
+        </div>
+      `;
+    }
+  }
+}
+
 function renderLightbox() {
   return `
     <div class="lightbox" id="lightbox">
       <button class="lightbox-close" data-action="close-lightbox" aria-label="Zavřít">${icon('close', { size: 22 })}</button>
-      <button class="lightbox-nav lightbox-prev" data-action="lightbox-prev" aria-label="Předchozí">${icon('chevronRight', { size: 26, className: 'flip-x' })}</button>
-      <button class="lightbox-nav lightbox-next" data-action="lightbox-next" aria-label="Další">${icon('chevronRight', { size: 26 })}</button>
-      <div class="lightbox-body">
-        <img src="" alt="" class="lightbox-img" id="lightbox-img" />
-        <p class="lightbox-caption" id="lightbox-caption"></p>
-        <p class="lightbox-counter" id="lightbox-counter"></p>
+      <div class="lightbox-inner">
+        <div class="lightbox-image-pane">
+          <img src="" alt="" class="lightbox-img" id="lightbox-img" />
+          <button class="lightbox-nav lightbox-prev" data-action="lightbox-prev" aria-label="Předchozí">${icon('chevronRight', { size: 26, className: 'flip-x' })}</button>
+          <button class="lightbox-nav lightbox-next" data-action="lightbox-next" aria-label="Další">${icon('chevronRight', { size: 26 })}</button>
+          <p class="lightbox-counter" id="lightbox-counter"></p>
+        </div>
+        <div class="lightbox-info-pane" id="lightbox-info"></div>
       </div>
     </div>`;
 }
