@@ -66,9 +66,20 @@ profileRoutes.get('/:type/:id/checkins', async (c) => {
 // SEARCH — musí byť PRED /:type/:id
 // ============================================================
 profileRoutes.get('/search', async (c) => {
+  const user = c.get('user');
   const q = (c.req.query('q') || '').trim();
   if (!q || q.length < 2) return c.json({ results: [] });
   const like = `%${escapeLike(q)}%`;
+
+  // Zisti blokovaných (obojsmerne)
+  const blocked = new Set();
+  try {
+    const { results: b1 } = await c.env.DB.prepare(`SELECT blocked_id AS id FROM blocks WHERE blocker_id = ?`).bind(user.sub).all();
+    const { results: b2 } = await c.env.DB.prepare(`SELECT blocker_id AS id FROM blocks WHERE blocked_id = ?`).bind(user.sub).all();
+    for (const r of b1) blocked.add(r.id);
+    for (const r of b2) blocked.add(r.id);
+  } catch {}
+
   const { results } = await c.env.DB.prepare(
     `SELECT 'organizations' AS kind, id, name, type, region, district, city, description, is_verified FROM organizations WHERE name LIKE ? ESCAPE '\\'
      UNION ALL
@@ -78,9 +89,11 @@ profileRoutes.get('/search', async (c) => {
      UNION ALL
      SELECT 'users', id, display_name AS name, role AS type, NULL AS region, NULL AS district, NULL AS city, bio AS description, email_verified AS is_verified
      FROM users WHERE deleted_at IS NULL AND display_name LIKE ? ESCAPE '\\'
-     LIMIT 30`,
+     LIMIT 50`,
   ).bind(like, like, like, like).all();
-  return c.json({ results });
+
+  const filtered = results.filter((r) => !blocked.has(r.id));
+  return c.json({ results: filtered });
 });
 
 // ============================================================
