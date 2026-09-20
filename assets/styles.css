@@ -1731,53 +1731,87 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 }
 
 /* ============================================================
-   GRID 3 stĺpce — definitívny fix
+   FEEDY — flexbox pre 3 stĺpce (robustnejšie ako grid)
    ============================================================ */
+
 .post-feed-grid,
-.profile-post-feed,
-.events-list {
-  display: grid !important;
-  grid-template-columns: 1fr !important;
-  grid-auto-flow: row !important;
-  gap: 16px !important;
-  align-items: start !important;
+.profile-post-feed {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: flex-start !important;
+  gap: 20px !important;
+  padding: 0 24px !important;
   width: 100% !important;
   max-width: 100% !important;
   box-sizing: border-box !important;
-}
-.post-feed-grid > *,
-.profile-post-feed > *,
-.events-list > * {
-  min-width: 0 !important;
-  max-width: 100% !important;
   margin: 0 !important;
-  grid-column: auto / span 1 !important;
+}
+
+.post-feed-grid > .post-card,
+.profile-post-feed > .post-card {
+  flex: 0 0 calc((100% - 40px) / 3) !important;
+  max-width: calc((100% - 40px) / 3) !important;
+  min-width: 0 !important;
+  margin: 0 !important;
   box-sizing: border-box !important;
 }
-@media (min-width: 720px) {
+
+/* Tablet — 2 stĺpce */
+@media (min-width: 720px) and (max-width: 1079px) {
   .post-feed-grid,
-  .profile-post-feed,
-  .events-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  .profile-post-feed {
+    gap: 16px !important;
     padding: 0 16px !important;
   }
-}
-@media (min-width: 1080px) {
-  .post-feed-grid,
-  .profile-post-feed,
-  .events-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-    padding: 0 24px !important;
-    gap: 20px !important;
+  .post-feed-grid > .post-card,
+  .profile-post-feed > .post-card {
+    flex: 0 0 calc((100% - 16px) / 2) !important;
+    max-width: calc((100% - 16px) / 2) !important;
   }
 }
-.post-feed-grid .post-card,
-.profile-post-feed .post-card,
-.events-list .event-card {
+
+/* Mobile — 1 karta */
+@media (max-width: 719px) {
+  .post-feed-grid,
+  .profile-post-feed {
+    gap: 0 !important;
+    padding: 0 !important;
+  }
+  .post-feed-grid > .post-card,
+  .profile-post-feed > .post-card {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+    margin: 0 12px 18px !important;
+  }
+}
+
+/* Eventy tiež 3 stĺpce */
+.events-list {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 16px !important;
+  padding: 0 24px !important;
+  align-items: flex-start !important;
+}
+.events-list > .event-card {
+  flex: 0 0 calc((100% - 32px) / 3) !important;
+  max-width: calc((100% - 32px) / 3) !important;
   margin: 0 !important;
-  max-width: none !important;
-  width: 100% !important;
-  align-self: start !important;
+}
+
+@media (min-width: 720px) and (max-width: 1079px) {
+  .events-list > .event-card {
+    flex: 0 0 calc((100% - 16px) / 2) !important;
+    max-width: calc((100% - 16px) / 2) !important;
+  }
+}
+
+@media (max-width: 719px) {
+  .events-list { padding: 0 12px !important; }
+  .events-list > .event-card {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
 }
 
 /* ============================================================
