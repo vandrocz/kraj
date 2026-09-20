@@ -342,7 +342,8 @@ async function openPostFromProfile(postId, kind, businessId) {
   if (!post) return;
   const media = post.media || (post.image_url ? [post.image_url] : []);
   if (!media.length) return;
-  openLightbox(media, 0, post.text_content || '');
+  post.__feedKey = d.feedKey || null;
+  openLightbox(media, 0, post.text_content || '', post);
 }
 
 async function loadBookmarks() {
