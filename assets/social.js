@@ -2,6 +2,37 @@
 // SOCIÁLNY FEED — s pagination, reply, view count
 // ============================================================
 
+// ============================================================
+// Skrátenie URL v HTML postov
+// ============================================================
+function shortenUrl(url) {
+  let s = String(url).replace(/^https?:\/\//i, '').replace(/^www\./i, '');
+  const slash = s.indexOf('/');
+  if (slash === -1) return s;
+  const domain = s.slice(0, slash);
+  const rest = s.slice(slash);
+  if (rest.length <= 15) return s;
+  return domain + '/…';
+}
+
+function shortenLinksInHtml(html) {
+  if (!html) return html;
+  return String(html).replace(
+    /<a\s+([^>]*?)href=["']([^"']+)["']([^>]*)>([\s\S]*?)<\/a>/gi,
+    (match, pre, href, post, text) => {
+      const innerText = String(text || '').replace(/<[^>]+>/g, '').trim();
+      // Ak je text prázdny, alebo je to holá URL, skráť ju
+      const isBareUrl = !innerText || /^https?:\/\//i.test(innerText) || innerText === href;
+      if (isBareUrl) {
+        const short = shortenUrl(innerText || href);
+        return `<a ${pre}href="${href}"${post}>${short}</a>`;
+      }
+      // Inak použi vlastný text (napr. <a href="X">Klikni sem</a>)
+      return match;
+    },
+  );
+}
+
 function buildFeedQuery(feedKey) {
   const f = state.socialFeeds[feedKey];
   const params = new URLSearchParams();
