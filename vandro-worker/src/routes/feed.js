@@ -4,6 +4,7 @@ import { newId } from '../auth.js';
 import { ensureActiveProjectRotation } from '../cron.js';
 import { checkText, flagContent, escapeLike } from '../moderation.js';
 import { rateLimit } from '../ratelimit.js';
+import { checkText, flagContent, sanitizeHtml, htmlToPlain } from '../moderation.js';
 
 export const feedRoutes = new Hono();
 
@@ -315,6 +316,37 @@ feedRoutes.get('/:id/bookmarked', async (c) => {
   const postId = c.req.param('id');
   const row = await c.env.DB.prepare(`SELECT 1 FROM bookmarks WHERE user_id = ? AND post_id = ?`).bind(user.sub, postId).first();
   return c.json({ bookmarked: !!row });
+});
+
+// Editácia príspevku (autor alebo admin)
+feedRoutes.patch('/post/:id', async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const contentHtml = typeof body.html === 'string' ? sanitizeHtml(body.html) : null;
+  const plainText = contentHtml != null ? htmlToPlain(contentHtml) : null;
+
+  if (!contentHtml && plainText == null) return c.json({ error: 'Chýba text.' }, 400);
+  if (plainText && plainText.length > 3000) return c.json({ error: 'Text je příliš dlouhý.' }, 400);
+
+  const post = await c.env.DB.prepare(`SELECT id, user_id, status FROM posts WHERE id = ?`).bind(id).first();
+  if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
+  if (post.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
+  if (post.status === 'removed') return c.json({ error: 'Příspěvek byl smazán.' }, 400);
+
+  if (plainText) {
+    const mod = checkText(plainText);
+    if (!mod.clean && mod.severity >= 2) {
+      await flagContent(c.env, { userId: user.sub, postId: id, reason: mod.reason, severity: mod.severity });
+      return c.json({ error: 'Zakázaný obsah.' }, 400);
+    }
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE posts SET text_content = ?, content_html = ? WHERE id = ?`,
+  ).bind(plainText, contentHtml, id).run();
+
+  return c.json({ ok: true, id, text: plainText, html: contentHtml });
 });
 
 // ---- Delete ----
