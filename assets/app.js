@@ -1,3 +1,6 @@
+// ============================================================
+// STAV APLIKÁCIE
+// ============================================================
 const state = {
   tab: 'organizations',
   overlay: null,
@@ -137,6 +140,7 @@ function renderBackHeader(title, rightHtml) {
     </header>`;
 }
 
+// ---- Náhodné názvy feedov ----
 const FEED_TITLES = {
   events: [
     'Co se děje?', 'Kam dnes vyrazit?', 'Kulturní program', 'Akce v okolí',
@@ -238,6 +242,9 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
     </div>`;
 }
 
+// ============================================================
+// HLAVNÝ RENDER
+// ============================================================
 function renderApp() {
   const root = document.getElementById('root');
   let pageHtml = '';
@@ -380,34 +387,67 @@ function switchTab(tab) {
   if (tab === 'account' && isLoggedIn()) loadNotifications();
 }
 
+// ============================================================
+// LIGHTBOX s carouselom
+// ============================================================
 function openLightbox(images, index = 0, caption = '') {
   state.lightbox = { images, index: Math.max(0, Math.min(index, images.length - 1)), caption };
   updateLightboxDOM();
   document.getElementById('lightbox')?.classList.add('is-open');
   document.body.style.overflow = 'hidden';
 }
+
 function closeLightbox() {
   document.getElementById('lightbox')?.classList.remove('is-open');
-  document.body.style.overflow = ''; state.lightbox = null;
+  document.body.style.overflow = '';
+  state.lightbox = null;
 }
-function lightboxPrev() { if (!state.lightbox) return; state.lightbox.index = (state.lightbox.index - 1 + state.lightbox.images.length) % state.lightbox.images.length; updateLightboxDOM(); }
-function lightboxNext() { if (!state.lightbox) return; state.lightbox.index = (state.lightbox.index + 1) % state.lightbox.images.length; updateLightboxDOM(); }
+
+function lightboxPrev() {
+  if (!state.lightbox) return;
+  state.lightbox.index = (state.lightbox.index - 1 + state.lightbox.images.length) % state.lightbox.images.length;
+  updateLightboxDOM();
+}
+
+function lightboxNext() {
+  if (!state.lightbox) return;
+  state.lightbox.index = (state.lightbox.index + 1) % state.lightbox.images.length;
+  updateLightboxDOM();
+}
+
 function updateLightboxDOM() {
-  const lb = state.lightbox; if (!lb || !lb.images.length) return;
+  const lb = state.lightbox;
+  if (!lb || !lb.images.length) return;
   const img = document.getElementById('lightbox-img');
   const cap = document.getElementById('lightbox-caption');
   const counter = document.getElementById('lightbox-counter');
   const nav = document.querySelectorAll('.lightbox-nav');
   if (img) img.src = lb.images[lb.index];
   if (cap) cap.textContent = lb.caption || '';
-  if (counter) { counter.textContent = lb.images.length > 1 ? `${lb.index + 1} / ${lb.images.length}` : ''; counter.style.display = lb.images.length > 1 ? '' : 'none'; }
+  if (counter) {
+    counter.textContent = lb.images.length > 1 ? `${lb.index + 1} / ${lb.images.length}` : '';
+    counter.style.display = lb.images.length > 1 ? '' : 'none';
+  }
   nav.forEach((n) => { n.style.display = lb.images.length > 1 ? '' : 'none'; });
 }
 
 function renderLightbox() {
-  return `<div class="lightbox" id="lightbox"><button class="lightbox-close" data-action="close-lightbox" aria-label="Zavřít">${icon('close', { size: 22 })}</button><button class="lightbox-nav lightbox-prev" data-action="lightbox-prev" aria-label="Předchozí">${icon('chevronRight', { size: 26, className: 'flip-x' })}</button><button class="lightbox-nav lightbox-next" data-action="lightbox-next" aria-label="Další">${icon('chevronRight', { size: 26 })}</button><div class="lightbox-body"><img src="" alt="" class="lightbox-img" id="lightbox-img" /><p class="lightbox-caption" id="lightbox-caption"></p><p class="lightbox-counter" id="lightbox-counter"></p></div></div>`;
+  return `
+    <div class="lightbox" id="lightbox">
+      <button class="lightbox-close" data-action="close-lightbox" aria-label="Zavřít">${icon('close', { size: 22 })}</button>
+      <button class="lightbox-nav lightbox-prev" data-action="lightbox-prev" aria-label="Předchozí">${icon('chevronRight', { size: 26, className: 'flip-x' })}</button>
+      <button class="lightbox-nav lightbox-next" data-action="lightbox-next" aria-label="Další">${icon('chevronRight', { size: 26 })}</button>
+      <div class="lightbox-body">
+        <img src="" alt="" class="lightbox-img" id="lightbox-img" />
+        <p class="lightbox-caption" id="lightbox-caption"></p>
+        <p class="lightbox-counter" id="lightbox-counter"></p>
+      </div>
+    </div>`;
 }
 
+// ============================================================
+// COOKIE BANNER
+// ============================================================
 function renderCookieBanner() {
   if (state._cookieConsent) return '';
   try { if (localStorage.getItem('naskraj_cookies') === '1') { state._cookieConsent = true; return ''; } } catch {}
@@ -429,14 +469,24 @@ function acceptCookies() {
   document.getElementById('cookie-banner')?.remove();
 }
 
+// ============================================================
+// SWIPE + KEYBOARD pre lightbox
+// ============================================================
 (function setupLightboxSwipe() {
   let startX = 0, startY = 0;
-  document.addEventListener('touchstart', (e) => { if (!e.target.closest('.lightbox.is-open')) return; startX = e.touches[0].clientX; startY = e.touches[0].clientY; }, { passive: true });
+  document.addEventListener('touchstart', (e) => {
+    if (!e.target.closest('.lightbox.is-open')) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
   document.addEventListener('touchend', (e) => {
     if (!e.target.closest('.lightbox.is-open')) return;
     const dx = e.changedTouches[0].clientX - startX;
     const dy = e.changedTouches[0].clientY - startY;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { if (dx < 0) lightboxNext(); else lightboxPrev(); }
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0) lightboxNext();
+      else lightboxPrev();
+    }
   }, { passive: true });
 })();
 
