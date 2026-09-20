@@ -174,6 +174,8 @@ app.use('/api/profile/follow/*', requireAuth);
 app.use('/api/profile/block/*', requireAuth);
 app.use('/api/profile/report/*', requireAuth);
 app.use('/api/profile/search', requireAuth);
+// ⬇ Tieto tri riadky sú nové — chránia stats, ale NIE followers/badges/checkins (tie zostávajú verejné)
+app.use('/api/profile/:type/:id/stats', requireAuth);
 app.route('/api/profile', profileRoutes);
 
 // Messages
