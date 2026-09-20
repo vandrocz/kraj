@@ -148,17 +148,24 @@ function renderRegionDistrictCityFields(prefix) {
       <select class="form-select" name="district" id="district-select-${prefix}" required>
         <option value="">Nejprve vyberte kraj</option>
       </select></div>
-    <div class="form-field"><label class="form-label">Obec</label>
-      <input class="form-input" name="city" required placeholder="např. Křivoklát" /></div>`;
+    <div class="form-field">
+      <label class="form-label">Obec</label>
+      <select class="form-select" name="city" data-action="city-select" required>
+        <option value="">Nejprve vyberte okres</option>
+      </select>
+    </div>`;
 }
 
 function onRegionSelectChangeForDistrict(selectEl) {
   const region = selectEl.value;
-  const districtSelect = selectEl.closest('form').querySelector('select[name="district"]');
+  const form = selectEl.closest('form');
+  const districtSelect = form.querySelector('select[name="district"]');
+  const citySelect = form.querySelector('select[name="city"]');
   const options = REGIONS[region] || [];
   districtSelect.innerHTML = options.length
     ? `<option value="">Vyberte okres…</option>${options.map((d) => `<option value="${d}">${d}</option>`).join('')}`
     : `<option value="">Nejprve vyberte kraj</option>`;
+  if (citySelect) citySelect.innerHTML = '<option value="">Nejprve vyberte okres</option>';
 }
 
 function showFormErrorInPlace(form, message) {
