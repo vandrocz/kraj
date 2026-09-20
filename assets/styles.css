@@ -1452,3 +1452,97 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   font-size: 12.5px;
   font-weight: 600;
 }
+
+/* ============================================================
+   GRID 3 stĺpce pre všetky feedy na desktope
+   ============================================================ */
+
+/* Fix pre predošlé pravidlá, ktoré spôsobovali rozbitie gridu */
+@media (min-width: 1080px) {
+  .post-feed-grid,
+  .events-list,
+  .profile-post-feed {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 16px !important;
+    padding: 0 16px !important;
+    align-items: start !important;
+    flex-direction: unset !important;
+  }
+  .post-feed-grid > .post-card,
+  .events-list > .event-card,
+  .profile-post-feed > .post-card {
+    margin: 0 !important;
+    max-width: none !important;
+    width: auto !important;
+    align-self: start !important;
+  }
+  .profile-post-feed {
+    max-width: none !important;
+  }
+}
+
+@media (min-width: 720px) and (max-width: 1079px) {
+  .post-feed-grid,
+  .events-list,
+  .profile-post-feed {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+    padding: 0 12px !important;
+    align-items: start !important;
+    flex-direction: unset !important;
+  }
+  .post-feed-grid > .post-card,
+  .events-list > .event-card,
+  .profile-post-feed > .post-card {
+    margin: 0 !important;
+    max-width: none !important;
+    width: auto !important;
+  }
+}
+
+@media (max-width: 719px) {
+  .post-feed-grid,
+  .events-list,
+  .profile-post-feed {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  .post-feed-grid > .post-card,
+  .events-list > .event-card,
+  .profile-post-feed > .post-card {
+    margin: 0 12px 18px !important;
+    max-width: none !important;
+  }
+}
+
+/* Fix text pretekánia v postoch */
+.post-caption {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.post-caption a,
+.rich-text a {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+.post-comment-row { word-break: break-word; }
+
+/* Placeholder pre príspevky bez fotky */
+.post-image-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--c-primary-light), var(--c-border));
+  color: var(--c-text-muted);
+  aspect-ratio: 4/3;
+}
+.post-image-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
