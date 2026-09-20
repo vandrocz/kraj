@@ -2,9 +2,8 @@ import { Hono } from 'hono';
 import { verify } from 'hono/jwt';
 import { newId } from '../auth.js';
 import { ensureActiveProjectRotation } from '../cron.js';
-import { checkText, flagContent, escapeLike } from '../moderation.js';
+import { checkText, flagContent, sanitizeHtml, htmlToPlain, escapeLike } from '../moderation.js';
 import { rateLimit } from '../ratelimit.js';
-import { checkText, flagContent, sanitizeHtml, htmlToPlain } from '../moderation.js';
 
 export const feedRoutes = new Hono();
 
@@ -43,7 +42,7 @@ function escapePlain(t) {
   return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ---- Block helper: zisti blokovaných pre daného diváka ----
+// ---- Block helper ----
 async function getBlockedIds(env, viewerId) {
   if (!viewerId) return new Set();
   try {
@@ -96,7 +95,8 @@ feedRoutes.get('/collections', async (c) => {
 });
 
 feedRoutes.post('/collections/:id/like', async (c) => {
-  const user = c.get('user'); const projectId = c.req.param('id');
+  const user = c.get('user');
+  const projectId = c.req.param('id');
   const project = await c.env.DB.prepare('SELECT id, status FROM projects WHERE id = ?').bind(projectId).first();
   if (!project) return c.json({ error: 'Nenájdené.' }, 404);
   if (project.status !== 'waiting') return c.json({ error: 'Lajkovať sa dá len v poradovníku.' }, 400);
@@ -150,21 +150,18 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
   if (type) { conditions.push(`${table}.type = ?`); params.push(type); }
   if (cuisine && extraFilterCols?.includes('cuisine_type')) { conditions.push(`${table}.cuisine_type = ?`); params.push(cuisine); }
 
-  // Block filter: vylúč autorov príspevkov, ktorých mám blokovaných
   if (blockedIds.size > 0) {
     const placeholders = [...blockedIds].map(() => '?').join(',');
     conditions.push(`posts.user_id NOT IN (${placeholders})`);
     for (const id of blockedIds) params.push(id);
   }
 
-  // Cursor pre "recent" sortovanie (created_at DESC, id DESC)
   const cursor = cursorRaw ? decodeCursor(cursorRaw) : null;
   if (cursor && sort === 'recent') {
     conditions.push(`(posts.created_at < ? OR (posts.created_at = ? AND posts.id < ?))`);
     params.push(cursor.createdAt, cursor.createdAt, cursor.id);
   }
 
-  // Pre "for_you" a "trending" nemôžeme použiť cursor jednoducho, takže aplikujeme len limit + pri "recent" cursor
   const sql = `
     SELECT posts.id, posts.user_id, posts.text_content, posts.content_html, posts.image_url, posts.created_at,
            posts.geo_lat, posts.geo_lng, posts.geo_place, posts.view_count,
@@ -180,7 +177,6 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
   const { results } = await c.env.DB.prepare(sql).bind(...params).all();
   const mediaMap = await fetchMediaForPosts(c.env, results.map((r) => r.id));
 
-  // Personalizácia
   let followedIds = new Set(), userCity = null, userRegion = null;
   if (viewerId && sort !== 'recent') {
     try {
@@ -225,7 +221,6 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
     };
   }));
 
-  // Aplikuj sort
   if (sort === 'trending') {
     out = out.map((p) => ({ ...p, __score: scorePostForUser(p, {}) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
@@ -233,7 +228,6 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
     out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedIds, userCity, userRegion }) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
   } else {
-    // recent — cursor pagination
     const hasMore = out.length > limit;
     out = out.slice(0, limit);
     const last = out[out.length - 1];
@@ -318,7 +312,7 @@ feedRoutes.get('/:id/bookmarked', async (c) => {
   return c.json({ bookmarked: !!row });
 });
 
-// Editácia príspevku (autor alebo admin)
+// ---- Edit post ----
 feedRoutes.patch('/post/:id', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -342,9 +336,8 @@ feedRoutes.patch('/post/:id', async (c) => {
     }
   }
 
-  await c.env.DB.prepare(
-    `UPDATE posts SET text_content = ?, content_html = ? WHERE id = ?`,
-  ).bind(plainText, contentHtml, id).run();
+  await c.env.DB.prepare(`UPDATE posts SET text_content = ?, content_html = ? WHERE id = ?`)
+    .bind(plainText, contentHtml, id).run();
 
   return c.json({ ok: true, id, text: plainText, html: contentHtml });
 });
@@ -378,24 +371,19 @@ feedRoutes.get('/:id/comments', async (c) => {
 
   const { results } = await c.env.DB.prepare(
     `SELECT comments.id, comments.comment_text, comments.created_at, comments.parent_id,
-            users.id AS user_id, users.display_name AS user_name, users.avatar_url AS user_avatar
+            users.id AS user_id, users.display_name AS user_name, users.handle AS user_handle, users.avatar_url AS user_avatar
      FROM comments JOIN users ON users.id = comments.user_id
      WHERE post_id = ? ORDER BY comments.created_at ASC`,
   ).bind(postId).all();
 
-  // Filtruj blokovaných
   const filtered = results.filter((r) => !blockedIds.has(r.user_id));
 
-  // Organizuj do vlákien: root komentáre s replies[]
   const byId = {};
   const roots = [];
   for (const r of filtered) byId[r.id] = { ...r, replies: [] };
   for (const r of filtered) {
-    if (r.parent_id && byId[r.parent_id]) {
-      byId[r.parent_id].replies.push(byId[r.id]);
-    } else {
-      roots.push(byId[r.id]);
-    }
+    if (r.parent_id && byId[r.parent_id]) byId[r.parent_id].replies.push(byId[r.id]);
+    else roots.push(byId[r.id]);
   }
   return c.json({ comments: roots, total: filtered.length });
 });
@@ -420,7 +408,6 @@ feedRoutes.post('/:id/comment', async (c) => {
   const post = await c.env.DB.prepare(`SELECT id, user_id FROM posts WHERE id = ? AND status = 'published'`).bind(postId).first();
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
 
-  // Ak je parent, over že patrí k tomuto postu
   let parentComment = null;
   if (parentId) {
     parentComment = await c.env.DB.prepare('SELECT id, user_id FROM comments WHERE id = ? AND post_id = ?').bind(parentId, postId).first();
@@ -431,7 +418,6 @@ feedRoutes.post('/:id/comment', async (c) => {
   await c.env.DB.prepare('INSERT INTO comments (id, post_id, user_id, comment_text, parent_id) VALUES (?, ?, ?, ?, ?)')
     .bind(id, postId, user.sub, text, parentId).run();
 
-  // Notifikácia autorovi príspevku
   if (post.user_id && post.user_id !== user.sub) {
     try {
       await c.env.DB.prepare(
@@ -441,7 +427,6 @@ feedRoutes.post('/:id/comment', async (c) => {
     } catch {}
   }
 
-  // Notifikácia autorovi rodičovského komentáru (ak nie je ten istý ako autor príspevku)
   if (parentComment && parentComment.user_id !== user.sub && parentComment.user_id !== post.user_id) {
     try {
       await c.env.DB.prepare(
@@ -480,7 +465,8 @@ feedRoutes.get('/business/:kind/:id', async (c) => {
   ).bind(id).all();
   const mediaMap = await fetchMediaForPosts(c.env, posts.map((p) => p.id));
   const postsWithMedia = posts.map((p) => ({
-    ...p, html: p.content_html || escapePlain(p.text_content),
+    ...p,
+    html: p.content_html || escapePlain(p.text_content),
     media: mediaMap[p.id] || (p.image_url ? [p.image_url] : []),
   }));
   return c.json({ business, posts: postsWithMedia });
