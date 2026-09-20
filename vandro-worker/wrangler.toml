@@ -23,7 +23,7 @@ binding = "NASKRAJ_LAJKY"
 id = "ad757c112f5b41d39e378dc330529ef9"
 
 [triggers]
-crons = ["*/1 * * * *", "0 8 * * *", "0 4 * * 0"]
+crons = ["*/1 * * * *", "0 8 * * *", "0 4 * * *"]
 
 # ---- Verejné premenné (nie sú tajné, môžu byť v repe) ----
 [vars]
