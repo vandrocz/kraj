@@ -503,7 +503,7 @@ function updateLightboxDOM() {
           </div>
         </header>
         <div class="lightbox-post-body">
-          <p class="lightbox-post-text rich-text">${post.html || escapeHtml(post.text || '')}</p>
+          <p class="lightbox-post-text rich-text">${shortenLinksInHtml(post.html || escapeHtml(post.text || ''))}</p>
           ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
         </div>
         <div class="lightbox-post-actions">
