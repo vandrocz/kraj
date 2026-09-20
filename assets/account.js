@@ -205,6 +205,8 @@ function finishLogin(data) {
   state._twofaToken = null;
   showToast(`Vítej zpět, ${data.user.display_name}!`);
   loadNotifications();
+  if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(data.user);
+  if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
 }
 
 async function handleRegisterSubmit(form) {
@@ -237,6 +239,7 @@ function handleLogout() {
   state.adminReports = null;
   state.overlay = null;
   state.unreadNotifications = 0;
+  state._pushSubscribed = false;
   if (typeof stopThreadPolling === 'function') stopThreadPolling();
   showToast('Byl jsi odhlášen.');
   renderApp();
@@ -327,6 +330,17 @@ function renderBusinessDashboard() {
   const selected = businesses.find((b) => b.id === accountFormState.postTargetBusiness) || businesses[0];
   const targetFeed = selected.kind;
 
+  // Načítaj status verifikácie, ak nie je cached
+  if (state._verificationStatus === undefined) {
+    state._verificationStatus = null;
+    apiGet(`/api/profile/me/verification-status/${targetFeed}/${selected.id}`)
+      .then((r) => { state._verificationStatus = r; renderApp(); })
+      .catch(() => {});
+  }
+
+  const vreq = state._verificationStatus?.request;
+  const isPending = vreq?.status === 'pending';
+
   return `
     <div class="profile-section">
       <h3 class="profile-section-title">Tvůj podnik</h3>
@@ -338,7 +352,23 @@ function renderBusinessDashboard() {
         <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">${icon('chart', { size: 15 })} Statistiky</button>
         <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Přidat akci</button>
       </div>
-      ${!selected.is_verified ? '<p class="form-hint" style="padding:0 16px 10px">Profil nemá odznak Ověřeno.</p>' : ''}
+      ${!selected.is_verified && !isPending ? `
+        <div style="padding:0 16px 10px">
+          <button class="profile-action-btn" data-action="open-verification-request" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
+            ${icon('shield', { size: 15 })} Ověřit účet firmy
+          </button>
+        </div>
+      ` : ''}
+      ${!selected.is_verified && isPending ? `
+        <p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">
+          ⏳ Žádost o ověření čeká na schválení administrátorem.
+        </p>
+      ` : ''}
+      ${selected.is_verified ? `
+        <p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">
+          ✓ Profil je ověřený
+        </p>
+      ` : ''}
     </div>
 
     <div class="profile-section">
@@ -361,6 +391,7 @@ function renderBusinessDashboard() {
 
 function selectBusiness(id) {
   accountFormState.postTargetBusiness = id;
+  state._verificationStatus = undefined;
   renderApp();
 }
 
@@ -650,4 +681,93 @@ async function deleteReportedPost(postId, reportId) {
     state.adminReportsLoading = false;
     renderApp();
   } catch (err) { showToast(err.message); }
+}
+
+// ============================================================
+// VERIFICATION REQUEST (firemný účet)
+// ============================================================
+
+function openVerificationRequest(kind, id, name) {
+  state.overlayStack.push(state.overlay);
+  state.overlay = { type: 'verification-request', kind, id, name, docFile: null, uploading: false };
+  renderApp();
+}
+
+function renderVerificationRequestOverlay() {
+  const o = state.overlay;
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader('Ověření účtu firmy')}
+      <div class="profile-section">
+        <p style="font-size:14px;line-height:1.6;margin-bottom:14px">
+          Nahraj dokument, který potvrzuje, že provozuješ <strong>${escapeHtml(o.name)}</strong>.
+          Může to být výpis z rejstříku, živnostenský list, faktura s IČO, oficiální e-mailová komunikace atd.
+        </p>
+        <p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:14px">
+          📄 PDF, JPG, PNG nebo WebP (max 10 MB). Administrátor obvykle odpoví do 48 hodin.
+        </p>
+        <form data-action="submit-verification-request" data-kind="${o.kind}" data-id="${o.id}">
+          <div class="file-drop ${o.docFile ? 'has-file' : ''}" data-action="trigger-verif-doc">
+            <input type="file" accept="application/pdf,image/*" id="verif-doc-input" data-action="verif-doc-selected" style="display:none" />
+            ${o.docFile
+              ? `✓ ${escapeHtml(o.docFile.name)}`
+              : `${icon('image', { size: 24 })}<br/>Klikni pro výběr dokumentu`}
+          </div>
+          <div class="form-field">
+            <label class="form-label">Poznámka pro administrátora (nepovinné)</label>
+            <textarea class="form-textarea" name="note" rows="3" maxlength="1000" placeholder="Např. IČO: 12345678"></textarea>
+          </div>
+          <button class="form-submit-btn" type="submit" ${o.uploading ? 'disabled' : ''}>
+            ${o.uploading ? 'Odesílám…' : 'Odeslat žádost'}
+          </button>
+        </form>
+      </div>
+    </div>`;
+}
+
+async function onVerifDocSelected(inputEl) {
+  const file = inputEl.files?.[0];
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) { showToast('Soubor je příliš velký (max 10 MB).'); return; }
+  state.overlay = { ...state.overlay, docFile: file };
+  renderApp();
+}
+
+async function handleVerificationSubmit(form) {
+  const { kind, id, docFile } = state.overlay;
+  if (!docFile) { showToast('Vyber dokument.'); return; }
+
+  state.overlay.uploading = true;
+  renderApp();
+
+  try {
+    const fd = new FormData();
+    fd.append('file', docFile);
+    const up = await apiPost('/api/profile/me/upload-verification-doc', fd);
+
+    const fd2 = new FormData(form);
+    await apiPost('/api/profile/me/request-verification', {
+      business_id: id,
+      business_kind: kind,
+      doc_url: up.url,
+      note: (fd2.get('note') || '').toString(),
+    });
+
+    showToast('Žádost odeslána. Čekej na schválení.');
+    state.overlay = null;
+    state._verificationStatus = undefined;
+    renderApp();
+  } catch (err) {
+    showToast(err.message);
+    state.overlay.uploading = false;
+    renderApp();
+  }
+}
+
+// ============================================================
+// PUSH TOGGLE
+// ============================================================
+async function handlePushToggle(checked) {
+  if (checked) await enablePushNotifications();
+  else await disablePushNotifications();
 }
