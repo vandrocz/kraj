@@ -145,7 +145,7 @@ function renderRegionDistrictCityFields(prefix) {
         ${Object.keys(REGIONS).map((r) => `<option value="${r}">${r}</option>`).join('')}
       </select></div>
     <div class="form-field"><label class="form-label">Okres</label>
-      <select class="form-select" name="district" id="district-select-${prefix}" required>
+      <select class="form-select" name="district" id="district-select-${prefix}" data-action="district-change" required>
         <option value="">Nejprve vyberte kraj</option>
       </select></div>
     <div class="form-field">
