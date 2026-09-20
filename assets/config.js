@@ -1,7 +1,7 @@
 const API_BASE_URL = 'https://naskraj-api.vandrocz-contact.workers.dev';
 const MAP_ORIGIN = 'https://maps.vandro.cz';
 const GOOGLE_CLIENT_ID = '769764675952-1nb44qbpc4o7a1l5r14vt8phamom9209.apps.googleusercontent.com';
-const RECAPTCHA_SITE_KEY = '6Ldlu8QtAAAAAJoG-6t0lZja1Iagd_ZpjLIDV6Ct';
+const RECAPTCHA_SITE_KEY = '6LeXt8UtAAAAAOOSYTkbrpC4gaotPw9-SUPEuvDo';
 
 function getToken() { return localStorage.getItem('naskraj_token'); }
 function setToken(t) { localStorage.setItem('naskraj_token', t); }
@@ -129,7 +129,7 @@ async function handleGoogleCredential(credential) {
 // reCAPTCHA v3
 // ============================================================
 async function getRecaptchaToken(action) {
-  if (!RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === '6Ldlu8QtAAAAAJoG-6t0lZja1Iagd_ZpjLIDV6Ct') return '';
+  if (!RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === '6LeXt8UtAAAAAOOSYTkbrpC4gaotPw9-SUPEuvDo') return '';
   if (!window.grecaptcha) return '';
   return new Promise((resolve) => {
     try {
