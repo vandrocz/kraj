@@ -51,15 +51,12 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 }
 @media (min-width: 720px) {
   .app-shell { max-width: 720px; box-shadow: var(--c-shadow); border-left: 1px solid var(--c-border); border-right: 1px solid var(--c-border); }
-  .post-feed-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 4px; align-items: start; }
-  .post-card { max-width: 480px; margin-left: auto; margin-right: auto; }
-  .post-image { max-height: 420px; }
-  .queue-item { max-width: 480px; margin-left: auto; margin-right: auto; }
 }
+
 @media (min-width: 1080px) {
   .app-shell { max-width: 980px; }
-  .post-feed-grid { grid-template-columns: repeat(3, 1fr); }
 }
+
 .page-scroll { flex: 1; overflow-y: auto; padding-bottom: 96px; scrollbar-width: none; }
 .page-scroll::-webkit-scrollbar { display: none; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -1601,4 +1598,252 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   max-width: none !important;
   width: 100% !important;
   align-self: start !important;
+}
+
+/* ============================================================
+   LIGHTBOX — desktop: obrázok vľavo, text vpravo; mobile: stack
+   ============================================================ */
+
+.lightbox {
+  position: fixed; inset: 0; background: rgba(6,14,10,0.94); z-index: 100;
+  display: none; align-items: center; justify-content: center; padding: 24px;
+}
+.lightbox.is-open { display: flex; }
+.lightbox-inner {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1200px;
+  max-height: 90vh;
+  background: var(--c-surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.lightbox-image-pane {
+  position: relative;
+  flex: 1;
+  min-height: 200px;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.lightbox-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.lightbox-info-pane {
+  background: var(--c-surface);
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+  max-height: 45vh;
+}
+.lightbox-info-pane:empty { display: none; }
+
+@media (min-width: 900px) {
+  .lightbox-inner {
+    flex-direction: row;
+    max-height: 85vh;
+  }
+  .lightbox-image-pane {
+    flex: 1.4;
+    min-height: 0;
+  }
+  .lightbox-info-pane {
+    width: 380px;
+    flex-shrink: 0;
+    max-height: 85vh;
+    border-left: 1px solid var(--c-border);
+  }
+}
+
+@media (min-width: 1200px) {
+  .lightbox-info-pane { width: 440px; }
+}
+
+/* Šípky — vždy na okrajoch obrázka, nikdy neprekrývajú fotku na mobile */
+.lightbox-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(0,0,0,0.5); color: white;
+  display: flex; align-items: center; justify-content: center;
+  border: none; cursor: pointer; z-index: 3;
+  transition: background .15s;
+}
+.lightbox-nav:hover { background: rgba(0,0,0,0.75); }
+.lightbox-prev { left: 12px; }
+.lightbox-next { right: 12px; }
+.flip-x { transform: scaleX(-1); }
+
+@media (max-width: 899px) {
+  .lightbox-nav {
+    width: 40px; height: 40px;
+    top: auto; bottom: 16px; transform: none;
+  }
+  .lightbox-prev { left: calc(50% - 50px); }
+  .lightbox-next { right: calc(50% - 50px); }
+}
+
+.lightbox-counter {
+  position: absolute;
+  top: 12px; right: 12px;
+  background: rgba(0,0,0,0.6); color: white;
+  padding: 4px 12px; border-radius: 999px;
+  font-size: 12px; font-weight: 700;
+  z-index: 3;
+}
+.lightbox-close {
+  position: absolute; top: 20px; right: 20px;
+  width: 42px; height: 42px; border-radius: 50%;
+  background: rgba(255,255,255,0.15); color: white;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 5; border: none; cursor: pointer;
+}
+.lightbox-close:hover { background: rgba(255,255,255,0.3); }
+
+/* Lightbox info panel */
+.lightbox-post-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--c-border);
+  margin-bottom: 12px;
+}
+.lightbox-post-body {
+  font-size: 14px; line-height: 1.6;
+  max-height: 240px; overflow-y: auto;
+  padding-right: 4px;
+}
+.lightbox-post-text { word-break: break-word; overflow-wrap: anywhere; }
+.lightbox-post-actions {
+  display: flex; align-items: center; gap: 6px;
+  padding-top: 12px; border-top: 1px solid var(--c-border);
+  margin-top: 12px;
+}
+.lightbox-stat {
+  font-size: 12.5px; font-weight: 700;
+  color: var(--c-text-muted); margin-right: 12px;
+}
+.lightbox-caption {
+  font-size: 14px; line-height: 1.55;
+  word-break: break-word;
+}
+
+/* ============================================================
+   GRID 3 stĺpce — definitívny fix
+   ============================================================ */
+.post-feed-grid,
+.profile-post-feed,
+.events-list {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  grid-auto-flow: row !important;
+  gap: 16px !important;
+  align-items: start !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+.post-feed-grid > *,
+.profile-post-feed > *,
+.events-list > * {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  grid-column: auto / span 1 !important;
+  box-sizing: border-box !important;
+}
+@media (min-width: 720px) {
+  .post-feed-grid,
+  .profile-post-feed,
+  .events-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    padding: 0 16px !important;
+  }
+}
+@media (min-width: 1080px) {
+  .post-feed-grid,
+  .profile-post-feed,
+  .events-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    padding: 0 24px !important;
+    gap: 20px !important;
+  }
+}
+.post-feed-grid .post-card,
+.profile-post-feed .post-card,
+.events-list .event-card {
+  margin: 0 !important;
+  max-width: none !important;
+  width: 100% !important;
+  align-self: start !important;
+}
+
+/* ============================================================
+   Čitateľnosť mien v hlavičkách
+   ============================================================ */
+.profile-name,
+.profile-biz-info .profile-name,
+.account-name {
+  text-shadow: 0 1px 2px rgba(255,255,255,0.9), 0 0 1px rgba(255,255,255,0.8);
+}
+.post-author {
+  text-shadow: none;
+}
+.profile-biz-head .profile-name {
+  color: var(--c-text);
+}
+/* Ak je cover tmavý, meno je stále čitateľné vďaka svetlému pozadiu pod ním */
+.profile-biz-info {
+  background: linear-gradient(180deg, transparent 0%, var(--c-bg) 100%);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  margin-left: -8px;
+}
+
+/* ============================================================
+   Odkazy v príspevkoch ako tlačidlá
+   ============================================================ */
+.rich-text a,
+.post-caption a {
+  display: inline-block;
+  padding: 4px 12px;
+  margin: 4px 0;
+  background: var(--c-primary-light);
+  color: var(--c-primary-dark) !important;
+  border: 1px solid var(--c-primary);
+  border-radius: var(--radius-round);
+  font-weight: 600;
+  font-size: 12.5px;
+  text-decoration: none !important;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  line-height: 1.4;
+}
+.rich-text a:hover,
+.post-caption a:hover {
+  background: var(--c-primary);
+  color: white !important;
+}
+
+/* ============================================================
+   Placeholder pre príspevky bez fotky
+   ============================================================ */
+.post-image-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--c-primary-light), var(--c-border));
+  color: var(--c-text-muted);
+  aspect-ratio: 4/3;
+}
+.post-image-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
 }
