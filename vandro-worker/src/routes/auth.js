@@ -1,10 +1,9 @@
 import { Hono } from 'hono';
 import { sign } from 'hono/jwt';
-import { hashPassword, verifyPassword, newId, publicUser } from '../auth.js';
+import { hashPassword, verifyPassword, newId, publicUser, generateUniqueHandle } from '../auth.js';
 import { sendPasswordResetEmail } from '../email.js';
 import { verifyTotp, generateSecret, otpauthUri, generateRecoveryCodes } from '../totp.js';
 import { rateLimit, clientIp, userAgent } from '../ratelimit.js';
-import { verifyRecaptcha } from '../recaptcha.js';
 
 export const authRoutes = new Hono();
 
@@ -18,7 +17,6 @@ async function logLogin(env, { userId, email, ip, ua, success, method }) {
       `INSERT INTO login_logs (id, user_id, email, ip, user_agent, success, method) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).bind(newId('log'), userId || null, email || null, ip, ua, success ? 1 : 0, method || 'password').run();
   } catch (err) {
-    // Nikdy nezhodíme login kvôli logu
     console.warn('logLogin failed:', err.message);
   }
 }
@@ -28,27 +26,17 @@ async function updateLastLogin(env, userId, ip) {
     await env.DB.prepare(`UPDATE users SET last_login_at = datetime('now'), last_login_ip = ? WHERE id = ?`)
       .bind(ip, userId).run();
   } catch (err) {
-    console.warn('updateLastLogin failed (chýbajúce stĺpce?):', err.message);
+    console.warn('updateLastLogin failed:', err.message);
   }
 }
 
-// ============================================================
-// REGISTER
-// ============================================================
 authRoutes.post('/register', async (c) => {
   const ip = clientIp(c);
   const rl = await rateLimit(c.env, 'register', ip, 5, 3600);
   if (!rl.ok) return c.json({ error: 'Příliš mnoho registrací z této IP. Zkus to za hodinu.' }, 429);
 
   const body = await c.req.json().catch(() => ({}));
-  const { email, password, displayName, role = 'user', termsAccepted, recaptcha_token } = body;
-
-  // reCAPTCHA
-  const captcha = await verifyRecaptcha(c.env, recaptcha_token, 'register');
-  if (!captcha.ok) {
-    console.warn('[register] recaptcha zlyhala:', captcha.reason, captcha.score);
-    return c.json({ error: 'Ověření proti robotům selhalo. Obnov stránku a zkus to znovu.' }, 400);
-  }
+  const { email, password, displayName, role = 'user', termsAccepted } = body;
 
   if (!email || !password) return c.json({ error: 'Vyžaduje sa email a heslo.' }, 400);
   if (!VALID_ROLES.includes(role)) return c.json({ error: 'Neplatná rola účtu.' }, 400);
@@ -63,10 +51,15 @@ authRoutes.post('/register', async (c) => {
 
   const { hash, salt } = await hashPassword(password);
   const userId = newId('user');
+
+  // Vygeneruj handle z emailu alebo displayName
+  const handleBase = lower.split('@')[0] || displayName || 'user';
+  const handle = await generateUniqueHandle(c.env, handleBase);
+
   await c.env.DB.prepare(
-    `INSERT INTO users (id, email, password_hash, password_salt, display_name, role, credit_balance, terms_accepted_at, email_verified, auth_provider)
-     VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'), 1, 'password')`,
-  ).bind(userId, lower, hash, salt, displayName || lower.split('@')[0], role).run();
+    `INSERT INTO users (id, email, password_hash, password_salt, display_name, handle, role, credit_balance, terms_accepted_at, email_verified, auth_provider)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), 1, 'password')`,
+  ).bind(userId, lower, hash, salt, displayName || lower.split('@')[0], handle, role).run();
 
   let business = null;
 
@@ -109,30 +102,18 @@ authRoutes.post('/register', async (c) => {
 
   await logLogin(c.env, { userId, email: lower, ip, ua: userAgent(c), success: true, method: 'register' });
 
-  return c.json({ id: userId, email: lower, role, business }, 201);
+  return c.json({ id: userId, email: lower, role, handle, business }, 201);
 });
 
-// ============================================================
-// LOGIN
-// ============================================================
 authRoutes.post('/login', async (c) => {
   const ip = clientIp(c);
   const ua = userAgent(c);
   const body = await c.req.json().catch(() => ({}));
-  const { email, password, recaptcha_token } = body;
+  const { email, password } = body;
 
   if (!email || !password) return c.json({ error: 'Vyžaduje sa email a heslo.' }, 400);
 
-  // reCAPTCHA
-  const captcha = await verifyRecaptcha(c.env, recaptcha_token, 'login');
-  if (!captcha.ok) {
-    console.warn('[login] recaptcha zlyhala:', captcha.reason, captcha.score);
-    return c.json({ error: 'Ověření proti robotům selhalo. Obnov stránku a zkus to znovu.' }, 400);
-  }
-
   const lower = String(email).toLowerCase();
-
-  // Rate limit na pokusy
   const rl = await rateLimit(c.env, 'login', `${ip}:${lower}`, 10, 900);
   if (!rl.ok) {
     await logLogin(c.env, { userId: null, email: lower, ip, ua, success: false, method: 'password' });
@@ -146,7 +127,6 @@ authRoutes.post('/login', async (c) => {
   }
   if (user.deleted_at) return c.json({ error: 'Tento účet byl smazán.' }, 403);
 
-  // Ak je účet Google-only, klasické prihlásenie nefunguje
   if (user.auth_provider === 'google' || user.password_hash === 'google-oauth') {
     await logLogin(c.env, { userId: user.id, email: lower, ip, ua, success: false, method: 'password' });
     return c.json({ error: 'Tento účet byl vytvořen přes Google. Přihlas se tlačítkem "Sign in with Google".' }, 400);
@@ -159,7 +139,6 @@ authRoutes.post('/login', async (c) => {
   }
   if (user.status && user.status !== 'active') return c.json({ error: 'Tento účet je pozastavený.' }, 403);
 
-  // 2FA
   if (user.totp_enabled && user.totp_secret) {
     const tfa = newId('2fa') + '_' + crypto.randomUUID().replace(/-/g, '');
     const exp = new Date(Date.now() + TWOFA_TTL_MS).toISOString();
@@ -197,14 +176,8 @@ authRoutes.post('/login', async (c) => {
   return c.json({ token, user: publicUser(user), businesses });
 });
 
-// ============================================================
-// LOGOUT
-// ============================================================
 authRoutes.post('/logout', (c) => c.json({ ok: true }));
 
-// ============================================================
-// FORGOT / RESET hesla (odpovedá OK aj keď e-mail neexistuje)
-// ============================================================
 authRoutes.post('/forgot-password', async (c) => {
   const ip = clientIp(c);
   const rl = await rateLimit(c.env, 'forgot', ip, 5, 3600);
@@ -248,9 +221,6 @@ authRoutes.post('/reset-password', async (c) => {
   return c.json({ ok: true });
 });
 
-// ============================================================
-// 2FA — setup / enable / disable (bez zmien)
-// ============================================================
 authRoutes.post('/verify-2fa', async (c) => {
   const ip = clientIp(c); const ua = userAgent(c);
   const body = await c.req.json().catch(() => ({}));
