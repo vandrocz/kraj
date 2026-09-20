@@ -136,6 +136,7 @@ function renderSocialPostCard(post, feedKey) {
         <button class="post-action" data-action="toggle-comments" data-id="${post.id}" data-feed="${feedKey}">${icon('comment', { size: 21 })}</button>
         <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(post.text || '')}">${icon('share', { size: 21 })}</button>
         ${isLoggedIn() ? `<button class="post-action ${post.__bookmarked ? 'is-bookmarked' : ''}" data-action="toggle-bookmark" data-id="${post.id}">${icon('bookmark', { size: 20, filled: !!post.__bookmarked })}</button>` : ''}
+        ${isMinePost ? `<button class="post-action" data-action="edit-post" data-id="${post.id}" data-feed="${feedKey}">${icon('edit', { size: 18 })}</button>` : ''}
         ${isMinePost ? `<button class="post-action" data-action="delete-post" data-id="${post.id}" data-feed="${feedKey}" style="color:#B3273C">${icon('trash', { size: 18 })}</button>` : ''}
       </div>
       <div class="post-body">
@@ -339,4 +340,49 @@ function renderBookmarksOverlay() {
             </button>`).join('')}
       </div>
     </div>`;
+}
+
+// ============================================================
+// EDITÁCIA PRÍSPEVKU
+// ============================================================
+
+function openEditPost(postId, feedKey) {
+  const post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
+  if (!post) return;
+  state.overlayStack.push(state.overlay);
+  state.overlay = { type: 'edit-post', postId, feedKey, html: post.html || post.text || '' };
+  renderApp();
+}
+
+function renderEditPostOverlay() {
+  const { postId, feedKey, html } = state.overlay;
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader('Upravit příspěvek')}
+      <div class="profile-section">
+        <form data-action="submit-edit-post" data-post-id="${postId}" data-feed="${feedKey}">
+          ${renderRichEditor('text_html', 'Text příspěvku…', html)}
+          <button class="form-submit-btn" type="submit">Uložit změny</button>
+        </form>
+      </div>
+    </div>`;
+}
+
+async function handleEditPostSubmit(form) {
+  const postId = form.dataset.postId;
+  const feedKey = form.dataset.feed;
+  const html = getEditorHtml(form);
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Ukládám…'; }
+
+  try {
+    const res = await apiPatch(`/api/feed/post/${postId}`, { html });
+    const post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
+    if (post) { post.html = res.html; post.text = res.text; }
+    closeOverlay();
+    showToast('Uloženo.');
+  } catch (err) {
+    showToast(err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Uložit změny'; }
+  }
 }
