@@ -187,6 +187,7 @@ function renderBusinessProfile(data, id, kind) {
           <p class="profile-biz-type">${kindLabel} · ${escapeHtml(b.type || '')}</p>
           <p class="profile-biz-loc">${[b.city, b.district, b.region].filter(Boolean).map(escapeHtml).join(' · ')}</p>
           ${ratingHtml}
+          ${b.verification_status === 'pending' ? `<p style="font-size:12px;color:var(--c-gold);margin-top:4px">⏳ Ověření čeká na schválení</p>` : ''}
         </div>
       </div>
 
@@ -389,7 +390,8 @@ function renderSettingsOverlay() {
       ${renderBackHeader('Nastavení')}
       <div class="profile-section">
         <h3 class="profile-section-title">Notifikace</h3>
-        <label class="settings-toggle"><span>Push notifikace</span><input type="checkbox" data-action="setting-toggle" data-key="push_notifications" ${s.push_notifications ? 'checked' : ''} /></label>
+        <label class="settings-toggle"><span>Push notifikace v prohlížeči</span><input type="checkbox" data-action="push-toggle" ${state._pushSubscribed ? 'checked' : ''} /></label>
+        <button class="settings-row" data-action="push-test" style="font-size:12px;color:var(--c-text-muted)">Poslat testovací push</button>
         <label class="settings-toggle"><span>E-mailové notifikace</span><input type="checkbox" data-action="setting-toggle" data-key="email_notifications" ${s.email_notifications ? 'checked' : ''} /></label>
       </div>
       <div class="profile-section">
