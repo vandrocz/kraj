@@ -24,6 +24,13 @@ import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUI
 
 const app = new Hono();
 
+app.get('/api/debug/vapid', (c) => c.json({
+  public_set: !!c.env.VAPID_PUBLIC_KEY,
+  private_set: !!c.env.VAPID_PRIVATE_KEY,
+  subject: c.env.VAPID_SUBJECT || null,
+  public_prefix: c.env.VAPID_PUBLIC_KEY ? c.env.VAPID_PUBLIC_KEY.slice(0, 12) + '…' : null,
+}));
+
 app.use('*', async (c, next) => {
   const allowed = (c.env.ALLOWED_ORIGIN || 'https://app.vandro.cz').split(',').map((s) => s.trim());
   return cors({
