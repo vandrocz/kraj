@@ -21,14 +21,21 @@ function bizKindFromType(table) {
   if (table === 'restaurants') return 'gastro';
   return null;
 }
+function feedKeyFromType(table) {
+  if (table === 'organizations') return 'organization';
+  if (table === 'accommodation') return 'accommodation';
+  if (table === 'restaurants') return 'gastro';
+  return null;
+}
 async function getFollowCount(env, type, id) {
   const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first();
   return row?.n || 0;
 }
+function escapePlain(t) {
+  return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
-// ============================================================
-// SEARCH — hľadá aj podľa handle
-// ============================================================
+// SEARCH
 profileRoutes.get('/search', async (c) => {
   const user = c.get('user');
   const q = (c.req.query('q') || '').trim();
@@ -65,9 +72,7 @@ profileRoutes.get('/search', async (c) => {
   return c.json({ results: filtered });
 });
 
-// ============================================================
 // FOLLOW
-// ============================================================
 profileRoutes.post('/follow', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -79,25 +84,17 @@ profileRoutes.post('/follow', async (c) => {
   const blocked = await c.env.DB.prepare(`SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?`).bind(id, user.sub).first();
   if (blocked && type === 'users') return c.json({ error: 'Tento uživatel tě zablokoval.' }, 403);
 
-  const existing = await c.env.DB.prepare(
-    `SELECT 1 FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`,
-  ).bind(user.sub, type, id).first();
-
+  const existing = await c.env.DB.prepare(`SELECT 1 FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`).bind(user.sub, type, id).first();
   if (existing) {
     await c.env.DB.prepare(`DELETE FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`).bind(user.sub, type, id).run();
     return c.json({ following: false, followers: await getFollowCount(c.env, type, id) });
   }
   await c.env.DB.prepare(`INSERT INTO follows (follower_id, target_type, target_id) VALUES (?, ?, ?)`).bind(user.sub, type, id).run();
-
   if (type === 'users') {
     try {
-      await c.env.DB.prepare(
-        `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
-         VALUES (?, ?, 'follow', ?, 'user', ?, 'tě začal(a) sledovat')`,
-      ).bind(newId('notif'), id, user.sub, user.sub).run();
+      await c.env.DB.prepare(`INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text) VALUES (?, ?, 'follow', ?, 'user', ?, 'tě začal(a) sledovat')`).bind(newId('notif'), id, user.sub, user.sub).run();
     } catch {}
   }
-
   return c.json({ following: true, followers: await getFollowCount(c.env, type, id) });
 });
 
@@ -106,9 +103,7 @@ profileRoutes.get('/follow/status', async (c) => {
   const type = normalizeType(c.req.query('type') || '');
   const id = c.req.query('id') || '';
   if (!TYPE_TO_TABLE[type] || !id) return c.json({ following: false, followers: 0 });
-  const row = await c.env.DB.prepare(
-    `SELECT 1 FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`,
-  ).bind(user.sub, type, id).first();
+  const row = await c.env.DB.prepare(`SELECT 1 FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`).bind(user.sub, type, id).first();
   return c.json({ following: !!row, followers: await getFollowCount(c.env, type, id) });
 });
 
@@ -140,9 +135,7 @@ profileRoutes.get('/me/following', async (c) => {
   return c.json({ items: results });
 });
 
-// ============================================================
 // BLOCKS
-// ============================================================
 profileRoutes.post('/block/:id', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -169,9 +162,7 @@ profileRoutes.get('/me/blocks', async (c) => {
   return c.json({ users: results });
 });
 
-// ============================================================
 // SETTINGS
-// ============================================================
 profileRoutes.get('/me/settings', async (c) => {
   const user = c.get('user');
   const row = await c.env.DB.prepare(`SELECT settings_json FROM users WHERE id = ?`).bind(user.sub).first();
@@ -190,15 +181,12 @@ profileRoutes.patch('/me/settings', async (c) => {
   return c.json({ ok: true, settings });
 });
 
-// ============================================================
-// UPDATE USER — s podporou handle
-// ============================================================
+// UPDATE USER
 profileRoutes.patch('/me/user', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
   const sets = [], params = [];
 
-  // Zmena handle
   if ('handle' in body) {
     const normalized = normalizeHandle(body.handle);
     const valid = validateHandle(normalized);
@@ -259,9 +247,7 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
   return c.json({ business: updated });
 });
 
-// ============================================================
 // UPLOAD
-// ============================================================
 profileRoutes.post('/me/upload', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -292,7 +278,6 @@ profileRoutes.post('/me/upload', async (c) => {
   return c.json({ url, field: col });
 });
 
-// Upload verifikačného dokumentu
 profileRoutes.post('/me/upload-verification-doc', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -312,7 +297,6 @@ profileRoutes.post('/me/upload-verification-doc', async (c) => {
   return c.json({ url }, 201);
 });
 
-// Žiadosť o verifikáciu
 profileRoutes.post('/me/request-verification', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -330,15 +314,12 @@ profileRoutes.post('/me/request-verification', async (c) => {
   if (biz.user_id !== user.sub) return c.json({ error: 'Nemáš oprávnění.' }, 403);
   if (biz.is_verified) return c.json({ error: 'Podnik je již ověřen.' }, 400);
 
-  const existing = await c.env.DB.prepare(
-    `SELECT id FROM verification_requests WHERE business_id = ? AND status = 'pending'`,
-  ).bind(businessId).first();
+  const existing = await c.env.DB.prepare(`SELECT id FROM verification_requests WHERE business_id = ? AND status = 'pending'`).bind(businessId).first();
   if (existing) return c.json({ error: 'Žádost už čeká na schválení.' }, 400);
 
   const id = newId('vreq');
   await c.env.DB.prepare(
-    `INSERT INTO verification_requests (id, business_id, business_kind, user_id, doc_url, note)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO verification_requests (id, business_id, business_kind, user_id, doc_url, note) VALUES (?, ?, ?, ?, ?, ?)`,
   ).bind(id, businessId, businessKind, user.sub, docUrl, note || null).run();
 
   await c.env.DB.prepare(`UPDATE ${businessKind} SET verification_status = 'pending' WHERE id = ?`).bind(businessId).run();
@@ -356,9 +337,7 @@ profileRoutes.get('/me/verification-status/:kind/:id', async (c) => {
   return c.json({ request: req || null });
 });
 
-// ============================================================
 // DELETE ACCOUNT
-// ============================================================
 profileRoutes.delete('/me/account', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -375,13 +354,10 @@ profileRoutes.delete('/me/account', async (c) => {
 
   await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE user_id = ?`).bind(user.sub).run();
   await c.env.DB.prepare(`DELETE FROM follows WHERE follower_id = ? OR (target_type = 'users' AND target_id = ?)`).bind(user.sub, user.sub).run();
-
   return c.json({ ok: true });
 });
 
-// ============================================================
 // EXPORT
-// ============================================================
 profileRoutes.get('/me/export', async (c) => {
   const user = c.get('user');
   const profile = await c.env.DB.prepare(`SELECT * FROM users WHERE id = ?`).bind(user.sub).first();
@@ -412,9 +388,7 @@ profileRoutes.get('/me/export', async (c) => {
   });
 });
 
-// ============================================================
 // NOTIFICATIONS
-// ============================================================
 profileRoutes.get('/me/notifications', async (c) => {
   const user = c.get('user');
   const { results } = await c.env.DB.prepare(
@@ -439,56 +413,41 @@ profileRoutes.post('/me/notifications/read-all', async (c) => {
   return c.json({ ok: true });
 });
 
-// ============================================================
 // REPORT USER
-// ============================================================
 profileRoutes.post('/report/:id', async (c) => {
   const user = c.get('user');
   const targetId = c.req.param('id');
   if (targetId === user.sub) return c.json({ error: 'Nemůžeš nahlásit sám sebe.' }, 400);
-
   const target = await c.env.DB.prepare('SELECT id FROM users WHERE id = ? AND deleted_at IS NULL').bind(targetId).first();
   if (!target) return c.json({ error: 'Uživatel nenalezen.' }, 404);
-
   const body = await c.req.json().catch(() => ({}));
   const id = newId('ureport');
-  await c.env.DB.prepare(
-    `INSERT INTO user_reports (id, reporter_id, target_user_id, reason) VALUES (?, ?, ?, ?)`,
-  ).bind(id, user.sub, targetId, (body.reason || '').toString().slice(0, 500) || null).run();
-
+  await c.env.DB.prepare(`INSERT INTO user_reports (id, reporter_id, target_user_id, reason) VALUES (?, ?, ?, ?)`)
+    .bind(id, user.sub, targetId, (body.reason || '').toString().slice(0, 500) || null).run();
   return c.json({ ok: true, id }, 201);
 });
 
-// ============================================================
 // CHANGE EMAIL
-// ============================================================
 profileRoutes.post('/me/change-email', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
   const newEmail = (body.email || '').toString().toLowerCase().trim();
   const password = (body.password || '').toString();
-
   if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) return c.json({ error: 'Neplatný e-mail.' }, 400);
   if (!password) return c.json({ error: 'Zadej své aktuální heslo.' }, 400);
-
   const row = await c.env.DB.prepare('SELECT password_hash, password_salt, auth_provider FROM users WHERE id = ?').bind(user.sub).first();
   if (!row) return c.json({ error: 'Uživatel nenalezen.' }, 404);
   if (row.auth_provider === 'google') return c.json({ error: 'E-mail u Google účtu nelze změnit.' }, 400);
-
   const { verifyPassword } = await import('../auth.js');
   const ok = await verifyPassword(password, row.password_hash, row.password_salt);
   if (!ok) return c.json({ error: 'Nesprávné heslo.' }, 401);
-
   const exists = await c.env.DB.prepare('SELECT id FROM users WHERE email = ? AND id != ?').bind(newEmail, user.sub).first();
   if (exists) return c.json({ error: 'Tento e-mail je už použitý.' }, 409);
-
   await c.env.DB.prepare('UPDATE users SET email = ?, email_verified = 1 WHERE id = ?').bind(newEmail, user.sub).run();
   return c.json({ ok: true, email: newEmail });
 });
 
-// ============================================================
-// BADGES + CHECKINS (pomocné routy pre profil)
-// ============================================================
+// BADGES pre usera
 profileRoutes.get('/:type/:id/badges', async (c) => {
   const type = c.req.param('type');
   const id = c.req.param('id');
@@ -497,6 +456,7 @@ profileRoutes.get('/:type/:id/badges', async (c) => {
   return c.json({ badges });
 });
 
+// CHECKINS pre usera
 profileRoutes.get('/:type/:id/checkins', async (c) => {
   const id = c.req.param('id');
   const { results } = await c.env.DB.prepare(
@@ -515,51 +475,68 @@ profileRoutes.get('/:type/:id/checkins', async (c) => {
 });
 
 // ============================================================
-// STATS
+// STATS — defenzívne s try/catch pre každú časť
 // ============================================================
 profileRoutes.get('/:type/:id/stats', async (c) => {
-  const type = normalizeType(c.req.param('type'));
-  const id = c.req.param('id');
-  const table = TYPE_TO_TABLE[type];
-  if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
+  try {
+    const type = normalizeType(c.req.param('type'));
+    const id = c.req.param('id');
+    const table = TYPE_TO_TABLE[type];
+    if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
 
-  const user = c.get('user');
-  const biz = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(id).first();
-  if (!biz) return c.json({ error: 'Nenalezeno.' }, 404);
-  if (biz.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
+    const user = c.get('user');
+    const biz = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(id).first();
+    if (!biz) return c.json({ error: 'Nenalezeno.' }, 404);
+    if (biz.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
 
-  const postsCount = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).first();
-  const eventsCount = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM events WHERE business_id = ? AND status = 'published'`).bind(id).first();
-  const followers = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first();
+    let posts = 0, events = 0, followers = 0, likes = 0, comments = 0;
+    let recent = [];
 
-  const { results: postRows } = await c.env.DB.prepare(
-    `SELECT id FROM posts WHERE business_id = ? AND status = 'published'`,
-  ).bind(id).all();
+    try {
+      const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).first();
+      posts = r?.n || 0;
+    } catch (e) { console.warn('stats posts:', e.message); }
 
-  let totalLikes = 0, totalComments = 0;
-  for (const p of postRows) {
-    const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`);
-    totalLikes += raw ? parseInt(raw, 10) : 0;
-    const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first();
-    totalComments += cc?.n || 0;
+    try {
+      const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM events WHERE business_id = ? AND status = 'published'`).bind(id).first();
+      events = r?.n || 0;
+    } catch (e) { console.warn('stats events:', e.message); }
+
+    try {
+      const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first();
+      followers = r?.n || 0;
+    } catch (e) { console.warn('stats followers:', e.message); }
+
+    try {
+      const { results: postRows } = await c.env.DB.prepare(`SELECT id FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).all();
+      for (const p of postRows) {
+        try {
+          const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`);
+          likes += raw ? parseInt(raw, 10) : 0;
+        } catch {}
+        try {
+          const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first();
+          comments += cc?.n || 0;
+        } catch {}
+      }
+    } catch (e) { console.warn('stats likes/comments:', e.message); }
+
+    try {
+      const r = await c.env.DB.prepare(
+        `SELECT DATE(created_at) AS day, COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published' AND created_at >= datetime('now','-30 days') GROUP BY day ORDER BY day ASC`,
+      ).bind(id).all();
+      recent = r?.results || [];
+    } catch (e) { console.warn('stats recent:', e.message); }
+
+    return c.json({ posts, events, followers, likes, comments, last_30_days: recent });
+  } catch (err) {
+    console.error('stats fatal:', err);
+    return c.json({ error: 'Chyba při načítání statistik.', detail: err.message }, 500);
   }
-
-  const { results: recent } = await c.env.DB.prepare(
-    `SELECT DATE(created_at) AS day, COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published' AND created_at >= datetime('now','-30 days') GROUP BY day ORDER BY day ASC`,
-  ).bind(id).all();
-
-  return c.json({
-    posts: postsCount?.n || 0,
-    events: eventsCount?.n || 0,
-    followers: followers?.n || 0,
-    likes: totalLikes,
-    comments: totalComments,
-    last_30_days: recent,
-  });
 });
 
 // ============================================================
-// GET /:type/:id (POSLEDNÁ)
+// GET /:type/:id — POSLEDNÁ (vracia aj plné post objekty pre feed)
 // ============================================================
 profileRoutes.get('/:type/:id', async (c) => {
   const type = normalizeType(c.req.param('type'));
@@ -599,8 +576,11 @@ profileRoutes.get('/:type/:id', async (c) => {
   const business = await c.env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(id).first();
   if (!business) return c.json({ error: 'Nenájdené.' }, 404);
 
+  const feedKey = feedKeyFromType(table);
+
   const { results: posts } = await c.env.DB.prepare(
-    `SELECT id, text_content, image_url, created_at FROM posts WHERE business_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 60`,
+    `SELECT id, text_content, content_html, image_url, geo_place, geo_lat, geo_lng, created_at
+     FROM posts WHERE business_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 60`,
   ).bind(id).all();
 
   const ids = posts.map((p) => p.id);
@@ -610,15 +590,57 @@ profileRoutes.get('/:type/:id', async (c) => {
     const { results: mrows } = await c.env.DB.prepare(
       `SELECT post_id, image_url FROM post_media WHERE post_id IN (${ph}) ORDER BY sort_order`,
     ).bind(...ids).all();
-    for (const r of mrows) { if (!mediaMap[r.post_id]) mediaMap[r.post_id] = []; mediaMap[r.post_id].push(r.image_url); }
+    for (const r of mrows) {
+      if (!mediaMap[r.post_id]) mediaMap[r.post_id] = [];
+      mediaMap[r.post_id].push(r.image_url);
+    }
   }
 
-  const postsWithMedia = posts.map((p) => ({ ...p, media: mediaMap[p.id] || (p.image_url ? [p.image_url] : []) }));
+  const postsWithMedia = await Promise.all(posts.map(async (p) => {
+    let likes = 0, commentCount = 0, views = 0;
+    try {
+      const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`);
+      likes = raw ? parseInt(raw, 10) : 0;
+    } catch {}
+    try {
+      const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first();
+      commentCount = cc?.n || 0;
+    } catch {}
+    try {
+      const vr = await c.env.DB.prepare(`SELECT view_count FROM posts WHERE id = ?`).bind(p.id).first();
+      views = vr?.view_count || 0;
+    } catch {}
+
+    return {
+      id: p.id,
+      text: p.text_content,
+      html: p.content_html || escapePlain(p.text_content),
+      image_url: p.image_url,
+      media: mediaMap[p.id] || (p.image_url ? [p.image_url] : []),
+      created_at: p.created_at,
+      likes,
+      comment_count: commentCount,
+      views,
+      geo: p.geo_place ? { place: p.geo_place, lat: p.geo_lat, lng: p.geo_lng } : null,
+      business: {
+        id: business.id,
+        name: business.name,
+        type: business.type,
+        region: business.region,
+        district: business.district,
+        city: business.city,
+        is_verified: !!business.is_verified,
+        cuisine_type: business.cuisine_type || null,
+      },
+      __feedKey: feedKey,
+    };
+  }));
+
   const followers = await getFollowCount(c.env, type, id);
   const kind = bizKindFromType(table);
 
   return c.json({
-    type: 'business', kind, profile: business, posts: postsWithMedia,
-    stats: { followers, posts: posts.length }, is_following: false,
+    type: 'business', kind, feedKey, profile: business, posts: postsWithMedia,
+    stats: { followers, posts: postsWithMedia.length }, is_following: false,
   });
 });
