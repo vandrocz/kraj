@@ -1,7 +1,7 @@
 const API_BASE_URL = 'https://naskraj-api.vandrocz-contact.workers.dev';
 const MAP_ORIGIN = 'https://maps.vandro.cz';
-const GOOGLE_CLIENT_ID = '769764675952-1nb44qbpc4o7a1l5r14vt8phamom9209.apps.googleusercontent.com';
-const RECAPTCHA_SITE_KEY = '6LeXt8UtAAAAAOOSYTkbrpC4gaotPw9-SUPEuvDo';
+const GOOGLE_CLIENT_ID = 'SEM_VLOZ_SVOJ_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+const RECAPTCHA_SITE_KEY = '';
 
 function getToken() { return localStorage.getItem('naskraj_token'); }
 function setToken(t) { localStorage.setItem('naskraj_token', t); }
@@ -129,7 +129,7 @@ async function handleGoogleCredential(credential) {
 // reCAPTCHA v3
 // ============================================================
 async function getRecaptchaToken(action) {
-  if (!RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === '6LeXt8UtAAAAAOOSYTkbrpC4gaotPw9-SUPEuvDo') return '';
+  if (!RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === 'SEM_VLOZ_SVOJ_RECAPTCHA_SITE_KEY') return '';
   if (!window.grecaptcha) return '';
   return new Promise((resolve) => {
     try {
@@ -142,10 +142,19 @@ async function getRecaptchaToken(action) {
 }
 
 // ============================================================
-// URL + TEXT HELPERS
+// URL + HTML HELPERS
 // ============================================================
 
-// Skrátenie URL pre zobrazenie v tlačidle
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
 function shortenUrl(url) {
   let s = String(url).replace(/^https?:\/\//i, '').replace(/^www\./i, '');
   const slash = s.indexOf('/');
@@ -156,9 +165,7 @@ function shortenUrl(url) {
   return domain + '/…';
 }
 
-// Skrátenie linkov v HTML obsahu
-// - holé URL → skráti sa na "domena/…"
-// - vlastný text (napr. <a href="X">Klikni</a>) → ostane, ale max 24 znakov
+// Skrátenie linkov priamo v HTML — pre lightbox (kde chceme plný text s linkami)
 function shortenLinksInHtml(html) {
   if (!html) return html;
   return String(html).replace(
@@ -175,4 +182,43 @@ function shortenLinksInHtml(html) {
       return `<a href="${escapeAttr(href)}" title="${escapeAttr(href)}" rel="noopener nofollow ugc" target="_blank">${escapeHtml(label)}</a>`;
     },
   );
+}
+
+// Extrakcia liniek z HTML pre karty — vráti { text, links }
+// Linky sa v karte vykreslia ako samostatné tlačidlá POD textom.
+function extractLinks(html) {
+  if (!html) return { text: '', links: [] };
+  let s = String(html);
+  const links = [];
+
+  // Extrahuj všetky <a href="...">...</a>
+  s = s.replace(
+    /<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+    (match, href, innerText) => {
+      const rawLabel = String(innerText || '').replace(/<[^>]+>/g, '').trim();
+      const isBareUrl = !rawLabel || /^https?:\/\//i.test(rawLabel) || rawLabel === href;
+      let label;
+      if (isBareUrl) {
+        label = shortenUrl(rawLabel || href);
+      } else {
+        label = rawLabel.length > 22 ? rawLabel.slice(0, 20).trim() + '…' : rawLabel;
+      }
+      links.push({ href, label });
+      return '';
+    },
+  );
+
+  // Odstráň ostatné HTML tagy
+  s = s.replace(/<br\s*\/?>/gi, ' ');
+  s = s.replace(/<\/p>/gi, ' ');
+  s = s.replace(/<[^>]+>/g, '');
+  s = s.replace(/&nbsp;/g, ' ')
+       .replace(/&amp;/g, '&')
+       .replace(/&lt;/g, '<')
+       .replace(/&gt;/g, '>')
+       .replace(/&quot;/g, '"')
+       .replace(/&#39;/g, "'");
+  s = s.replace(/\s+/g, ' ').trim();
+
+  return { text: s, links };
 }
