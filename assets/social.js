@@ -141,7 +141,7 @@ function renderCommentRow(c, feedKey, postId, isReply = false) {
 function renderSocialPostCard(post, feedKey) {
   const commentsHtml = (post.__comments || []).map((c) => renderCommentRow(c, feedKey, post.id)).join('');
   const isMinePost = isLoggedIn() && state.businesses.some((b) => b.id === post.business.id);
-  const bizInitial = (post.business.name || '?').charAt(0);
+  const bizInitial = (post.business.name || '?').charAt(0).toUpperCase();
 
   return `
     <article class="post-card" data-post-id="${post.id}">
@@ -167,12 +167,14 @@ function renderSocialPostCard(post, feedKey) {
         <button class="post-action" data-action="toggle-comments" data-id="${post.id}" data-feed="${feedKey}">${icon('comment', { size: 21 })}</button>
         <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(post.text || '')}">${icon('share', { size: 21 })}</button>
         ${isLoggedIn() ? `<button class="post-action ${post.__bookmarked ? 'is-bookmarked' : ''}" data-action="toggle-bookmark" data-id="${post.id}">${icon('bookmark', { size: 20, filled: !!post.__bookmarked })}</button>` : ''}
-        ${isMinePost ? `<button class="post-action" data-action="edit-post" data-id="${post.id}" data-feed="${feedKey}">${icon('edit', { size: 18 })}</button>` : ''}
         ${isMinePost ? `<button class="post-action" data-action="delete-post" data-id="${post.id}" data-feed="${feedKey}" style="color:#B3273C">${icon('trash', { size: 18 })}</button>` : ''}
       </div>
       <div class="post-body">
         <p class="post-likes" data-like-count="${post.id}">${fmt(post.likes || 0)} páči sa mi${post.views ? ` · ${fmt(post.views)} zobrazení` : ''}</p>
-        <p class="post-caption"><strong>${escapeHtml(post.business.name)}</strong> <span class="rich-text">${shortenLinksInHtml(post.html || escapeHtml(post.text || ''))}</span></p>
+        <p class="post-caption" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(post.text || '')}">
+          <strong>${escapeHtml(post.business.name)}</strong>
+          <span class="post-caption-text">${shortenLinksInHtml(post.html || escapeHtml(post.text || ''))}</span>
+        </p>
         ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
         ${post.comment_count > 0 ? `<button class="post-comments-link" data-action="toggle-comments" data-id="${post.id}" data-feed="${feedKey}">Zobrazit všech ${post.comment_count} komentářů</button>` : ''}
         <div class="post-comments" data-comments-list="${post.id}" style="display:none">${commentsHtml}</div>
