@@ -9,6 +9,8 @@ document.addEventListener('click', (e) => {
 
   switch (action) {
     case 'set-tab': switchTab(el.dataset.tab); break;
+    case 'share-event': shareEvent(el.dataset.id); break;
+    case 'add-to-calendar': addEventToCalendar(el.dataset.id); break;
 
     case 'open-lightbox': {
       e.preventDefault();
