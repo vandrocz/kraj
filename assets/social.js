@@ -2,37 +2,6 @@
 // SOCIÁLNY FEED — s pagination, reply, view count
 // ============================================================
 
-// ============================================================
-// Skrátenie URL v HTML postov
-// ============================================================
-function shortenUrl(url) {
-  let s = String(url).replace(/^https?:\/\//i, '').replace(/^www\./i, '');
-  const slash = s.indexOf('/');
-  if (slash === -1) return s;
-  const domain = s.slice(0, slash);
-  const rest = s.slice(slash);
-  if (rest.length <= 15) return s;
-  return domain + '/…';
-}
-
-function shortenLinksInHtml(html) {
-  if (!html) return html;
-  return String(html).replace(
-    /<a\s+([^>]*?)href=["']([^"']+)["']([^>]*)>([\s\S]*?)<\/a>/gi,
-    (match, pre, href, post, text) => {
-      const innerText = String(text || '').replace(/<[^>]+>/g, '').trim();
-      // Ak je text prázdny, alebo je to holá URL, skráť ju
-      const isBareUrl = !innerText || /^https?:\/\//i.test(innerText) || innerText === href;
-      if (isBareUrl) {
-        const short = shortenUrl(innerText || href);
-        return `<a ${pre}href="${href}"${post}>${short}</a>`;
-      }
-      // Inak použi vlastný text (napr. <a href="X">Klikni sem</a>)
-      return match;
-    },
-  );
-}
-
 function buildFeedQuery(feedKey) {
   const f = state.socialFeeds[feedKey];
   const params = new URLSearchParams();
@@ -91,8 +60,17 @@ function onSearchChange(feedKey, value) {
 
 function renderMediaCarousel(post) {
   const media = post.media && post.media.length ? post.media : (post.image_url ? [post.image_url] : []);
-  if (media.length === 0) return '';
   const caption = escapeAttr(post.text || '');
+
+  if (media.length === 0) {
+    return `
+      <div class="post-image-wrap post-image-empty">
+        <div class="post-image-placeholder">
+          ${icon('image', { size: 36 })}
+          <span>Bez fotky</span>
+        </div>
+      </div>`;
+  }
 
   if (media.length === 1) {
     return `
@@ -138,10 +116,26 @@ function renderCommentRow(c, feedKey, postId, isReply = false) {
     </div>`;
 }
 
+// ============================================================
+// RENDER POST CARD — text + linky oddelene
+// ============================================================
 function renderSocialPostCard(post, feedKey) {
   const commentsHtml = (post.__comments || []).map((c) => renderCommentRow(c, feedKey, post.id)).join('');
   const isMinePost = isLoggedIn() && state.businesses.some((b) => b.id === post.business.id);
   const bizInitial = (post.business.name || '?').charAt(0).toUpperCase();
+
+  // Extrahuj text a linky oddelene
+  const { text: captionText, links: captionLinks } = extractLinks(post.html || post.text || '');
+
+  const linksHtml = captionLinks.length > 0
+    ? `<div class="post-links">
+        ${captionLinks.map((l) => `
+          <a href="${escapeAttr(l.href)}" target="_blank" rel="noopener nofollow ugc" title="${escapeAttr(l.href)}">
+            <span class="post-link-label">${escapeHtml(l.label)}</span>
+          </a>
+        `).join('')}
+       </div>`
+    : '';
 
   return `
     <article class="post-card" data-post-id="${post.id}">
@@ -171,10 +165,11 @@ function renderSocialPostCard(post, feedKey) {
       </div>
       <div class="post-body">
         <p class="post-likes" data-like-count="${post.id}">${fmt(post.likes || 0)} páči sa mi${post.views ? ` · ${fmt(post.views)} zobrazení` : ''}</p>
-        <p class="post-caption" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(post.text || '')}">
-          <strong>${escapeHtml(post.business.name)}</strong>
-          <span class="post-caption-text">${shortenLinksInHtml(post.html || escapeHtml(post.text || ''))}</span>
+        <p class="post-caption" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(captionText)}">
+          <strong class="post-caption-author">${escapeHtml(post.business.name)}</strong>
+          <span class="post-caption-text">${escapeHtml(captionText)}</span>
         </p>
+        ${linksHtml}
         ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
         ${post.comment_count > 0 ? `<button class="post-comments-link" data-action="toggle-comments" data-id="${post.id}" data-feed="${feedKey}">Zobrazit všech ${post.comment_count} komentářů</button>` : ''}
         <div class="post-comments" data-comments-list="${post.id}" style="display:none">${commentsHtml}</div>
@@ -189,7 +184,6 @@ function renderSocialPostCard(post, feedKey) {
 async function togglePostLike(postId, feedKey, btnEl) {
   if (!isLoggedIn()) { showToast('Pro lajkování se musíš přihlásit.'); switchTab('account'); return; }
 
-  // Nájdi post v socialFeeds ALEBO v profiles
   let post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
   if (!post) {
     for (const k of Object.keys(state.profiles)) {
@@ -224,7 +218,6 @@ async function toggleBookmark(postId, btnEl) {
       btnEl.classList.toggle('is-bookmarked', data.bookmarked);
       btnEl.innerHTML = icon('bookmark', { size: 20, filled: data.bookmarked });
     }
-    // Sync do profiles
     for (const k of Object.keys(state.profiles)) {
       const d = state.profiles[k];
       if (d?.posts) {
@@ -280,7 +273,6 @@ async function toggleSocialComments(postId, feedKey) {
   if (isHidden && list.dataset.loaded !== 'true') {
     try {
       const data = await apiGet(`/api/feed/${postId}/comments`);
-      // Skús v socialFeeds
       let post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
       if (!post) {
         for (const k of Object.keys(state.profiles)) {
@@ -405,49 +397,4 @@ function renderBookmarksOverlay() {
             </button>`).join('')}
       </div>
     </div>`;
-}
-
-// ============================================================
-// EDITÁCIA PRÍSPEVKU
-// ============================================================
-
-function openEditPost(postId, feedKey) {
-  const post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
-  if (!post) return;
-  state.overlayStack.push(state.overlay);
-  state.overlay = { type: 'edit-post', postId, feedKey, html: post.html || post.text || '' };
-  renderApp();
-}
-
-function renderEditPostOverlay() {
-  const { postId, feedKey, html } = state.overlay;
-  return `
-    <div class="page-scroll">
-      ${renderBackHeader('Upravit příspěvek')}
-      <div class="profile-section">
-        <form data-action="submit-edit-post" data-post-id="${postId}" data-feed="${feedKey}">
-          ${renderRichEditor('text_html', 'Text příspěvku…', html)}
-          <button class="form-submit-btn" type="submit">Uložit změny</button>
-        </form>
-      </div>
-    </div>`;
-}
-
-async function handleEditPostSubmit(form) {
-  const postId = form.dataset.postId;
-  const feedKey = form.dataset.feed;
-  const html = getEditorHtml(form);
-  const btn = form.querySelector('button[type="submit"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Ukládám…'; }
-
-  try {
-    const res = await apiPatch(`/api/feed/post/${postId}`, { html });
-    const post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
-    if (post) { post.html = res.html; post.text = res.text; }
-    closeOverlay();
-    showToast('Uloženo.');
-  } catch (err) {
-    showToast(err.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Uložit změny'; }
-  }
 }
