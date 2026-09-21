@@ -149,14 +149,101 @@ function renderBusinessProfile(data, id, kind) {
   } else if (activeTab === 'reviews') {
     tabContent = renderReviewsTab();
   } else if (activeTab === 'about') {
+    const infoRows = [
+      b.city || b.region ? { icon: 'location', label: 'Adresa', value: [b.city, b.district, b.region].filter(Boolean).join(', ') } : null,
+      b.phone ? { icon: 'phone', label: 'Telefon', value: b.phone, href: `tel:${b.phone}` } : null,
+      b.website ? { icon: 'globe', label: 'Web', value: b.website.replace(/^https?:\/\//i, '').replace(/\/$/, ''), href: b.website } : null,
+      b.type ? { icon: 'bookmark', label: 'Typ', value: b.type } : null,
+      b.capacity ? { icon: 'users', label: 'Kapacita', value: `${b.capacity} osob` } : null,
+      b.cuisine_type ? { icon: 'utensils', label: 'Kuchyně', value: b.cuisine_type } : null,
+    ].filter(Boolean);
+
     tabContent = `
-      <div class="profile-section">
-        <p style="font-size:14px;line-height:1.65">${escapeHtml(b.description || 'Bez popisu.')}</p>
-        <div style="margin-top:18px;display:flex;flex-wrap:wrap;gap:10px 16px;font-size:13px;color:var(--c-text-muted)">
-          ${b.website ? `<a href="${escapeAttr(b.website)}" target="_blank" rel="noopener" style="color:var(--c-primary-dark)">${icon('globe', { size: 14 })} ${escapeHtml(b.website)}</a>` : ''}
-          ${b.phone ? `<a href="tel:${escapeAttr(b.phone)}">${icon('phone', { size: 14 })} ${escapeHtml(b.phone)}</a>` : ''}
-          ${b.city ? `<span>${icon('location', { size: 14 })} ${escapeHtml(b.city)}, ${escapeHtml(b.district)}</span>` : ''}
-        </div>
+      <div class="profile-section about-tab">
+        ${b.description ? `
+          <div class="about-intro">
+            <p>${escapeHtml(b.description)}</p>
+          </div>
+        ` : ''}
+
+        ${infoRows.length > 0 ? `
+          <div class="about-info-card">
+            ${infoRows.map((r) => `
+              ${r.href
+                ? `<a class="about-info-row" href="${escapeAttr(r.href)}" target="_blank" rel="noopener">
+                     <span class="about-info-icon">${icon(r.icon, { size: 18 })}</span>
+                     <span class="about-info-text">
+                       <span class="about-info-label">${r.label}</span>
+                       <span class="about-info-value">${escapeHtml(r.value)}</span>
+                     </span>
+                     ${icon('chevronRight', { size: 16, className: 'about-info-chevron' })}
+                   </a>`
+                : `<div class="about-info-row">
+                     <span class="about-info-icon">${icon(r.icon, { size: 18 })}</span>
+                     <span class="about-info-text">
+                       <span class="about-info-label">${r.label}</span>
+                       <span class="about-info-value">${escapeHtml(r.value)}</span>
+                     </span>
+                   </div>`}
+            `).join('')}
+          </div>
+        ` : ''}
+
+        ${b.lat && b.lng ? `
+          <div class="about-map">
+            <iframe
+              src="https://maps.vandro.cz/?lat=${encodeURIComponent(b.lat)}&lng=${encodeURIComponent(b.lng)}&zoom=14"
+              loading="lazy"
+              title="Mapa"
+            ></iframe>
+          </div>
+        ` : ''}
+
+        ${state._reviews?.summary?.total > 0 ? `
+          <div class="about-reviews-preview">
+            <h3 class="about-section-title">${icon('comment', { size: 16 })} Recenze</h3>
+            <div class="about-review-mini">
+              <span class="about-review-avg">${state._reviews.summary.average.toFixed(1)}</span>
+              <div>
+                ${renderStars(state._reviews.summary.average, 16)}
+                <p class="about-review-count">${state._reviews.summary.total} hodnocení</p>
+              </div>
+            </div>
+            ${(state._reviews.reviews || []).slice(0, 2).map((r) => `
+              <div class="about-review-item">
+                <div class="about-review-head">
+                  <strong>${escapeHtml(r.display_name || 'Uživatel')}</strong>
+                  ${renderStars(r.rating, 12)}
+                </div>
+                ${r.text ? `<p class="about-review-text">${escapeHtml(r.text.slice(0, 140))}${r.text.length > 140 ? '…' : ''}</p>` : ''}
+              </div>
+            `).join('')}
+            <button class="about-see-all" data-action="biz-profile-tab" data-tab="reviews">
+              Zobrazit všechny recenze ${icon('chevronRight', { size: 15 })}
+            </button>
+          </div>
+        ` : ''}
+
+        ${(state._bizEvents || []).length > 0 ? `
+          <div class="about-events-preview">
+            <h3 class="about-section-title">${icon('calendar', { size: 16 })} Nadcházející akce</h3>
+            ${state._bizEvents.slice(0, 2).map((ev) => `
+              <button class="about-event-mini" data-action="open-event" data-id="${ev.id}">
+                <div class="about-event-date">
+                  <span class="about-event-day">${new Date((ev.start_at || '').replace(' ', 'T') + 'Z').getDate()}</span>
+                  <span class="about-event-month">${new Date((ev.start_at || '').replace(' ', 'T') + 'Z').toLocaleDateString('cs-CZ', { month: 'short' })}</span>
+                </div>
+                <div class="about-event-info">
+                  <p class="about-event-title">${escapeHtml(ev.title)}</p>
+                  <p class="about-event-loc">${escapeHtml(ev.location_name || ev.city || '')}</p>
+                </div>
+              </button>
+            `).join('')}
+            <button class="about-see-all" data-action="biz-profile-tab" data-tab="events">
+              Zobrazit všechny akce ${icon('chevronRight', { size: 15 })}
+            </button>
+          </div>
+        ` : ''}
       </div>`;
   }
 
