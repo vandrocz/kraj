@@ -140,3 +140,39 @@ async function getRecaptchaToken(action) {
     } catch { resolve(''); }
   });
 }
+
+// ============================================================
+// URL + TEXT HELPERS
+// ============================================================
+
+// Skrátenie URL pre zobrazenie v tlačidle
+function shortenUrl(url) {
+  let s = String(url).replace(/^https?:\/\//i, '').replace(/^www\./i, '');
+  const slash = s.indexOf('/');
+  if (slash === -1) return s;
+  const domain = s.slice(0, slash);
+  const rest = s.slice(slash);
+  if (rest.length <= 12) return s;
+  return domain + '/…';
+}
+
+// Skrátenie linkov v HTML obsahu
+// - holé URL → skráti sa na "domena/…"
+// - vlastný text (napr. <a href="X">Klikni</a>) → ostane, ale max 24 znakov
+function shortenLinksInHtml(html) {
+  if (!html) return html;
+  return String(html).replace(
+    /<a\s+([^>]*?)href=["']([^"']+)["']([^>]*)>([\s\S]*?)<\/a>/gi,
+    (match, pre, href, post, text) => {
+      const innerText = String(text || '').replace(/<[^>]+>/g, '').trim();
+      const isBareUrl = !innerText || /^https?:\/\//i.test(innerText) || innerText === href;
+      let label;
+      if (isBareUrl) {
+        label = shortenUrl(innerText || href);
+      } else {
+        label = innerText.length > 26 ? innerText.slice(0, 24).trim() + '…' : innerText;
+      }
+      return `<a href="${escapeAttr(href)}" title="${escapeAttr(href)}" rel="noopener nofollow ugc" target="_blank">${escapeHtml(label)}</a>`;
+    },
+  );
+}
