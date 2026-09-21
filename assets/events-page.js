@@ -146,22 +146,149 @@ function renderEventDetailOverlay() {
   const cover = ev.cover_image_url;
   const isOwner = isLoggedIn() && state.user.id === ev.user_id;
 
+  // Rozdeľ dátum na komponenty
+  const startDate = ev.start_at ? new Date((String(ev.start_at).replace(' ', 'T')) + 'Z') : null;
+  const endDate = ev.end_at ? new Date((String(ev.end_at).replace(' ', 'T')) + 'Z') : null;
+
+  const dateBlock = startDate && !isNaN(startDate.getTime()) ? {
+    day: startDate.getDate(),
+    month: startDate.toLocaleDateString('cs-CZ', { month: 'short' }).toUpperCase(),
+    weekday: startDate.toLocaleDateString('cs-CZ', { weekday: 'long' }),
+    time: `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`,
+    year: startDate.getFullYear(),
+  } : null;
+
+  const endTime = endDate && !isNaN(endDate.getTime())
+    ? `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`
+    : null;
+
+  const kindLabel = {
+    organizations: 'Organizace',
+    accommodation: 'Ubytování',
+    restaurants: 'Gastro',
+  }[ev.business_kind] || 'Akce';
+
   return `
-    <div class="page-scroll">
-      ${renderBackHeader(ev.title, isOwner ? `<button class="header-icon-btn" data-action="delete-event" data-id="${ev.id}" style="color:#B3273C">${icon('trash', { size: 19 })}</button>` : '')}
-      ${cover ? `<img src="${cover}" alt="" style="width:100%;aspect-ratio:16/9;object-fit:cover" />` : ''}
-      <div class="profile-section">
-        <h2 style="font-family:var(--font-display);font-size:20px;font-weight:800;margin-bottom:8px">${escapeHtml(ev.title)}</h2>
-        <p style="font-size:14px;color:var(--c-primary-dark);font-weight:700;margin-bottom:6px">${icon('calendar', { size: 14 })} ${formatEventDate(ev.start_at)}${ev.end_at ? ` – ${formatEventDate(ev.end_at)}` : ''}</p>
-        ${ev.location_name ? `<p style="font-size:13.5px;color:var(--c-text-muted)">${icon('location', { size: 13 })} ${escapeHtml(ev.location_name)}${ev.city ? `, ${escapeHtml(ev.city)}` : ''}</p>` : ''}
-        <div style="margin-top:16px;font-size:14px;line-height:1.6" class="rich-text">${ev.content_html || escapeHtml(ev.description || '')}</div>
-        <div style="margin-top:20px">
-          <button class="profile-action-btn" data-action="open-profile" data-kind="${ev.business_kind}" data-id="${ev.business_id}">
-            ${icon('user', { size: 15 })} ${escapeHtml(ev.business_name || 'Profil')}
-          </button>
+    <div class="page-scroll event-detail-page">
+      ${renderBackHeader('', isOwner ? `<button class="header-icon-btn" data-action="delete-event" data-id="${ev.id}" style="color:#B3273C">${icon('trash', { size: 19 })}</button>` : `<button class="header-icon-btn" data-action="share-event" data-id="${ev.id}">${icon('share', { size: 19 })}</button>`)}
+
+      <div class="event-detail-cover" ${cover ? `style="background-image:url('${escapeAttr(cover)}')"` : ''}>
+        <div class="event-detail-cover-overlay"></div>
+        <div class="event-detail-cover-content">
+          <span class="event-detail-kind">${kindLabel}</span>
+          <h1 class="event-detail-title">${escapeHtml(ev.title)}</h1>
         </div>
       </div>
+
+      <div class="event-detail-body">
+
+        <div class="event-detail-date-card">
+          ${dateBlock ? `
+            <div class="event-detail-date-big">
+              <span class="event-detail-day">${dateBlock.day}</span>
+              <span class="event-detail-month">${dateBlock.month}</span>
+              <span class="event-detail-year">${dateBlock.year}</span>
+            </div>
+            <div class="event-detail-date-info">
+              <p class="event-detail-weekday">${dateBlock.weekday}</p>
+              <p class="event-detail-time">${dateBlock.time}${endTime ? ` – ${endTime}` : ''}</p>
+            </div>
+          ` : '<p style="color:var(--c-text-muted)">Datum neuvedeno</p>'}
+        </div>
+
+        ${ev.location_name || ev.city ? `
+          <div class="event-detail-info-row">
+            <span class="event-detail-info-icon">${icon('location', { size: 20 })}</span>
+            <div class="event-detail-info-text">
+              <span class="event-detail-info-label">Místo konání</span>
+              <span class="event-detail-info-value">${escapeHtml(ev.location_name || '')}</span>
+              ${ev.city ? `<span class="event-detail-info-sub">${escapeHtml(ev.city)}${ev.region ? ', ' + escapeHtml(ev.region) : ''}</span>` : ''}
+            </div>
+          </div>
+        ` : ''}
+
+        ${ev.content_html || ev.description ? `
+          <div class="event-detail-description">
+            <h3 class="event-detail-section-title">O akci</h3>
+            <div class="rich-text">${ev.content_html || escapeHtml(ev.description || '')}</div>
+          </div>
+        ` : ''}
+
+        <div class="event-detail-organizer">
+          <h3 class="event-detail-section-title">Pořadatel</h3>
+          <button class="event-detail-organizer-card" data-action="open-profile" data-kind="${ev.business_kind}" data-id="${ev.business_id}">
+            <span class="event-detail-organizer-avatar">
+              ${(ev.business_name || '?').charAt(0).toUpperCase()}
+            </span>
+            <div class="event-detail-organizer-info">
+              <p class="event-detail-organizer-name">${escapeHtml(ev.business_name || '')}</p>
+              <p class="event-detail-organizer-meta">${kindLabel}</p>
+            </div>
+            ${icon('chevronRight', { size: 18 })}
+          </button>
+        </div>
+
+        ${isLoggedIn() ? `
+          <div class="event-detail-actions">
+            <button class="event-detail-action-btn event-detail-action-primary" data-action="add-to-calendar" data-id="${ev.id}">
+              ${icon('calendar', { size: 18 })} Přidat do kalendáře
+            </button>
+            <button class="event-detail-action-btn" data-action="share-event" data-id="${ev.id}">
+              ${icon('share', { size: 18 })} Sdílet
+            </button>
+          </div>
+        ` : ''}
+
+      </div>
     </div>`;
+}
+
+// Share handler pre event
+async function shareEvent(id) {
+  const ev = state._eventDetail;
+  if (!ev) return;
+  const url = `${location.origin}${location.pathname}?event=${encodeURIComponent(id)}`;
+  const text = `${ev.title} · ${formatEventDate(ev.start_at)}`;
+  if (navigator.share) {
+    try { await navigator.share({ title: ev.title, text, url }); return; } catch { return; }
+  }
+  try { await navigator.clipboard.writeText(url); showToast('Odkaz zkopírován.'); }
+  catch { showToast('Sdílení se nepodařilo.'); }
+}
+
+// Add to calendar (ICS download)
+function addEventToCalendar(id) {
+  const ev = state._eventDetail;
+  if (!ev) return;
+  const fmt = (iso) => {
+    const d = new Date((String(iso).replace(' ', 'T')) + 'Z');
+    return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  };
+  const start = fmt(ev.start_at);
+  const end = ev.end_at ? fmt(ev.end_at) : fmt(ev.start_at);
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Náš kraj//Akce//CS',
+    'BEGIN:VEVENT',
+    `UID:${ev.id}@naskraj.vandro.cz`,
+    `DTSTAMP:${fmt(new Date().toISOString())}`,
+    `DTSTART:${start}`,
+    `DTEND:${end}`,
+    `SUMMARY:${(ev.title || '').replace(/\n/g, ' ')}`,
+    `DESCRIPTION:${(ev.description || '').replace(/\n/g, ' ')}`,
+    `LOCATION:${(ev.location_name || ev.city || '').replace(/\n/g, ' ')}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(ev.title || 'akce').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Uloženo do kalendáře.');
 }
 
 function openCreateEvent() {
