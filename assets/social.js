@@ -113,10 +113,29 @@ function renderCommentRow(c, feedKey, postId, isReply = false) {
     </div>`;
 }
 
+// Pomocná funkcia — vykreslí avatar podniku (obrázok alebo iniciála)
+function renderBusinessAvatar(business, feedKey, size = 38) {
+  const logo = business.logo_url || business.image_url;
+  const initial = (business.name || '?').charAt(0).toUpperCase();
+  const fontSize = Math.round(size * 0.42);
+
+  if (logo) {
+    return `
+      <button class="post-avatar" data-action="open-profile" data-kind="${feedKey}" data-id="${business.id}"
+              style="width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;padding:0;border:2px solid var(--c-primary-light);flex-shrink:0;background:var(--c-surface);">
+        <img src="${escapeAttr(logo)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" />
+      </button>`;
+  }
+  return `
+    <button class="post-avatar" data-action="open-profile" data-kind="${feedKey}" data-id="${business.id}"
+            style="display:flex;align-items:center;justify-content:center;background:var(--c-primary-light);color:var(--c-primary-dark);font-weight:800;font-size:${fontSize}px;border-radius:50%;width:${size}px;height:${size}px;flex-shrink:0;border:2px solid var(--c-primary-light);">
+      ${initial}
+    </button>`;
+}
+
 function renderSocialPostCard(post, feedKey) {
   const commentsHtml = (post.__comments || []).map((c) => renderCommentRow(c, feedKey, post.id)).join('');
   const isMinePost = isLoggedIn() && state.businesses.some((b) => b.id === post.business.id);
-  const bizInitial = (post.business.name || '?').charAt(0).toUpperCase();
   const isVerified = Number(post.business.is_verified) === 1 || post.business.is_verified === true;
 
   const { text: captionText, links: captionLinks } = extractLinks(post.html || post.text || '');
@@ -134,10 +153,7 @@ function renderSocialPostCard(post, feedKey) {
   return `
     <article class="post-card" data-post-id="${post.id}">
       <header class="post-card-head">
-        <button class="post-avatar" data-action="open-profile" data-kind="${feedKey}" data-id="${post.business.id}"
-                style="display:flex;align-items:center;justify-content:center;background:var(--c-primary-light);color:var(--c-primary-dark);font-weight:800;font-size:15px;border-radius:var(--radius-round);width:38px;height:38px;flex-shrink:0;border:none;">
-          ${bizInitial}
-        </button>
+        ${renderBusinessAvatar(post.business, feedKey, 38)}
         <div class="post-head-text" data-action="open-profile" data-kind="${feedKey}" data-id="${post.business.id}" style="cursor:pointer">
           <p class="post-author">
             ${escapeHtml(post.business.name)}
@@ -178,7 +194,6 @@ function renderSocialPostCard(post, feedKey) {
 
 async function togglePostLike(postId, feedKey, btnEl) {
   if (!isLoggedIn()) { showToast('Pro lajkování se musíš přihlásit.'); switchTab('account'); return; }
-
   let post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
   if (!post) {
     for (const k of Object.keys(state.profiles)) {
@@ -190,14 +205,12 @@ async function togglePostLike(postId, feedKey, btnEl) {
     }
   }
   if (!post || post.__liked) return;
-
   post.__liked = true;
   post.likes = (post.likes || 0) + 1;
   btnEl.classList.add('is-liked');
   btnEl.innerHTML = icon('heart', { size: 22, filled: true });
   const likesEl = document.querySelector(`[data-like-count="${postId}"]`);
   if (likesEl) likesEl.textContent = `${fmt(post.likes)} páči sa mi`;
-
   try {
     const data = await apiPost(`/api/feed/${postId}/like`, {});
     post.likes = data.likes;
@@ -317,7 +330,6 @@ async function submitReply(parentId, postId, feedKey, text, inputEl) {
   } catch (err) { showToast(err.message); }
 }
 
-// Report cez modal
 function reportPost(postId) {
   if (!isLoggedIn()) { showToast('Pro nahlášení se musíš přihlásit.'); switchTab('account'); return; }
   openModal({
@@ -335,15 +347,11 @@ function reportPost(postId) {
         await apiPost(`/api/feed/${postId}/report`, { reason: data.reason || null });
         closeModal();
         showToast('Příspěvek byl nahlášen.');
-      } catch (err) {
-        showToast(err.message);
-        state._modalLoading = false; renderApp();
-      }
+      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
     },
   });
 }
 
-// Delete post cez modal
 function deletePost(postId, feedKey) {
   openModal({
     title: 'Smazat příspěvek?',
@@ -357,10 +365,7 @@ function deletePost(postId, feedKey) {
         if (state.socialFeeds[feedKey]) state.socialFeeds[feedKey].items = state.socialFeeds[feedKey].items.filter((p) => p.id !== postId);
         closeModal();
         showToast('Smazáno.');
-      } catch (err) {
-        showToast(err.message);
-        state._modalLoading = false; renderApp();
-      }
+      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
     },
   });
 }
@@ -419,7 +424,6 @@ function renderBookmarksOverlay() {
     </div>`;
 }
 
-// Edit post
 function openEditPost(postId, feedKey) {
   const post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
   if (!post) return;
