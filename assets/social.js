@@ -1,5 +1,5 @@
 // ============================================================
-// SOCIÁLNY FEED — s pagination, reply, view count
+// SOCIÁLNY FEED
 // ============================================================
 
 function buildFeedQuery(feedKey) {
@@ -25,11 +25,8 @@ async function loadSocialFeed(feedKey, loadMore = false) {
     const q = buildFeedQuery(feedKey);
     const url = `/api/feed/${feedKey}${q ? `?${q}` : ''}${loadMore && f.next_cursor ? `${q ? '&' : '?'}cursor=${encodeURIComponent(f.next_cursor)}` : ''}`;
     const data = await apiGet(url);
-    if (loadMore) {
-      f.items = [...f.items, ...(data.feed || [])];
-    } else {
-      f.items = data.feed || [];
-    }
+    if (loadMore) f.items = [...f.items, ...(data.feed || [])];
+    else f.items = data.feed || [];
     f.next_cursor = data.next_cursor || null;
   } catch (err) {
     console.error(`Feed ${feedKey}:`, err.message);
@@ -116,15 +113,12 @@ function renderCommentRow(c, feedKey, postId, isReply = false) {
     </div>`;
 }
 
-// ============================================================
-// RENDER POST CARD — text + linky oddelene
-// ============================================================
 function renderSocialPostCard(post, feedKey) {
   const commentsHtml = (post.__comments || []).map((c) => renderCommentRow(c, feedKey, post.id)).join('');
   const isMinePost = isLoggedIn() && state.businesses.some((b) => b.id === post.business.id);
   const bizInitial = (post.business.name || '?').charAt(0).toUpperCase();
+  const isVerified = Number(post.business.is_verified) === 1 || post.business.is_verified === true;
 
-  // Extrahuj text a linky oddelene
   const { text: captionText, links: captionLinks } = extractLinks(post.html || post.text || '');
 
   const linksHtml = captionLinks.length > 0
@@ -147,7 +141,7 @@ function renderSocialPostCard(post, feedKey) {
         <div class="post-head-text" data-action="open-profile" data-kind="${feedKey}" data-id="${post.business.id}" style="cursor:pointer">
           <p class="post-author">
             ${escapeHtml(post.business.name)}
-            ${post.business.is_verified ? icon('check', { size: 12, className: 'verified-badge-inline' }) : ''}
+            ${isVerified ? icon('check', { size: 12, className: 'verified-badge-inline' }) : ''}
           </p>
           <p class="post-time">${post.business.city ? `${escapeHtml(post.business.city)}, ` : ''}${escapeHtml(post.business.district)} · ${timeAgo(post.created_at)}</p>
         </div>
@@ -161,6 +155,7 @@ function renderSocialPostCard(post, feedKey) {
         <button class="post-action" data-action="toggle-comments" data-id="${post.id}" data-feed="${feedKey}">${icon('comment', { size: 21 })}</button>
         <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(post.text || '')}">${icon('share', { size: 21 })}</button>
         ${isLoggedIn() ? `<button class="post-action ${post.__bookmarked ? 'is-bookmarked' : ''}" data-action="toggle-bookmark" data-id="${post.id}">${icon('bookmark', { size: 20, filled: !!post.__bookmarked })}</button>` : ''}
+        ${isMinePost ? `<button class="post-action" data-action="edit-post" data-id="${post.id}" data-feed="${feedKey}">${icon('edit', { size: 18 })}</button>` : ''}
         ${isMinePost ? `<button class="post-action" data-action="delete-post" data-id="${post.id}" data-feed="${feedKey}" style="color:#B3273C">${icon('trash', { size: 18 })}</button>` : ''}
       </div>
       <div class="post-body">
@@ -245,8 +240,6 @@ function renderFeedPage(feedKey, typeOptions, showCuisine) {
       ${renderHeader(title, `
         <button class="header-icon-btn" data-action="open-nearby" aria-label="V okolí">${icon('location', { size: 19 })}</button>
         <button class="header-icon-btn" data-action="open-search" aria-label="Hledat">${icon('search', { size: 19 })}</button>
-        ${isLoggedIn() ? `<button class="header-icon-btn" data-action="open-threads" aria-label="Zprávy">${icon('chat', { size: 19 })}</button>` : ''}
-        <button class="header-icon-btn" data-action="open-groups" aria-label="Skupiny">${icon('group', { size: 19 })}</button>
       `)}
       ${renderStoriesBar()}
       ${renderFilterBar(feedKey, typeOptions, showCuisine)}
@@ -310,9 +303,7 @@ function toggleReplyForm(commentId) {
   const form = document.querySelector(`[data-reply-form="${commentId}"]`);
   if (!form) return;
   form.style.display = form.style.display === 'none' ? 'flex' : 'none';
-  if (form.style.display === 'flex') {
-    form.querySelector('input')?.focus();
-  }
+  if (form.style.display === 'flex') form.querySelector('input')?.focus();
 }
 
 async function submitReply(parentId, postId, feedKey, text, inputEl) {
@@ -326,23 +317,52 @@ async function submitReply(parentId, postId, feedKey, text, inputEl) {
   } catch (err) { showToast(err.message); }
 }
 
-async function reportPost(postId) {
+// Report cez modal
+function reportPost(postId) {
   if (!isLoggedIn()) { showToast('Pro nahlášení se musíš přihlásit.'); switchTab('account'); return; }
-  const reason = prompt('Proč tento příspěvek nahlašuješ? (nepovinné)');
-  try {
-    await apiPost(`/api/feed/${postId}/report`, { reason: reason || null });
-    showToast('Příspěvek byl nahlášen.');
-  } catch (err) { showToast(err.message); }
+  openModal({
+    title: 'Nahlásit příspěvek',
+    body: `
+      <div class="form-field">
+        <label class="form-label">Důvod (nepovinné)</label>
+        <textarea class="form-textarea" name="reason" rows="3" maxlength="500" placeholder="Proč tento příspěvek nahlašuješ?"></textarea>
+      </div>`,
+    submitLabel: 'Odeslat nahlášení',
+    danger: true,
+    onSubmit: async (data) => {
+      state._modalLoading = true; renderApp();
+      try {
+        await apiPost(`/api/feed/${postId}/report`, { reason: data.reason || null });
+        closeModal();
+        showToast('Příspěvek byl nahlášen.');
+      } catch (err) {
+        showToast(err.message);
+        state._modalLoading = false; renderApp();
+      }
+    },
+  });
 }
 
-async function deletePost(postId, feedKey) {
-  if (!confirm('Smazat tento příspěvek?')) return;
-  try {
-    await apiDelete(`/api/feed/post/${postId}`);
-    if (state.socialFeeds[feedKey]) state.socialFeeds[feedKey].items = state.socialFeeds[feedKey].items.filter((p) => p.id !== postId);
-    showToast('Smazáno.');
-    renderApp();
-  } catch (err) { showToast(err.message); }
+// Delete post cez modal
+function deletePost(postId, feedKey) {
+  openModal({
+    title: 'Smazat příspěvek?',
+    body: `<p style="font-size:14px;line-height:1.6">Příspěvek bude skryt ze všech feedů. Akce je nevratná.</p>`,
+    submitLabel: 'Smazat',
+    danger: true,
+    onSubmit: async () => {
+      state._modalLoading = true; renderApp();
+      try {
+        await apiDelete(`/api/feed/post/${postId}`);
+        if (state.socialFeeds[feedKey]) state.socialFeeds[feedKey].items = state.socialFeeds[feedKey].items.filter((p) => p.id !== postId);
+        closeModal();
+        showToast('Smazáno.');
+      } catch (err) {
+        showToast(err.message);
+        state._modalLoading = false; renderApp();
+      }
+    },
+  });
 }
 
 async function deleteComment(commentId, feedKey, postId) {
@@ -397,4 +417,46 @@ function renderBookmarksOverlay() {
             </button>`).join('')}
       </div>
     </div>`;
+}
+
+// Edit post
+function openEditPost(postId, feedKey) {
+  const post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
+  if (!post) return;
+  state.overlayStack.push(state.overlay);
+  state.overlay = { type: 'edit-post', postId, feedKey, html: post.html || post.text || '' };
+  renderApp();
+}
+
+function renderEditPostOverlay() {
+  const { postId, feedKey, html } = state.overlay;
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader('Upravit příspěvek')}
+      <div class="profile-section">
+        <form data-action="submit-edit-post" data-post-id="${postId}" data-feed="${feedKey}">
+          ${renderRichEditor('text_html', 'Text příspěvku…', html)}
+          <button class="form-submit-btn" type="submit">Uložit změny</button>
+        </form>
+      </div>
+    </div>`;
+}
+
+async function handleEditPostSubmit(form) {
+  const postId = form.dataset.postId;
+  const feedKey = form.dataset.feed;
+  const html = getEditorHtml(form);
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Ukládám…'; }
+
+  try {
+    const res = await apiPatch(`/api/feed/post/${postId}`, { html });
+    const post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
+    if (post) { post.html = res.html; post.text = res.text; }
+    closeOverlay();
+    showToast('Uloženo.');
+  } catch (err) {
+    showToast(err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Uložit změny'; }
+  }
 }
