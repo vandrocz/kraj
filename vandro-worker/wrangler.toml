@@ -17,6 +17,7 @@ database_id = "23ab1357-4c06-4875-8a57-b1ac0d150c4e"
 binding = "MEDIA"
 bucket_name = "naskraj-media"
 preview_bucket_name = "naskraj-media"
+jurisdiction = "eu"
 
 [[kv_namespaces]]
 binding = "NASKRAJ_LAJKY"
