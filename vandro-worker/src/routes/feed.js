@@ -42,7 +42,6 @@ function escapePlain(t) {
   return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ---- Block helper ----
 async function getBlockedIds(env, viewerId) {
   if (!viewerId) return new Set();
   try {
@@ -63,7 +62,6 @@ async function getViewerId(c, env) {
   } catch { return null; }
 }
 
-// ---- Cursor helpers ----
 function encodeCursor(createdAt, id) {
   return btoa(`${createdAt}|${id}`);
 }
@@ -75,7 +73,6 @@ function decodeCursor(cursor) {
   } catch { return null; }
 }
 
-// ---- Zbierky (ostávajú v kóde, len sa nezobrazujú) ----
 feedRoutes.get('/collections', async (c) => {
   await ensureActiveProjectRotation(c.env);
   const active = await c.env.DB.prepare(
@@ -109,7 +106,6 @@ feedRoutes.post('/collections/:id/like', async (c) => {
   return c.json({ liked: true, likes: n }, 201);
 });
 
-// ---- Personalizovaný algoritmus ----
 function scorePostForUser(post, { followedIds, userCity, userRegion, verifiedBoost = true }) {
   const now = Date.now();
   const created = new Date(post.created_at.replace(' ', 'T') + 'Z').getTime();
@@ -124,6 +120,14 @@ function scorePostForUser(post, { followedIds, userCity, userRegion, verifiedBoo
   else if (userRegion && post.business?.region === userRegion) score *= 1.3;
   score *= 0.9 + Math.random() * 0.2;
   return score;
+}
+
+// Dynamická voľba stĺpca pre logo podľa typu tabuľky
+function logoColumnFor(table) {
+  if (table === 'organizations') return 'logo_url';
+  if (table === 'accommodation') return 'image_url';
+  if (table === 'restaurants') return 'image_url';
+  return null;
 }
 
 async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
@@ -162,11 +166,15 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
     params.push(cursor.createdAt, cursor.createdAt, cursor.id);
   }
 
+  const logoCol = logoColumnFor(table);
+  const logoSelect = logoCol ? `, ${table}.${logoCol} AS business_logo` : ', NULL AS business_logo';
+
   const sql = `
     SELECT posts.id, posts.user_id, posts.text_content, posts.content_html, posts.image_url, posts.created_at,
            posts.geo_lat, posts.geo_lng, posts.geo_place, posts.view_count,
            ${table}.id AS business_id, ${table}.name AS business_name, ${table}.type AS business_type,
            ${table}.region, ${table}.district, ${table}.city, ${table}.is_verified
+           ${logoSelect}
            ${extraFilterCols?.includes('cuisine_type') ? `, ${table}.cuisine_type` : ''}
     FROM posts JOIN ${table} ON ${table}.id = posts.business_id
     WHERE ${conditions.join(' AND ')}
@@ -216,6 +224,7 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
         district: post.district,
         city: post.city,
         is_verified: !!post.is_verified,
+        logo_url: post.business_logo || null,
         cuisine_type: post.cuisine_type || null,
       },
     };
@@ -242,7 +251,6 @@ feedRoutes.get('/organization', (c) => loadSocialFeed(c, { targetFeed: 'organiza
 feedRoutes.get('/accommodation', (c) => loadSocialFeed(c, { targetFeed: 'accommodation', table: 'accommodation' }));
 feedRoutes.get('/gastro', (c) => loadSocialFeed(c, { targetFeed: 'gastro', table: 'restaurants', extraFilterCols: ['cuisine_type'] }));
 
-// ---- View count ----
 feedRoutes.post('/:id/view', async (c) => {
   const postId = c.req.param('id');
   try {
@@ -251,7 +259,6 @@ feedRoutes.post('/:id/view', async (c) => {
   return c.json({ ok: true });
 });
 
-// ---- Like ----
 feedRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const postId = c.req.param('id');
@@ -274,7 +281,6 @@ feedRoutes.post('/:id/like', async (c) => {
   return c.json({ liked: true, likes: n }, 201);
 });
 
-// ---- Bookmarks ----
 feedRoutes.get('/bookmarks', async (c) => {
   const user = c.get('user');
   const { results } = await c.env.DB.prepare(
@@ -312,7 +318,6 @@ feedRoutes.get('/:id/bookmarked', async (c) => {
   return c.json({ bookmarked: !!row });
 });
 
-// ---- Edit post ----
 feedRoutes.patch('/post/:id', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -342,7 +347,6 @@ feedRoutes.patch('/post/:id', async (c) => {
   return c.json({ ok: true, id, text: plainText, html: contentHtml });
 });
 
-// ---- Delete ----
 feedRoutes.delete('/post/:id', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -363,7 +367,6 @@ feedRoutes.delete('/comment/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-// ---- Comments (s reply) ----
 feedRoutes.get('/:id/comments', async (c) => {
   const postId = c.req.param('id');
   const viewerId = await getViewerId(c, c.env);
@@ -451,7 +454,6 @@ feedRoutes.post('/:id/report', async (c) => {
   return c.json({ id, ok: true }, 201);
 });
 
-// ---- Business feed pre profil ----
 feedRoutes.get('/business/:kind/:id', async (c) => {
   const kind = c.req.param('kind');
   const id = c.req.param('id');
