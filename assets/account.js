@@ -20,9 +20,7 @@ function renderAccountPage() {
       </div>`;
     setTimeout(() => {
       const el = document.getElementById('google-signin-container');
-      if (el && el.children.length === 0) {
-        renderGoogleButton(el, handleGoogleCredential);
-      }
+      if (el && el.children.length === 0) renderGoogleButton(el, handleGoogleCredential);
     }, 80);
     return html;
   }
@@ -33,7 +31,6 @@ function renderAccountPage() {
           ${icon('bell', { size: 19 })}
           ${state.unreadNotifications > 0 ? `<span class="nav-badge">${state.unreadNotifications > 9 ? '9+' : state.unreadNotifications}</span>` : ''}
         </button>
-        <button class="header-icon-btn" data-action="open-threads" aria-label="Zprávy">${icon('chat', { size: 19 })}</button>
         <button class="header-icon-btn" data-action="open-search" aria-label="Hledat">${icon('search', { size: 19 })}</button>
         <button class="header-icon-btn" data-action="open-settings" aria-label="Nastavení">${icon('settings', { size: 19 })}</button>
       `)}
@@ -63,12 +60,9 @@ function renderAuthCard() {
         <button class="auth-tab ${state.authView === 'login' ? 'is-active' : ''}" data-action="set-auth-view" data-view="login">Přihlásit se</button>
         <button class="auth-tab ${state.authView === 'register' ? 'is-active' : ''}" data-action="set-auth-view" data-view="register">Registrace</button>
       </div>
-
       ${accountFormState.formError ? `<div class="form-error">${accountFormState.formError}</div>` : ''}
-
       <div id="google-signin-container" style="display:flex;justify-content:center;margin-bottom:18px;"></div>
       <div class="auth-divider"><span>nebo</span></div>
-
       ${state.authView === 'login' ? renderLoginForm() : renderRegisterForm()}
       ${state.authView === 'login' ? `<p style="text-align:center;margin-top:14px;font-size:12.5px"><button type="button" data-action="open-forgot" style="color:var(--c-primary-dark);font-weight:600">Zapomněl jsi heslo?</button></p>` : ''}
     </div>`;
@@ -150,7 +144,7 @@ function renderRegionDistrictCityFields(prefix) {
       </select></div>
     <div class="form-field">
       <label class="form-label">Obec</label>
-      <select class="form-select" name="city" data-action="city-select" required>
+      <select class="form-select" name="city" required>
         <option value="">Nejprve vyberte okres</option>
       </select>
     </div>`;
@@ -182,11 +176,7 @@ async function handleLoginSubmit(form) {
   if (btn) { btn.disabled = true; btn.textContent = 'Přihlašuji…'; }
   try {
     const recaptcha_token = await getRecaptchaToken('login');
-    const data = await apiPost('/api/auth/login', {
-      email: fd.get('email'),
-      password: fd.get('password'),
-      recaptcha_token,
-    });
+    const data = await apiPost('/api/auth/login', { email: fd.get('email'), password: fd.get('password'), recaptcha_token });
     if (data.twofa_required) {
       state._twofaToken = data.twofa_token;
       state._twofaStage = 'verify';
@@ -245,10 +235,10 @@ function handleLogout() {
   state.adminPending = null;
   state.adminReports = null;
   state.adminVerifications = null;
+  state.adminPosts = null;
   state.overlay = null;
   state.unreadNotifications = 0;
   state._pushSubscribed = false;
-  if (typeof stopThreadPolling === 'function') stopThreadPolling();
   showToast('Byl jsi odhlášen.');
   renderApp();
 }
@@ -279,10 +269,7 @@ function renderRoleSpecificContent() {
   return '';
 }
 
-// ============================================================
-// ROLA: USER — O mně + aktivita
-// ============================================================
-
+// USER
 function renderUserAboutSection() {
   const u = state.user;
   return `
@@ -293,10 +280,6 @@ function renderUserAboutSection() {
         ${u.bio
           ? `<p style="font-size:14px;line-height:1.6">${escapeHtml(u.bio)}</p>`
           : '<p style="color:var(--c-text-muted);font-size:13.5px">Zatím žádné bio. Klikni na „Upravit profil".</p>'}
-        <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px 16px;font-size:12.5px;color:var(--c-text-muted)">
-          ${u.location ? `<span>${icon('location', { size: 14 })} ${escapeHtml(u.location)}</span>` : ''}
-          ${u.website ? `<a href="${escapeAttr(u.website)}" target="_blank" rel="noopener" style="color:var(--c-primary-dark)">${icon('globe', { size: 14 })} ${escapeHtml(u.website)}</a>` : ''}
-        </div>
         <div style="margin-top:14px">
           <button class="profile-action-btn" data-action="edit-profile" data-kind="user" data-id="${u.id}">${icon('edit', { size: 15 })} Upravit profil</button>
         </div>
@@ -322,18 +305,11 @@ function renderUserAboutSection() {
           <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
           <div class="stat-card-label">Uložené příspěvky</div>
         </button>
-        <button class="stat-card" data-action="open-following" style="cursor:pointer;text-align:left">
-          <div class="stat-card-value">${icon('users', { size: 20 })}</div>
-          <div class="stat-card-label">Sleduji</div>
-        </button>
       </div>
     </div>`;
 }
 
-// ============================================================
-// ROLA: BUSINESS
-// ============================================================
-
+// BUSINESS
 function renderBusinessDashboard() {
   const businesses = state.businesses || [];
   if (businesses.length === 0) return '<p class="empty-state">K účtu není přiřazen žádný podnik.</p>';
@@ -355,29 +331,25 @@ function renderBusinessDashboard() {
     <div class="profile-section">
       <h3 class="profile-section-title">Tvůj podnik</h3>
       <div class="business-picker">
-        ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${b.is_verified ? '✓' : ''}</button>`).join('')}
+        ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${Number(b.is_verified) ? '✓' : ''}</button>`).join('')}
       </div>
       <div style="padding:0 16px 10px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="profile-action-btn" data-action="open-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('user', { size: 15 })} Zobrazit profil</button>
         <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">${icon('chart', { size: 15 })} Statistiky</button>
         <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Přidat akci</button>
       </div>
-      ${!selected.is_verified && !isPending ? `
+      ${!Number(selected.is_verified) && !isPending ? `
         <div style="padding:0 16px 10px">
           <button class="profile-action-btn" data-action="open-verification-request" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
             ${icon('shield', { size: 15 })} Ověřit účet firmy
           </button>
         </div>
       ` : ''}
-      ${!selected.is_verified && isPending ? `
-        <p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">
-          ⏳ Žádost o ověření čeká na schválení administrátorem.
-        </p>
+      ${!Number(selected.is_verified) && isPending ? `
+        <p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">⏳ Žádost o ověření čeká na schválení.</p>
       ` : ''}
-      ${selected.is_verified ? `
-        <p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">
-          ✓ Profil je ověřený
-        </p>
+      ${Number(selected.is_verified) ? `
+        <p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">✓ Profil je ověřený</p>
       ` : ''}
     </div>
 
@@ -390,6 +362,15 @@ function renderBusinessDashboard() {
         </div>
         <div id="file-preview-grid" class="file-preview-grid"></div>
         ${renderRichEditor('text_html', 'Co je nového?')}
+
+        <div class="post-link-fields">
+          <p class="post-link-fields-title">${icon('globe', { size: 14 })} Přidat odkaz (nepovinné)</p>
+          <div class="post-link-row">
+            <input class="form-input" type="url" name="link_url" placeholder="https://…" />
+            <input class="form-input" type="text" name="link_text" placeholder="Text odkazu" maxlength="40" />
+          </div>
+        </div>
+
         <div style="display:flex;gap:8px;margin-bottom:14px;">
           <button type="button" class="profile-action-btn" data-action="attach-geo" data-geo-label>${icon('location', { size: 15 })} Přidat polohu</button>
         </div>
@@ -459,7 +440,17 @@ async function handleBusinessPostSubmit(form) {
   fd.set('business_id', businessId);
   fd.set('target_feed', targetFeed);
 
-  const html = getEditorHtml(form);
+  let html = getEditorHtml(form);
+
+  // Pridať odkaz z formulárových polí
+  const linkUrl = (form.querySelector('[name="link_url"]')?.value || '').trim();
+  const linkText = (form.querySelector('[name="link_text"]')?.value || '').trim();
+  if (linkUrl) {
+    const safeUrl = /^https?:\/\//i.test(linkUrl) ? linkUrl : 'https://' + linkUrl;
+    const label = linkText || safeUrl;
+    html += `<p><a href="${escapeAttr(safeUrl)}">${escapeHtml(label)}</a></p>`;
+  }
+
   fd.set('text_html', html);
   fd.set('text', html.replace(/<[^>]*>/g, ' ').trim());
 
@@ -485,10 +476,7 @@ async function handleBusinessPostSubmit(form) {
   }
 }
 
-// ============================================================
 // STATISTIKY
-// ============================================================
-
 async function openProfileStats(kind, id) {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'profile-stats', kind, id };
@@ -533,10 +521,7 @@ function renderProfileStatsOverlay() {
     </div>`;
 }
 
-// ============================================================
-// FORGOT / RESET / 2FA
-// ============================================================
-
+// FORGOT / RESET / 2FA login
 function renderForgotPasswordOverlay() {
   return `
     <div class="page-scroll">
@@ -601,7 +586,6 @@ function renderTwoFAOverlay() {
     <div class="page-scroll">
       ${renderBackHeader('Dvoufázové ověření')}
       <div class="auth-card">
-        <p style="font-size:13.5px;color:var(--c-text-muted);margin-bottom:16px;">Zadej 6místný kód z autentizační aplikace, nebo použij záložní kód.</p>
         <form data-action="submit-2fa-login">
           <div class="form-field"><label class="form-label">Kód</label><input class="form-input" name="code" required autofocus autocomplete="one-time-code" /></div>
           <button class="form-submit-btn" type="submit">Ověřit a přihlásit</button>
@@ -618,10 +602,7 @@ async function handleTwoFALogin(form) {
   } catch (err) { showToast(err.message); }
 }
 
-// ============================================================
-// ADMIN PANEL
-// ============================================================
-
+// ADMIN
 async function loadAdminPending() {
   try { state.adminPending = await apiGet('/api/admin/pending'); }
   catch { state.adminPending = { organizations: [], accommodation: [], restaurants: [] }; }
@@ -640,10 +621,17 @@ async function loadAdminVerifications() {
   finally { if (state.tab === 'account') renderApp(); }
 }
 
+async function loadAdminPosts() {
+  try { const d = await apiGet('/api/admin/posts'); state.adminPosts = d.posts || []; }
+  catch { state.adminPosts = []; }
+  finally { if (state.tab === 'account') renderApp(); }
+}
+
 function renderAdminPanel() {
   if (state.adminPending === null && !state.adminPendingLoading) { state.adminPendingLoading = true; loadAdminPending(); }
   if (state.adminReports === null && !state.adminReportsLoading) { state.adminReportsLoading = true; loadAdminReports(); }
   if (state.adminVerifications === null) loadAdminVerifications();
+  if (state.adminPosts === null) loadAdminPosts();
 
   const pending = state.adminPending;
   const items = pending ? [
@@ -653,6 +641,7 @@ function renderAdminPanel() {
   ] : [];
 
   const verifs = state.adminVerifications;
+  const posts = state.adminPosts;
 
   return `
     <div class="profile-section">
@@ -663,16 +652,32 @@ function renderAdminPanel() {
           <div class="admin-list-item" style="flex-direction:column;align-items:stretch;gap:8px">
             <div class="admin-list-info">
               <p class="admin-list-title">${escapeHtml(v.user_name || v.user_handle || 'Uživatel')}</p>
-              <p class="admin-list-meta">Podnik ID: ${escapeHtml(v.business_id)} · ${v.business_kind}</p>
-              <p class="admin-list-meta">${escapeHtml(v.user_email || '')}</p>
+              <p class="admin-list-meta">Podnik: ${escapeHtml(v.business_id)} · ${v.business_kind}</p>
+              <p class="admin-list-meta">E-mail: ${escapeHtml(v.user_email || '')}</p>
               ${v.note ? `<p class="admin-list-meta" style="font-style:italic">„${escapeHtml(v.note)}"</p>` : ''}
               <p class="admin-list-meta">Předloženo: ${timeAgo(v.created_at)}</p>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <a class="profile-action-btn" href="${escapeAttr(v.doc_url)}" target="_blank" rel="noopener">${icon('image', { size: 14 })} Zobrazit dokument</a>
+              ${v.doc_url
+                ? `<a class="profile-action-btn" href="${escapeAttr(v.doc_url)}" target="_blank" rel="noopener">${icon('image', { size: 14 })} Otevřít dokument</a>`
+                : '<span class="admin-list-meta" style="color:#B3273C">⚠ Bez dokumentu</span>'}
               <button class="admin-approve-btn" data-action="approve-verification" data-id="${v.id}">Schválit</button>
               <button class="admin-delete-btn" data-action="reject-verification" data-id="${v.id}">Zamítnout</button>
             </div>
+          </div>`).join('')}
+    </div>
+
+    <div class="profile-section">
+      <h3 class="profile-section-title">Nedávné příspěvky (${posts ? posts.length : '…'})</h3>
+      ${posts === null ? '<p class="empty-state">Načítám…</p>'
+        : posts.length === 0 ? '<p class="empty-state">Žádné příspěvky.</p>'
+        : posts.map((p) => `
+          <div class="admin-list-item">
+            <div class="admin-list-info">
+              <p class="admin-list-title">${escapeHtml((p.text_content || '').slice(0, 60) || '(bez textu)')}</p>
+              <p class="admin-list-meta">${escapeHtml(p.business_name || '')} · ${p.target_feed} · ${timeAgo(p.created_at)}</p>
+            </div>
+            <button class="admin-delete-btn" data-action="delete-admin-post" data-id="${p.id}">Smazat</button>
           </div>`).join('')}
     </div>
 
@@ -706,7 +711,7 @@ function renderAdminPanel() {
 
     <div class="profile-section">
       <h3 class="profile-section-title">Nástroje</h3>
-      <button class="settings-row" data-action="admin-backfill-handles">${icon('edit', { size: 17 })} Doplň handles existujícím uživatelům</button>
+      <button class="settings-row" data-action="admin-backfill-handles">${icon('edit', { size: 17 })} Doplň handles uživatelům</button>
       <button class="settings-row" data-action="admin-seed-test">${icon('plus', { size: 17 })} Vytvořit testovací obsah</button>
       <button class="settings-row" data-action="admin-cleanup-test" style="color:#B3273C">${icon('trash', { size: 17 })} Odstranit testovací obsah</button>
     </div>`;
@@ -722,15 +727,43 @@ async function verifyBusiness(kind, id) {
   } catch (err) { showToast(err.message); }
 }
 
-async function deleteReportedPost(postId, reportId) {
-  if (!confirm('Skrýt tento příspěvek?')) return;
-  try {
-    await apiDelete(`/api/admin/posts/${postId}`);
-    showToast('Odstraněno.');
-    state.adminReports = null;
-    state.adminReportsLoading = false;
-    renderApp();
-  } catch (err) { showToast(err.message); }
+function deleteReportedPost(postId, reportId) {
+  openModal({
+    title: 'Smazat nahlášený příspěvek?',
+    body: `<p style="font-size:14px;line-height:1.6">Příspěvek bude skryt ze všech feedů.</p>`,
+    submitLabel: 'Smazat',
+    danger: true,
+    onSubmit: async () => {
+      state._modalLoading = true; renderApp();
+      try {
+        await apiDelete(`/api/admin/posts/${postId}`);
+        closeModal();
+        showToast('Odstraněno.');
+        state.adminReports = null;
+        state.adminReportsLoading = false;
+        renderApp();
+      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
+    },
+  });
+}
+
+function deleteAdminPost(postId) {
+  openModal({
+    title: 'Smazat příspěvek?',
+    body: `<p style="font-size:14px;line-height:1.6">Příspěvek bude skryt ze všech feedů.</p>`,
+    submitLabel: 'Smazat',
+    danger: true,
+    onSubmit: async () => {
+      state._modalLoading = true; renderApp();
+      try {
+        await apiDelete(`/api/admin/posts/${postId}`);
+        closeModal();
+        showToast('Odstraněno.');
+        state.adminPosts = null;
+        renderApp();
+      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
+    },
+  });
 }
 
 async function approveVerification(id) {
@@ -757,7 +790,7 @@ async function adminBackfillHandles() {
   if (!confirm('Doplnit handles všem uživatelům bez handle?')) return;
   try {
     const r = await apiPost('/api/admin/backfill-handles', {});
-    showToast(`Hotovo: ${r.updated} / ${r.total} (chyby: ${r.failed})`);
+    showToast(`Hotovo: ${r.updated} / ${r.total}`);
   } catch (err) { showToast(err.message); }
 }
 
@@ -772,15 +805,12 @@ async function adminSeedTest() {
 async function adminCleanupTest() {
   if (!confirm('Smazat všechen testovací obsah (prefix test_)?')) return;
   try {
-    const r = await apiPost('/api/admin/cleanup-test-content', {});
+    await apiPost('/api/admin/cleanup-test-content', {});
     showToast('Testovací obsah odstraněn.');
   } catch (err) { showToast(err.message); }
 }
 
-// ============================================================
-// VERIFICATION REQUEST (firemný účet)
-// ============================================================
-
+// VERIFICATION REQUEST
 function openVerificationRequest(kind, id, name) {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'verification-request', kind, id, name, docFile: null, uploading: false };
@@ -795,17 +825,14 @@ function renderVerificationRequestOverlay() {
       <div class="profile-section">
         <p style="font-size:14px;line-height:1.6;margin-bottom:14px">
           Nahraj dokument, který potvrzuje, že provozuješ <strong>${escapeHtml(o.name)}</strong>.
-          Může to být výpis z rejstříku, živnostenský list, faktura s IČO, oficiální e-mailová komunikace atd.
         </p>
         <p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:14px">
-          📄 PDF, JPG, PNG nebo WebP (max 10 MB). Administrátor obvykle odpoví do 48 hodin.
+          📄 PDF, JPG, PNG nebo WebP (max 10 MB).
         </p>
         <form data-action="submit-verification-request" data-kind="${o.kind}" data-id="${o.id}">
           <div class="file-drop ${o.docFile ? 'has-file' : ''}" data-action="trigger-verif-doc">
             <input type="file" accept="application/pdf,image/*" id="verif-doc-input" data-action="verif-doc-selected" style="display:none" />
-            ${o.docFile
-              ? `✓ ${escapeHtml(o.docFile.name)}`
-              : `${icon('image', { size: 24 })}<br/>Klikni pro výběr dokumentu`}
+            ${o.docFile ? `✓ ${escapeHtml(o.docFile.name)}` : `${icon('image', { size: 24 })}<br/>Klikni pro výběr dokumentu`}
           </div>
           <div class="form-field">
             <label class="form-label">Poznámka pro administrátora (nepovinné)</label>
@@ -857,9 +884,7 @@ async function handleVerificationSubmit(form) {
   }
 }
 
-// ============================================================
-// PUSH TOGGLE
-// ============================================================
+// PUSH
 async function handlePushToggle(checked) {
   if (checked) await enablePushNotifications();
   else await disablePushNotifications();
