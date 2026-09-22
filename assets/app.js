@@ -28,6 +28,7 @@ const state = {
   adminPending: null, adminPendingLoading: false,
   adminReports: null, adminReportsLoading: false,
   adminVerifications: null,
+  adminPosts: null,
 
   notifications: null,
   unreadNotifications: 0,
@@ -49,6 +50,7 @@ const state = {
   _userBadges: null, _userCheckins: null, _businessCheckins: null,
   _checkinStatus: undefined, _wishlistStatus: undefined,
   _verificationStatus: undefined,
+  _userProfileCheckins: null,
 
   _onboarding: null,
   _cookieConsent: false,
@@ -56,8 +58,8 @@ const state = {
   _editingPost: null,
   _storyReplyOpen: null,
 
-  threads: null, threadCurrent: null, threadMessages: null,
-  groupsMy: null, groupsDiscover: null, groupCurrent: null,
+  _modal: null,
+  _modalLoading: false,
 
   lightbox: null,
   loading: {},
@@ -242,17 +244,48 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
 }
 
 // ============================================================
-// HLAVNÝ RENDER — s ochranou focusu search inputu
+// MODAL
+// ============================================================
+function openModal(opts) {
+  state._modal = opts || {};
+  renderApp();
+}
+function closeModal() {
+  state._modal = null;
+  state._modalLoading = false;
+  renderApp();
+}
+function renderModal() {
+  const m = state._modal;
+  if (!m) return '';
+  return `
+    <div class="modal-scrim" data-action="close-modal-scrim">
+      <div class="modal-sheet" data-modal-sheet>
+        <div class="modal-head">
+          <h3>${escapeHtml(m.title || '')}</h3>
+          <button class="modal-close" data-action="close-modal" aria-label="Zavřít">${icon('close', { size: 20 })}</button>
+        </div>
+        <form class="modal-form" data-action="submit-modal">
+          <div class="modal-body">${m.body || ''}</div>
+          <div class="modal-actions">
+            <button type="button" class="modal-btn modal-btn-cancel" data-action="close-modal">Zrušit</button>
+            <button type="submit" class="modal-btn ${m.danger ? 'modal-btn-danger' : 'modal-btn-primary'}" ${state._modalLoading ? 'disabled' : ''}>
+              ${state._modalLoading ? 'Zpracovávám…' : escapeHtml(m.submitLabel || 'Potvrdit')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+}
+
+// ============================================================
+// HLAVNÝ RENDER
 // ============================================================
 function renderApp() {
   const _active = document.activeElement;
   let _searchFocus = null;
   if (_active && _active.dataset && _active.dataset.action === 'search-change') {
-    _searchFocus = {
-      feed: _active.dataset.feed,
-      selStart: _active.selectionStart || 0,
-      selEnd: _active.selectionEnd || 0,
-    };
+    _searchFocus = { feed: _active.dataset.feed, selStart: _active.selectionStart || 0, selEnd: _active.selectionEnd || 0 };
   }
   let _otherFocus = null;
   if (_active && _active.dataset && _active.dataset.action && _active.dataset.action !== 'search-change') {
@@ -282,10 +315,6 @@ function renderApp() {
   else if (state.overlay?.type === 'forgot') pageHtml = renderForgotPasswordOverlay();
   else if (state.overlay?.type === 'reset-password') pageHtml = renderResetPasswordOverlay(state.overlay.token);
   else if (state.overlay?.type === 'login-logs') pageHtml = renderLoginLogsOverlay();
-  else if (state.overlay?.type === 'threads') pageHtml = renderThreadsOverlay();
-  else if (state.overlay?.type === 'thread') pageHtml = renderThreadOverlay();
-  else if (state.overlay?.type === 'groups') pageHtml = renderGroupsOverlay();
-  else if (state.overlay?.type === 'group') pageHtml = renderGroupDetailOverlay();
   else if (state.overlay?.type === 'story-viewer') pageHtml = renderStoryViewerOverlay();
   else if (state.overlay?.type === 'create-story') pageHtml = renderCreateStoryOverlay();
   else if (state.overlay?.type === 'create-event') pageHtml = renderCreateEventOverlay();
@@ -319,7 +348,8 @@ function renderApp() {
       ${hideAll ? '' : renderBottomNav()}
       ${hideLightbox ? '' : renderLightbox()}
       ${hideCookieBanner ? '' : renderCookieBanner()}
-    </div>`;
+    </div>
+    ${renderModal()}`;
 
   applySeo();
 
@@ -381,6 +411,7 @@ function openProfile(kind, id) {
   state._bizProfileTab = 'posts'; state._bizEvents = null; state._bizStats = null;
   state._reviews = null; state._myReview = null;
   state._checkinStatus = undefined; state._wishlistStatus = undefined; state._verificationStatus = undefined;
+  state._userProfileCheckins = undefined;
   renderApp();
   window.scrollTo(0, 0);
 }
@@ -396,16 +427,12 @@ function openFollowers(kind, id) { state.overlay = { type: 'followers', kind, id
 function openFollowing() { state.overlay = { type: 'following' }; renderApp(); loadFollowing(); }
 function openForgotPassword() { state.overlay = { type: 'forgot' }; renderApp(); }
 function openLoginLogs() { state.overlay = { type: 'login-logs' }; renderApp(); loadLoginLogs(); }
-function openThreads() { state.overlay = { type: 'threads' }; renderApp(); loadThreads(); }
-function openGroups() { state.overlay = { type: 'groups' }; renderApp(); loadGroupsMy(); loadGroupsDiscover(); }
 function openBookmarks() { state.overlay = { type: 'bookmarks' }; state._bookmarks = null; renderApp(); loadBookmarks(); }
 function openBadges() { state.overlay = { type: 'badges' }; state._userBadges = null; renderApp(); if (isLoggedIn()) loadUserBadges(state.user.id); }
 function openUserCheckins(userId) { state.overlay = { type: 'user-checkins', userId }; state._userCheckins = null; renderApp(); loadUserCheckins(userId); }
 function openWishlist() { state.overlay = { type: 'wishlist' }; state._wishlist = null; renderApp(); loadWishlist(); }
 
-function persistTab(tab) {
-  try { localStorage.setItem('naskraj_tab', tab); } catch {}
-}
+function persistTab(tab) { try { localStorage.setItem('naskraj_tab', tab); } catch {} }
 function restoreTab() {
   try {
     const t = localStorage.getItem('naskraj_tab');
@@ -428,13 +455,7 @@ function switchTab(tab) {
   if (tab === 'account' && isLoggedIn()) loadNotifications();
 }
 
-// ============================================================
 // LIGHTBOX
-// ============================================================
-// ============================================================
-// LIGHTBOX s info panelom
-// ============================================================
-
 function openLightbox(images, index = 0, caption = '', post = null) {
   state.lightbox = {
     images,
@@ -479,12 +500,9 @@ function updateLightboxDOM() {
     counter.textContent = lb.images.length > 1 ? `${lb.index + 1} / ${lb.images.length}` : '';
     counter.style.display = lb.images.length > 1 ? '' : 'none';
   }
-
-  // Šípky — viditeľné len ak viac ako 1 fotka
   if (navPrev) navPrev.style.display = lb.images.length > 1 ? '' : 'none';
   if (navNext) navNext.style.display = lb.images.length > 1 ? '' : 'none';
 
-  // Info panel
   if (info) {
     const post = lb.post;
     if (!post) {
@@ -498,12 +516,12 @@ function updateLightboxDOM() {
             ${(biz.name || '?').charAt(0).toUpperCase()}
           </button>
           <div style="flex:1;min-width:0">
-            <p class="post-author">${escapeHtml(biz.name || '')} ${biz.is_verified ? icon('check', { size: 12, className: 'verified-badge-inline' }) : ''}</p>
+            <p class="post-author">${escapeHtml(biz.name || '')} ${Number(biz.is_verified) ? icon('check', { size: 12, className: 'verified-badge-inline' }) : ''}</p>
             <p class="post-time">${biz.city ? `${escapeHtml(biz.city)}, ` : ''}${biz.district ? escapeHtml(biz.district) : ''} · ${timeAgo(post.created_at)}</p>
           </div>
         </header>
         <div class="lightbox-post-body">
-          <p class="lightbox-post-text rich-text">${shortenLinksInHtml(post.html || escapeHtml(post.text || ''))}</p>
+          <div class="lightbox-post-text rich-text">${shortenLinksInHtml(post.html || escapeHtml(post.text || ''))}</div>
           ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
         </div>
         <div class="lightbox-post-actions">
@@ -576,8 +594,11 @@ function acceptCookies() {
 })();
 
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (state.lightbox) { closeLightbox(); return; }
+    if (state._modal) { closeModal(); return; }
+  }
   if (!state.lightbox) return;
   if (e.key === 'ArrowRight') lightboxNext();
   else if (e.key === 'ArrowLeft') lightboxPrev();
-  else if (e.key === 'Escape') closeLightbox();
 });
