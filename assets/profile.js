@@ -706,4 +706,205 @@ function renderFollowersOverlay() {
 async function loadFollowing() {
   try { const data = await apiGet('/api/profile/me/following'); state._following = data.items || []; }
   catch { state._following = []; }
-  if (state.overlay?.
+  if (state.overlay?.type === 'following') renderApp();
+}
+
+function renderFollowingOverlay() {
+  const list = state._following;
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader('Sleduji')}
+      <div class="profile-section">
+        ${list == null ? '<p class="empty-state">Načítám…</p>'
+          : list.length === 0 ? '<p class="empty-state">Zatím nikoho nesleduješ.</p>'
+          : list.map((it) => {
+            const kind = it.target_type;
+            const name = it.user_name || it.org_name || it.acc_name || it.rest_name || '?';
+            return `<button class="user-list-item" data-action="open-profile" data-kind="${kind}" data-id="${it.target_id}">
+              <span class="user-list-avatar user-list-avatar-init">${name.charAt(0).toUpperCase()}</span>
+              <div style="flex:1">
+                <p class="user-list-name">${escapeHtml(name)}</p>
+                ${it.user_handle ? `<p class="user-list-meta">@${escapeHtml(it.user_handle)}</p>` : ''}
+              </div>
+              ${icon('chevronRight', { size: 16 })}
+            </button>`;
+          }).join('')}
+      </div>
+    </div>`;
+}
+
+async function loadBlocks() {
+  try { const data = await apiGet('/api/profile/me/blocks'); state._blocks = data.users || []; }
+  catch { state._blocks = []; }
+  if (state.overlay?.type === 'blocks') renderApp();
+}
+
+function renderBlocksOverlay() {
+  const list = state._blocks;
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader('Blokovaní uživatelé')}
+      <div class="profile-section">
+        ${list == null ? '<p class="empty-state">Načítám…</p>'
+          : list.length === 0 ? '<p class="empty-state">Nikoho nemáš blokovaného.</p>'
+          : list.map((u) => `
+            <div class="user-list-item">
+              <span class="user-list-avatar user-list-avatar-init">${(u.display_name || '?').charAt(0).toUpperCase()}</span>
+              <div style="flex:1"><p class="user-list-name">${escapeHtml(u.display_name || '')}</p></div>
+              <button class="admin-delete-btn" data-action="unblock-user" data-id="${u.id}">Odblokovat</button>
+            </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+async function unblockUser(id) {
+  try { await apiDelete(`/api/profile/block/${id}`); state._blocks = null; loadBlocks(); showToast('Odblokováno.'); }
+  catch (err) { showToast(err.message); }
+}
+
+function blockUser(id) {
+  openModal({
+    title: 'Zablokovat uživatele?',
+    body: `<p style="font-size:14px;line-height:1.6">Nebude ti moci psát, sledovat tě ani vidět v feedu.</p>`,
+    submitLabel: 'Zablokovat',
+    danger: true,
+    onSubmit: async () => {
+      state._modalLoading = true; renderApp();
+      try {
+        await apiPost(`/api/profile/block/${id}`, {});
+        closeModal();
+        showToast('Zablokováno.');
+        closeOverlay();
+      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
+    },
+  });
+}
+
+// NOTIFIKÁCIE
+async function loadNotifications() {
+  if (!isLoggedIn()) return;
+  try {
+    const data = await apiGet('/api/profile/me/notifications');
+    state.notifications = data.notifications || [];
+    state.unreadNotifications = data.unread || 0;
+    if (state.overlay?.type === 'notifications' || state.tab === 'account') renderApp();
+  } catch {}
+}
+
+function renderNotificationsOverlay() {
+  const list = state.notifications;
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader('Notifikace', list && list.some((n) => !n.read_at)
+        ? `<button class="header-icon-btn" data-action="read-all-notifications">${icon('check', { size: 19 })}</button>` : '')}
+      <div class="profile-section">
+        ${list == null ? '<p class="empty-state">Načítám…</p>'
+          : list.length === 0 ? '<p class="empty-state">Žádné notifikace.</p>'
+          : list.map((n) => `
+            <div class="notif-item ${n.read_at ? '' : 'is-unread'}">
+              ${n.actor_avatar ? `<img class="user-list-avatar" src="${n.actor_avatar}" alt="" />`
+                : `<span class="user-list-avatar user-list-avatar-init">${(n.actor_name || '?').charAt(0).toUpperCase()}</span>`}
+              <div style="flex:1">
+                <p class="notif-text"><strong>${escapeHtml(n.actor_name || 'Někdo')}</strong> ${escapeHtml(n.text || '')}</p>
+                <p class="notif-time">${timeAgo(n.created_at)}</p>
+              </div>
+              ${!n.read_at ? `<span class="notif-dot"></span>` : ''}
+            </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+async function markAllNotificationsRead() {
+  try { await apiPost('/api/profile/me/notifications/read-all', {}); } catch {}
+  state.unreadNotifications = 0;
+  loadNotifications();
+}
+
+// SEARCH
+let _searchTimer = null;
+
+function renderSearchOverlay() {
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader('Vyhledávání')}
+      <div class="filter-bar">
+        <div class="search-input-wrap">${icon('search', { size: 17 })}
+          <input class="search-input" type="search" placeholder="Hledat organizace, podniky, lidi…" data-action="search-global" value="${escapeAttr(state._searchQuery || '')}" autofocus />
+        </div>
+      </div>
+      <div class="profile-section">
+        ${state._searchResults == null ? '<p class="empty-state">Začni psát…</p>'
+          : state._searchResults.length === 0 ? '<p class="empty-state">Nic nenalezeno.</p>'
+          : state._searchResults.map((r) => {
+            let kind = r.kind;
+            if (kind === 'restaurants') kind = 'gastro';
+            return `<button class="user-list-item" data-action="open-profile" data-kind="${kind}" data-id="${r.id}">
+              <span class="user-list-avatar user-list-avatar-init">${(r.name || '?').charAt(0).toUpperCase()}</span>
+              <div style="flex:1">
+                <p class="user-list-name">${escapeHtml(r.name || '')}</p>
+                ${r.handle ? `<p class="user-list-meta">@${escapeHtml(r.handle)}</p>` : ''}
+                <p class="user-list-meta">${r.kind === 'users' ? 'Uživatel' : r.kind === 'organizations' ? 'Organizace' : r.kind === 'accommodation' ? 'Ubytování' : 'Gastro'}${r.city ? ` · ${r.city}` : ''}</p>
+              </div>
+              ${icon('chevronRight', { size: 16 })}
+            </button>`;
+          }).join('')}
+      </div>
+    </div>`;
+}
+
+function onGlobalSearchInput(value) {
+  state._searchQuery = value;
+  clearTimeout(_searchTimer);
+  if (!value || value.length < 2) { state._searchResults = null; renderApp(); return; }
+  _searchTimer = setTimeout(async () => {
+    try { const data = await apiGet(`/api/profile/search?q=${encodeURIComponent(value)}`); state._searchResults = data.results || []; }
+    catch { state._searchResults = []; }
+    renderApp();
+  }, 350);
+}
+
+// GDPR
+async function exportMyData() {
+  try {
+    const data = await apiGet('/api/profile/me/export');
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `naskraj-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Data stažena.');
+  } catch (err) { showToast(err.message); }
+}
+
+function promptDeleteAccount() {
+  openModal({
+    title: 'Smazat účet',
+    body: `
+      <p style="font-size:14px;line-height:1.6;margin-bottom:12px">Účet bude anonymizován, veškerá osobní data vymazána. Tato akce je nevratná.</p>
+      <div class="form-field">
+        <label class="form-label">Pro potvrzení napiš: SMAZAT</label>
+        <input class="form-input" name="confirm" autocomplete="off" required />
+      </div>`,
+    submitLabel: 'Smazat účet',
+    danger: true,
+    onSubmit: async (data) => {
+      if ((data.confirm || '').trim() !== 'SMAZAT') {
+        showToast('Musíš napsat přesně "SMAZAT".');
+        return;
+      }
+      state._modalLoading = true; renderApp();
+      try {
+        await apiDelete('/api/profile/me/account', { confirm: 'SMAZAT' });
+      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); return; }
+      clearToken();
+      clearStoredUser();
+      state.token = null;
+      state.user = null;
+      state.businesses = [];
+      closeModal();
+      showToast('Účet smazán.');
+    },
+  });
+}
