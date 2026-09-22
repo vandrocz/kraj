@@ -1808,3 +1808,249 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .post-image-wrap {
   cursor: pointer;
 }
+
+/* ============================================================
+   OPRAVY VÁRKA 7
+   ============================================================ */
+
+/* --- A. MODAL --- */
+.modal-scrim {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(6,14,10,0.7);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 0;
+  animation: fadeIn .15s ease;
+}
+@media (min-width: 720px) { .modal-scrim { align-items: center; padding: 24px; } }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal-sheet {
+  background: var(--c-surface);
+  width: 100%; max-width: 480px;
+  max-height: 92vh; overflow-y: auto;
+  border-radius: 24px 24px 0 0;
+  animation: sheet-up .22s cubic-bezier(.32,.72,0,1);
+}
+@media (min-width: 720px) { .modal-sheet { border-radius: var(--radius-lg); max-height: 80vh; } }
+
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--c-border);
+}
+.modal-head h3 { font-size: 17px; font-weight: 800; }
+.modal-close {
+  width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--c-text-muted); background: var(--c-bg);
+}
+.modal-body { padding: 18px 20px 8px; }
+.modal-actions {
+  display: flex; gap: 8px; padding: 12px 20px 20px;
+  border-top: 1px solid var(--c-border);
+}
+.modal-btn {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  font-size: 14px; font-weight: 700;
+  cursor: pointer;
+}
+.modal-btn-cancel { background: var(--c-bg); color: var(--c-text); border: 1px solid var(--c-border); }
+.modal-btn-primary { background: var(--c-primary); color: white; }
+.modal-btn-danger { background: #B3273C; color: white; }
+.modal-btn:disabled { opacity: 0.6; cursor: wait; }
+
+/* --- B. LIGHTBOX na mobile — svetlejšie, menšie okolie, menší info panel --- */
+@media (max-width: 899px) {
+  .lightbox.is-open { padding: 0; }
+  .lightbox-inner {
+    background: #0e1713;
+    border-radius: 0;
+    max-height: 100vh;
+    height: 100vh;
+    max-width: 100%;
+  }
+  .lightbox-image-pane {
+    background: #0e1713;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .lightbox-img {
+    max-height: 100%;
+    max-width: 100%;
+    width: auto;
+    height: auto;
+  }
+  .lightbox-info-pane {
+    background: var(--c-surface);
+    color: var(--c-text);
+    max-height: 32vh;
+    padding: 14px 16px 18px;
+    border-top: 1px solid var(--c-border);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -12px 30px rgba(0,0,0,0.35);
+    margin-top: -16px;
+    position: relative;
+    z-index: 2;
+  }
+  .lightbox-post-head { padding-bottom: 10px; margin-bottom: 10px; }
+  .lightbox-post-body { max-height: 130px; font-size: 13.5px; }
+  .lightbox-post-actions { padding-top: 10px; margin-top: 10px; }
+  .lightbox-close { top: 12px; right: 12px; background: rgba(255,255,255,0.2); }
+  .lightbox-counter { top: 12px; left: 12px; transform: none; }
+  .lightbox-nav {
+    top: auto; bottom: 42vh; transform: none;
+    width: 42px; height: 42px;
+    background: rgba(0,0,0,0.55);
+  }
+  .lightbox-prev { left: 16px; }
+  .lightbox-next { right: 16px; }
+  .lightbox-caption { color: var(--c-text); font-size: 13.5px; }
+}
+
+/* --- C. BIZ PROFIL: hlavička s bielym názvom a tieňom --- */
+.profile-cover { position: relative; }
+.profile-cover-fade {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 60%;
+  background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.55) 100%);
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.profile-biz-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 0 20px;
+  margin-top: -56px;
+  position: relative;
+  z-index: 2;
+}
+
+.profile-biz-info {
+  padding: 8px 12px 10px;
+  border-radius: var(--radius-md);
+  margin-left: -8px;
+  flex: 1;
+  min-width: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.55) 100%);
+  backdrop-filter: blur(6px);
+}
+
+.profile-biz-name {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.2;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.75), 0 0 2px rgba(0,0,0,0.5);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.profile-verified-badge {
+  background: rgba(255,255,255,0.95) !important;
+  color: var(--c-primary) !important;
+}
+
+.profile-biz-info .profile-biz-type,
+.profile-biz-info .profile-biz-loc {
+  color: rgba(255,255,255,0.85) !important;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+
+.profile-biz-info .profile-rating-row { color: rgba(255,255,255,0.9); }
+.profile-biz-info .profile-rating-row span { color: rgba(255,255,255,0.85) !important; }
+.profile-biz-info .stars { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
+
+/* Ak cover nie je, hlavička má svetlé pozadie a text tmavý */
+.profile-cover[style*="background-image"] + .profile-biz-head .profile-biz-info,
+.profile-biz-head .profile-biz-info {
+  /* fallback bez cover */
+}
+
+/* Ak je profile-cover bez background-image (bez cover), biely text nevidno — detekcia cez :not() nie je možná, riešime cez default cover gradient */
+
+/* --- D. ODKAZY VO FORMULÁRI PRIDANIA PRÍSPEVKU --- */
+.post-link-fields {
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.post-link-fields-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--c-text-muted);
+  margin-bottom: 8px;
+}
+.post-link-row {
+  display: flex;
+  gap: 8px;
+  flex-direction: column;
+}
+@media (min-width: 720px) {
+  .post-link-row { flex-direction: row; }
+  .post-link-row .form-input:first-child { flex: 2; }
+  .post-link-row .form-input:last-child { flex: 1; }
+}
+
+/* --- E. USER PROFILE: navštívené miesta grid --- */
+.user-checkin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+@media (min-width: 480px) {
+  .user-checkin-grid { grid-template-columns: repeat(3, 1fr); }
+}
+.user-checkin-item {
+  position: relative;
+  aspect-ratio: 1/1;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--c-border);
+  padding: 0;
+  border: none;
+  cursor: pointer;
+}
+.user-checkin-item img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.user-checkin-initial {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(155deg, var(--c-primary-dark), var(--c-primary));
+  color: white; font-weight: 800; font-size: 28px;
+}
+.user-checkin-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 8px 10px 10px;
+  background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.75) 100%);
+  color: white;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.user-checkin-name {
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-checkin-time {
+  font-size: 10.5px;
+  opacity: 0.85;
+}
