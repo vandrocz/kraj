@@ -35,7 +35,6 @@ function escapePlain(t) {
   return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// SEARCH
 profileRoutes.get('/search', async (c) => {
   const user = c.get('user');
   const q = (c.req.query('q') || '').trim();
@@ -72,7 +71,6 @@ profileRoutes.get('/search', async (c) => {
   return c.json({ results: filtered });
 });
 
-// FOLLOW
 profileRoutes.post('/follow', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -135,7 +133,6 @@ profileRoutes.get('/me/following', async (c) => {
   return c.json({ items: results });
 });
 
-// BLOCKS
 profileRoutes.post('/block/:id', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -162,26 +159,36 @@ profileRoutes.get('/me/blocks', async (c) => {
   return c.json({ users: results });
 });
 
-// SETTINGS
 profileRoutes.get('/me/settings', async (c) => {
   const user = c.get('user');
-  const row = await c.env.DB.prepare(`SELECT settings_json FROM users WHERE id = ?`).bind(user.sub).first();
-  let settings = { push_notifications: true, email_notifications: true, public_profile: true, show_contributions: true };
+  const row = await c.env.DB.prepare(`SELECT settings_json, public_checkins FROM users WHERE id = ?`).bind(user.sub).first();
+  let settings = { push_notifications: true, email_notifications: true, public_profile: true, show_contributions: true, public_checkins: true };
   if (row?.settings_json) { try { settings = { ...settings, ...JSON.parse(row.settings_json) }; } catch {} }
+  // Public checkins je aj samostatný stĺpec
+  if (row && row.public_checkins != null) settings.public_checkins = !!row.public_checkins;
   return c.json({ settings });
 });
 
 profileRoutes.patch('/me/settings', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
-  const allowed = ['push_notifications', 'email_notifications', 'public_profile', 'show_contributions'];
-  const settings = {};
+  const allowed = ['push_notifications', 'email_notifications', 'public_profile', 'show_contributions', 'public_checkins'];
+  const row = await c.env.DB.prepare(`SELECT settings_json FROM users WHERE id = ?`).bind(user.sub).first();
+  let settings = {};
+  if (row?.settings_json) { try { settings = JSON.parse(row.settings_json); } catch {} }
   for (const k of allowed) if (k in body) settings[k] = !!body[k];
+
+  // Public checkins uložíme aj do samostatného stĺpca (rýchlejší read na profile)
+  if ('public_checkins' in body) {
+    try {
+      await c.env.DB.prepare(`UPDATE users SET public_checkins = ? WHERE id = ?`).bind(body.public_checkins ? 1 : 0, user.sub).run();
+    } catch {}
+  }
+
   await c.env.DB.prepare(`UPDATE users SET settings_json = ? WHERE id = ?`).bind(JSON.stringify(settings), user.sub).run();
   return c.json({ ok: true, settings });
 });
 
-// UPDATE USER
 profileRoutes.patch('/me/user', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -247,7 +254,6 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
   return c.json({ business: updated });
 });
 
-// UPLOAD
 profileRoutes.post('/me/upload', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -337,7 +343,6 @@ profileRoutes.get('/me/verification-status/:kind/:id', async (c) => {
   return c.json({ request: req || null });
 });
 
-// DELETE ACCOUNT
 profileRoutes.delete('/me/account', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -357,7 +362,6 @@ profileRoutes.delete('/me/account', async (c) => {
   return c.json({ ok: true });
 });
 
-// EXPORT
 profileRoutes.get('/me/export', async (c) => {
   const user = c.get('user');
   const profile = await c.env.DB.prepare(`SELECT * FROM users WHERE id = ?`).bind(user.sub).first();
@@ -388,7 +392,6 @@ profileRoutes.get('/me/export', async (c) => {
   });
 });
 
-// NOTIFICATIONS
 profileRoutes.get('/me/notifications', async (c) => {
   const user = c.get('user');
   const { results } = await c.env.DB.prepare(
@@ -413,7 +416,6 @@ profileRoutes.post('/me/notifications/read-all', async (c) => {
   return c.json({ ok: true });
 });
 
-// REPORT USER
 profileRoutes.post('/report/:id', async (c) => {
   const user = c.get('user');
   const targetId = c.req.param('id');
@@ -427,7 +429,6 @@ profileRoutes.post('/report/:id', async (c) => {
   return c.json({ ok: true, id }, 201);
 });
 
-// CHANGE EMAIL
 profileRoutes.post('/me/change-email', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -447,7 +448,6 @@ profileRoutes.post('/me/change-email', async (c) => {
   return c.json({ ok: true, email: newEmail });
 });
 
-// BADGES pre usera
 profileRoutes.get('/:type/:id/badges', async (c) => {
   const type = c.req.param('type');
   const id = c.req.param('id');
@@ -456,7 +456,6 @@ profileRoutes.get('/:type/:id/badges', async (c) => {
   return c.json({ badges });
 });
 
-// CHECKINS pre usera
 profileRoutes.get('/:type/:id/checkins', async (c) => {
   const id = c.req.param('id');
   const { results } = await c.env.DB.prepare(
@@ -474,9 +473,6 @@ profileRoutes.get('/:type/:id/checkins', async (c) => {
   return c.json({ checkins: results });
 });
 
-// ============================================================
-// STATS — defenzívne s try/catch pre každú časť
-// ============================================================
 profileRoutes.get('/:type/:id/stats', async (c) => {
   try {
     const type = normalizeType(c.req.param('type'));
@@ -484,7 +480,6 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
     const table = TYPE_TO_TABLE[type];
     if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
 
-    // Bezpečné získanie usera — skús middleware, ak nič, over token priamo
     let user = c.get('user');
     if (!user || !user.sub) {
       const h = c.req.header('Authorization') || '';
@@ -493,9 +488,7 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
         try {
           const { verify } = await import('hono/jwt');
           user = await verify(token, c.env.JWT_SECRET, 'HS256');
-        } catch (e) {
-          console.warn('stats: token verify failed:', e.message);
-        }
+        } catch (e) { console.warn('stats token verify:', e.message); }
       }
     }
     if (!user || !user.sub) return c.json({ error: 'Chýba prihlásenie.' }, 401);
@@ -509,41 +502,24 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
     let posts = 0, events = 0, followers = 0, likes = 0, comments = 0;
     let recent = [];
 
-    try {
-      const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).first();
-      posts = r?.n || 0;
-    } catch (e) { console.warn('stats posts:', e.message); }
-
-    try {
-      const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM events WHERE business_id = ? AND status = 'published'`).bind(id).first();
-      events = r?.n || 0;
-    } catch (e) { console.warn('stats events:', e.message); }
-
-    try {
-      const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first();
-      followers = r?.n || 0;
-    } catch (e) { console.warn('stats followers:', e.message); }
+    try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).first(); posts = r?.n || 0; } catch {}
+    try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM events WHERE business_id = ? AND status = 'published'`).bind(id).first(); events = r?.n || 0; } catch {}
+    try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first(); followers = r?.n || 0; } catch {}
 
     try {
       const { results: postRows } = await c.env.DB.prepare(`SELECT id FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).all();
       for (const p of postRows) {
-        try {
-          const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`);
-          likes += raw ? parseInt(raw, 10) : 0;
-        } catch {}
-        try {
-          const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first();
-          comments += cc?.n || 0;
-        } catch {}
+        try { const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`); likes += raw ? parseInt(raw, 10) : 0; } catch {}
+        try { const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first(); comments += cc?.n || 0; } catch {}
       }
-    } catch (e) { console.warn('stats likes/comments:', e.message); }
+    } catch {}
 
     try {
       const r = await c.env.DB.prepare(
         `SELECT DATE(created_at) AS day, COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published' AND created_at >= datetime('now','-30 days') GROUP BY day ORDER BY day ASC`,
       ).bind(id).all();
       recent = r?.results || [];
-    } catch (e) { console.warn('stats recent:', e.message); }
+    } catch {}
 
     return c.json({ posts, events, followers, likes, comments, last_30_days: recent });
   } catch (err) {
@@ -552,9 +528,6 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
   }
 });
 
-// ============================================================
-// GET /:type/:id — POSLEDNÁ (vracia aj plné post objekty pre feed)
-// ============================================================
 profileRoutes.get('/:type/:id', async (c) => {
   const type = normalizeType(c.req.param('type'));
   const id = c.req.param('id');
@@ -563,7 +536,7 @@ profileRoutes.get('/:type/:id', async (c) => {
 
   if (table === 'users') {
     const user = await c.env.DB.prepare(
-      `SELECT id, display_name, handle, bio, avatar_url, cover_url, location, website, role, created_at, email_verified, totp_enabled
+      `SELECT id, display_name, handle, bio, avatar_url, cover_url, location, website, role, created_at, email_verified, totp_enabled, public_checkins
        FROM users WHERE id = ? AND deleted_at IS NULL`,
     ).bind(id).first();
     if (!user) return c.json({ error: 'Užívateľ nenájdený.' }, 404);
@@ -594,6 +567,7 @@ profileRoutes.get('/:type/:id', async (c) => {
   if (!business) return c.json({ error: 'Nenájdené.' }, 404);
 
   const feedKey = feedKeyFromType(table);
+  const logoUrl = business.logo_url || business.image_url || null;
 
   const { results: posts } = await c.env.DB.prepare(
     `SELECT id, text_content, content_html, image_url, geo_place, geo_lat, geo_lng, created_at
@@ -615,18 +589,9 @@ profileRoutes.get('/:type/:id', async (c) => {
 
   const postsWithMedia = await Promise.all(posts.map(async (p) => {
     let likes = 0, commentCount = 0, views = 0;
-    try {
-      const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`);
-      likes = raw ? parseInt(raw, 10) : 0;
-    } catch {}
-    try {
-      const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first();
-      commentCount = cc?.n || 0;
-    } catch {}
-    try {
-      const vr = await c.env.DB.prepare(`SELECT view_count FROM posts WHERE id = ?`).bind(p.id).first();
-      views = vr?.view_count || 0;
-    } catch {}
+    try { const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`); likes = raw ? parseInt(raw, 10) : 0; } catch {}
+    try { const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first(); commentCount = cc?.n || 0; } catch {}
+    try { const vr = await c.env.DB.prepare(`SELECT view_count FROM posts WHERE id = ?`).bind(p.id).first(); views = vr?.view_count || 0; } catch {}
 
     return {
       id: p.id,
@@ -647,6 +612,7 @@ profileRoutes.get('/:type/:id', async (c) => {
         district: business.district,
         city: business.city,
         is_verified: !!business.is_verified,
+        logo_url: logoUrl,
         cuisine_type: business.cuisine_type || null,
       },
       __feedKey: feedKey,
