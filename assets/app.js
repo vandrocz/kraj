@@ -509,11 +509,16 @@ function updateLightboxDOM() {
       info.innerHTML = lb.caption ? `<p class="lightbox-caption">${escapeHtml(lb.caption)}</p>` : '';
     } else {
       const biz = post.business || {};
+      const logo = biz.logo_url || biz.image_url;
+      const initial = (biz.name || '?').charAt(0).toUpperCase();
+      const avatarHtml = logo
+        ? `<img src="${escapeAttr(logo)}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--c-primary-light);" />`
+        : `<span style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:var(--c-primary-light);color:var(--c-primary-dark);font-weight:800;font-size:17px;flex-shrink:0;border:2px solid var(--c-primary-light);">${initial}</span>`;
+
       info.innerHTML = `
         <header class="lightbox-post-head">
-          <button class="post-avatar" data-action="open-profile" data-kind="${post.__feedKey || ''}" data-id="${biz.id || ''}"
-                  style="display:flex;align-items:center;justify-content:center;background:var(--c-primary-light);color:var(--c-primary-dark);font-weight:800;font-size:15px;border-radius:var(--radius-round);width:40px;height:40px;flex-shrink:0;border:none;">
-            ${(biz.name || '?').charAt(0).toUpperCase()}
+          <button data-action="open-profile" data-kind="${post.__feedKey || ''}" data-id="${biz.id || ''}" style="background:none;border:none;padding:0;cursor:pointer;flex-shrink:0;">
+            ${avatarHtml}
           </button>
           <div style="flex:1;min-width:0">
             <p class="post-author">${escapeHtml(biz.name || '')} ${Number(biz.is_verified) ? icon('check', { size: 12, className: 'verified-badge-inline' }) : ''}</p>
