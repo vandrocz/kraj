@@ -16,9 +16,6 @@
 
   <link rel="stylesheet" href="assets/styles.css" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <!-- reCAPTCHA (odkomentuj a doplň Site Key, ak ju používaš)
-  <script src="https://www.google.com/recaptcha/api.js?render=SEM_VLOZ_SVOJ_RECAPTCHA_SITE_KEY" async defer></script>
-  -->
 </head>
 <body>
   <div id="root"></div>
@@ -35,8 +32,6 @@
   <script src="assets/onboarding.js"></script>
   <script src="assets/profile.js"></script>
   <script src="assets/stories.js"></script>
-  <script src="assets/messages.js"></script>
-  <script src="assets/groups.js"></script>
   <script src="assets/events-page.js"></script>
   <script src="assets/checkins.js"></script>
   <script src="assets/reviews.js"></script>
@@ -48,7 +43,6 @@
   <script src="assets/events.js"></script>
 
   <script>
-    // Registrácia Service Workera pre push
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('SW:', e));
