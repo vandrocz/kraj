@@ -464,3 +464,26 @@ async function handleEditPostSubmit(form) {
     if (btn) { btn.disabled = false; btn.textContent = 'Uložit změny'; }
   }
 }
+
+async function submitLightboxComment(postId, feedKey, text) {
+  if (!text.trim()) return;
+  if (!isLoggedIn()) { showToast('Pro komentování se musíš přihlásit.'); return; }
+  try {
+    await apiPost(`/api/feed/${postId}/comment`, { text: text.trim() });
+    // Reload do lightboxu
+    if (state.lightbox && state.lightbox.post) {
+      try {
+        const c = await apiGet(`/api/feed/${postId}/comments`);
+        state.lightbox.post.__comments = c.comments || [];
+        state.lightbox.post.comment_count = c.total || 0;
+      } catch {}
+    }
+    // Refresh feed itemov
+    for (const k of Object.keys(state.socialFeeds)) {
+      const p = state.socialFeeds[k].items.find((x) => x.id === postId);
+      if (p) { p.comment_count = (p.comment_count || 0) + 1; p.__comments = null; }
+    }
+    updateLightboxDOM();
+    showToast('Komentář přidán.');
+  } catch (err) { showToast(err.message); }
+}
