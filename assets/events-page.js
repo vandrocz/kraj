@@ -143,10 +143,10 @@ async function openEventDetail(id) {
 function renderEventDetailOverlay() {
   const ev = state._eventDetail;
   if (!ev) return `<div class="page-scroll">${renderBackHeader('Akce')}<p class="empty-state">Načítám…</p></div>`;
-  const cover = ev.cover_image_url;
   const isOwner = isLoggedIn() && state.user.id === ev.user_id;
+  const gallery = Array.isArray(ev.gallery) && ev.gallery.length > 0 ? ev.gallery : (ev.cover_image_url ? [ev.cover_image_url] : []);
+  const cover = gallery[0] || null;
 
-  // Rozdeľ dátum na komponenty
   const startDate = ev.start_at ? new Date((String(ev.start_at).replace(' ', 'T')) + 'Z') : null;
   const endDate = ev.end_at ? new Date((String(ev.end_at).replace(' ', 'T')) + 'Z') : null;
 
@@ -172,13 +172,28 @@ function renderEventDetailOverlay() {
     <div class="page-scroll event-detail-page">
       ${renderBackHeader('', isOwner ? `<button class="header-icon-btn" data-action="delete-event" data-id="${ev.id}" style="color:#B3273C">${icon('trash', { size: 19 })}</button>` : `<button class="header-icon-btn" data-action="share-event" data-id="${ev.id}">${icon('share', { size: 19 })}</button>`)}
 
-      <div class="event-detail-cover" ${cover ? `style="background-image:url('${escapeAttr(cover)}')"` : ''}>
-        <div class="event-detail-cover-overlay"></div>
+      <div class="event-detail-cover-narrow">
+        ${cover ? `
+          <button class="event-detail-cover-image" data-action="open-event-gallery" data-event-id="${ev.id}" data-index="0">
+            <img src="${escapeAttr(cover)}" alt="${escapeAttr(ev.title)}" />
+            ${gallery.length > 1 ? `<span class="event-detail-gallery-badge">${icon('grid', { size: 12 })} ${gallery.length}</span>` : ''}
+          </button>
+        ` : ''}
         <div class="event-detail-cover-content">
           <span class="event-detail-kind">${kindLabel}</span>
           <h1 class="event-detail-title">${escapeHtml(ev.title)}</h1>
         </div>
       </div>
+
+      ${gallery.length > 1 ? `
+        <div class="event-detail-thumbs">
+          ${gallery.map((url, idx) => `
+            <button class="event-detail-thumb" data-action="open-event-gallery" data-event-id="${ev.id}" data-index="${idx}">
+              <img src="${escapeAttr(url)}" alt="" />
+            </button>
+          `).join('')}
+        </div>
+      ` : ''}
 
       <div class="event-detail-body">
 
@@ -210,16 +225,14 @@ function renderEventDetailOverlay() {
         ${ev.content_html || ev.description ? `
           <div class="event-detail-description">
             <h3 class="event-detail-section-title">O akci</h3>
-            <div class="rich-text">${ev.content_html || escapeHtml(ev.description || '')}</div>
+            <div class="rich-text">${linkifyHashtags(htmlToPlain(ev.content_html || ev.description || ''))}</div>
           </div>
         ` : ''}
 
         <div class="event-detail-organizer">
           <h3 class="event-detail-section-title">Pořadatel</h3>
           <button class="event-detail-organizer-card" data-action="open-profile" data-kind="${ev.business_kind}" data-id="${ev.business_id}">
-            <span class="event-detail-organizer-avatar">
-              ${(ev.business_name || '?').charAt(0).toUpperCase()}
-            </span>
+            <span class="event-detail-organizer-avatar">${(ev.business_name || '?').charAt(0).toUpperCase()}</span>
             <div class="event-detail-organizer-info">
               <p class="event-detail-organizer-name">${escapeHtml(ev.business_name || '')}</p>
               <p class="event-detail-organizer-meta">${kindLabel}</p>
@@ -241,6 +254,28 @@ function renderEventDetailOverlay() {
 
       </div>
     </div>`;
+}
+
+// Otvorí lightbox s galériou podujatia
+function openEventGallery(eventId, startIndex = 0) {
+  const ev = state._eventDetail;
+  if (!ev || ev.id !== eventId) return;
+  const gallery = Array.isArray(ev.gallery) && ev.gallery.length > 0 ? ev.gallery : (ev.cover_image_url ? [ev.cover_image_url] : []);
+  if (gallery.length === 0) return;
+  // Vytvor fake "post" pre lightbox
+  const fakePost = {
+    id: `event-${ev.id}`,
+    text: ev.title,
+    html: `<p>${escapeHtml(ev.title)}</p>`,
+    media: gallery,
+    created_at: ev.created_at,
+    likes: 0,
+    comment_count: 0,
+    business: { id: ev.business_id, name: ev.business_name, logo_url: ev.business_logo },
+    __feedKey: ev.business_kind === 'organizations' ? 'organization' : ev.business_kind === 'accommodation' ? 'accommodation' : 'gastro',
+    __isEvent: true,
+  };
+  openLightbox(gallery, startIndex, ev.title, fakePost);
 }
 
 // Share handler pre event
@@ -305,6 +340,7 @@ function renderCreateEventOverlay() {
   if (!state.overlay.businessId) state.overlay.businessId = businesses[0].id;
   const selected = businesses.find((b) => b.id === state.overlay.businessId) || businesses[0];
   const KIND_MAP = { organization: 'organizations', accommodation: 'accommodation', gastro: 'restaurants' };
+  const eventFiles = state.overlay.eventFiles || [];
 
   return `
     <div class="page-scroll">
@@ -318,50 +354,29 @@ function renderCreateEventOverlay() {
             </select>
           </div>
 
-          <div class="form-field">
-            <label class="form-label">Název akce</label>
-            <input class="form-input" name="title" required maxlength="200" />
-          </div>
-
-          <div class="form-field">
-            <label class="form-label">Začátek</label>
-            <input class="form-input" type="datetime-local" name="start_at" required />
-          </div>
-
-          <div class="form-field">
-            <label class="form-label">Konec (nepovinné)</label>
-            <input class="form-input" type="datetime-local" name="end_at" />
-          </div>
-
-          <div class="form-field">
-            <label class="form-label">Místo konání</label>
-            <input class="form-input" name="location_name" placeholder="např. Hrad Křivoklát, hlavní nádvoří" />
-          </div>
-
-          <div class="form-field">
-            <label class="form-label">Kraj</label>
+          <div class="form-field"><label class="form-label">Název akce</label><input class="form-input" name="title" required maxlength="200" /></div>
+          <div class="form-field"><label class="form-label">Začátek</label><input class="form-input" type="datetime-local" name="start_at" required /></div>
+          <div class="form-field"><label class="form-label">Konec (nepovinné)</label><input class="form-input" type="datetime-local" name="end_at" /></div>
+          <div class="form-field"><label class="form-label">Místo konání</label><input class="form-input" name="location_name" placeholder="např. Hrad Křivoklát, hlavní nádvoří" /></div>
+          <div class="form-field"><label class="form-label">Kraj</label>
             <select class="form-select" name="region">
               <option value="">Vyberte kraj…</option>
               ${Object.keys(REGIONS).map((r) => `<option value="${r}">${r}</option>`).join('')}
             </select>
           </div>
+          <div class="form-field"><label class="form-label">Obec</label><input class="form-input" name="city" /></div>
 
-          <div class="form-field">
-            <label class="form-label">Obec</label>
-            <input class="form-input" name="city" />
+          <div class="file-drop ${eventFiles.length > 0 ? 'has-file' : ''}" data-action="trigger-event-file">
+            <input type="file" accept="image/*" multiple id="event-file-input" data-action="event-files-selected" style="display:none" />
+            ${eventFiles.length === 0
+              ? `${icon('image', { size: 24 })}<br/>Klikni pro výběr 1–4 fotek`
+              : `✓ Připraveno ${eventFiles.length} fotek`}
+          </div>
+          <div id="event-file-preview" class="file-preview-grid">
+            ${eventFiles.map((f) => `<div class="file-preview-item"><img src="${URL.createObjectURL(f)}" /><button type="button" class="file-preview-remove" data-action="remove-event-file" data-name="${escapeAttr(f.name)}">${icon('close', { size: 14 })}</button></div>`).join('')}
           </div>
 
-          <div class="file-drop ${state.overlay.file ? 'has-file' : ''}" data-action="trigger-event-file">
-            <input type="file" accept="image/*" id="event-file-input" data-action="event-file-selected" style="display:none" />
-            ${state.overlay.previewUrl
-              ? `<img src="${state.overlay.previewUrl}" style="max-height:240px;border-radius:12px;margin:0 auto" />`
-              : `${icon('image', { size: 24 })}<br/>Klikni pro výběr úvodní fotky (nepovinné)`}
-          </div>
-
-          <div class="form-field">
-            <label class="form-label">Popis</label>
-            <textarea class="form-textarea" name="description" rows="5" placeholder="Co se bude dít?"></textarea>
-          </div>
+          <div class="form-field"><label class="form-label">Popis</label><textarea class="form-textarea" name="description" rows="5" placeholder="Co se bude dít?"></textarea></div>
 
           <button class="form-submit-btn" type="submit" ${state.overlay.uploading ? 'disabled' : ''}>
             ${state.overlay.uploading ? 'Vytvářím…' : 'Zveřejnit akci'}
@@ -369,6 +384,53 @@ function renderCreateEventOverlay() {
         </form>
       </div>
     </div>`;
+}
+
+async function onEventFilesSelected(inputEl) {
+  const files = Array.from(inputEl.files || []).slice(0, 4);
+  if (files.length === 0) return;
+  const compressed = [];
+  for (const f of files) {
+    try { compressed.push(await compressImage(f, { maxDim: 1600, quality: 0.82 })); }
+    catch { compressed.push(f); }
+  }
+  state.overlay.eventFiles = compressed;
+  renderApp();
+}
+
+function removeEventFile(name) {
+  state.overlay.eventFiles = (state.overlay.eventFiles || []).filter((f) => f.name !== name);
+  renderApp();
+}
+
+async function handleCreateEventSubmit(form) {
+  state.overlay.uploading = true;
+  renderApp();
+
+  try {
+    const fd = new FormData(form);
+    fd.set('business_id', form.dataset.businessId);
+    fd.set('business_kind', form.dataset.businessKind);
+    (state.overlay.eventFiles || []).forEach((f) => fd.append('file', f, f.name));
+
+    const startEl = form.querySelector('input[name="start_at"]');
+    const endEl = form.querySelector('input[name="end_at"]');
+    if (startEl?.value) fd.set('start_at', startEl.value.replace('T', ' ') + ':00');
+    if (endEl?.value) fd.set('end_at', endEl.value.replace('T', ' ') + ':00');
+
+    await apiPost('/api/events', fd);
+    showToast('Akce zveřejněna!');
+    state.overlayStack.pop();
+    state.overlay = null;
+    state.events.items = [];
+    state.events.next_cursor = null;
+    if (state.tab === 'events') loadEvents();
+    renderApp();
+  } catch (err) {
+    showToast(err.message);
+    state.overlay.uploading = false;
+    renderApp();
+  }
 }
 
 async function onEventFileSelected(inputEl) {
