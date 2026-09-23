@@ -11,6 +11,9 @@ document.addEventListener('click', (e) => {
     case 'set-tab': switchTab(el.dataset.tab); break;
     case 'share-event': shareEvent(el.dataset.id); break;
     case 'add-to-calendar': addEventToCalendar(el.dataset.id); break;
+    case 'reject-cookies': rejectCookies(); break;
+    case 'open-cookie-settings': openCookieSettings(); break;
+    case 'save-cookie-settings': saveCookieSettings(); break;
 
     case 'open-lightbox': {
       e.preventDefault();
@@ -253,6 +256,7 @@ document.addEventListener('change', (e) => {
   else if (a === 'nearby-kind') { state.nearby.kind = el.value; loadNearby(); }
   else if (a === 'onboarding-avatar-change') onboardingAvatarChange(el);
   else if (a === 'verif-doc-selected') onVerifDocSelected(el);
+  else if (a === 'cookie-setting') toggleCookieSetting(el.dataset.key, el.checked);
   else if (a === 'push-toggle') handlePushToggle(el.checked);
     else if (a === 'district-change') {
     const form = el.closest('form');
