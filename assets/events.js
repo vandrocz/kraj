@@ -13,6 +13,11 @@ document.addEventListener('click', (e) => {
     case 'add-to-calendar': addEventToCalendar(el.dataset.id); break;
     case 'reject-cookies': rejectCookies(); break;
     case 'open-cookie-settings': openCookieSettings(); break;
+    case 'open-hashtag': openHashtag(el.dataset.tag); break;
+    case 'open-event-gallery': openEventGallery(el.dataset.eventId, parseInt(el.dataset.index || '0', 10)); break;
+    case 'trigger-event-file': document.getElementById('event-file-input')?.click(); break;
+    case 'remove-event-file': removeEventFile(el.dataset.name); break;
+    case 'submit-lightbox-comment': /* handled in submit event */ break;
     case 'save-cookie-settings': saveCookieSettings(); break;
     case 'admin-tab': state._adminTab = el.dataset.tab; if (el.dataset.tab === 'users' && state.adminUsers === null) loadAdminUsers(); renderApp(); break;
     case 'admin-suspend-user': suspendUser(el.dataset.id); break;
@@ -260,6 +265,7 @@ document.addEventListener('change', (e) => {
     dist.innerHTML = opts.map((d) => `<option value="${d}">${d}</option>`).join('');
   }
   else if (a === 'files-selected') onFilesSelected(el);
+  else if (a === 'event-files-selected') onEventFilesSelected(el);
   else if (a === 'file-selected') onFileSelected(el);
   else if (a === 'admin-user-role-filter') { state._adminUserRole = el.value; state.adminUsers = null; loadAdminUsers(); }
   else if (a === 'admin-user-status-filter') { state._adminUserStatus = el.value; state.adminUsers = null; loadAdminUsers(); }
@@ -332,6 +338,13 @@ document.addEventListener('submit', (e) => {
   e.preventDefault();
   const a = form.dataset.action;
   if (a === 'submit-login') handleLoginSubmit(form);
+  if (a === 'submit-lightbox-comment') {
+    const id = form.dataset.id;
+    const feed = form.dataset.feed;
+    const input = form.querySelector('[data-lightbox-comment-input]');
+    submitLightboxComment(id, feed, input.value);
+    return;
+  }
   else if (a === 'submit-register') handleRegisterSubmit(form);
   else if (a === 'submit-business-post') handleBusinessPostSubmit(form);
   else if (a === 'submit-edit-profile') handleEditProfileSubmit(form);
@@ -388,6 +401,45 @@ async function bootstrap() {
 
   renderApp();
   await loadMetaFromApi();
+  // ============================================================
+  // DEEP LINKING — ?event=, ?post=, ?profile=, ?hashtag=
+  // ============================================================
+  const urlEvent = getUrlParam('event');
+  const urlPost = getUrlParam('post');
+  const urlProfile = getUrlParam('profile');
+  const urlHashtag = getUrlParam('hashtag');
+
+  if (urlEvent) {
+    clearUrlParams();
+    setTimeout(() => openEventDetail(urlEvent), 100);
+  } else if (urlPost) {
+    clearUrlParams();
+    setTimeout(async () => {
+      try {
+        const data = await apiGet(`/api/feed/post-by-id/${encodeURIComponent(urlPost)}`);
+        if (data.post) {
+          const post = data.post;
+          // Načítaj komentáre
+          try {
+            const c = await apiGet(`/api/feed/${post.id}/comments`);
+            post.__comments = c.comments || [];
+          } catch {}
+          if (post.media && post.media.length > 0) {
+            openLightbox(post.media, 0, post.text || '', post);
+          }
+        }
+      } catch (err) {
+        showToast('Příspěvek se nepodařilo načíst.');
+      }
+    }, 200);
+  } else if (urlProfile) {
+    clearUrlParams();
+    const [kind, id] = urlProfile.split(':');
+    if (kind && id) setTimeout(() => openProfile(kind, id), 100);
+  } else if (urlHashtag) {
+    clearUrlParams();
+    setTimeout(() => openHashtag(urlHashtag), 100);
+  }
   renderApp();
 
   if (state.tab === 'organizations') loadSocialFeed('organization');
