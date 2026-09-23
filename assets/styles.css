@@ -2054,3 +2054,42 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   font-size: 10.5px;
   opacity: 0.85;
 }
+
+/* ============================================================
+   ROVNAKÁ VÝŠKA KARIET V RIADKU
+   ============================================================ */
+
+.post-feed-grid,
+.profile-post-feed,
+.events-list {
+  align-items: stretch !important;
+}
+
+.post-feed-grid .post-card,
+.profile-post-feed .post-card,
+.events-list .event-card {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  margin: 0 !important;
+}
+
+/* Karta sa naťahuje, ale obsah ostáva na vrchu — žiadne extra
+   prázdne miesto medzi headerom a telom */
+.post-feed-grid .post-card .post-body,
+.profile-post-feed .post-card .post-body {
+  flex: 0 0 auto !important;
+  display: block !important;
+}
+
+/* Ak má karta menej obsahu, footer (komentárový formulár) prilepíme
+   na spodok, aby karty vyzerali vyvážene */
+.post-feed-grid .post-card .post-body,
+.profile-post-feed .post-card .post-body {
+  display: flex !important;
+  flex-direction: column !important;
+}
+.post-feed-grid .post-card .post-comment-form,
+.profile-post-feed .post-card .post-comment-form {
+  margin-top: auto !important;
+}
