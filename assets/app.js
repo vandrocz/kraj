@@ -54,6 +54,8 @@ const state = {
 
   _onboarding: null,
   _cookieConsent: false,
+  _cookieSettingsOpen: false,
+  _cookieSettings: null,
   _pushSubscribed: null,
   _editingPost: null,
   _storyReplyOpen: null,
@@ -565,13 +567,46 @@ function renderLightbox() {
 
 function renderCookieBanner() {
   if (state._cookieConsent) return '';
-  try { if (localStorage.getItem('naskraj_cookies') === '1') { state._cookieConsent = true; return ''; } } catch {}
+  try {
+    const stored = localStorage.getItem('naskraj_cookies');
+    if (stored === '1' || stored === '0') { state._cookieConsent = true; return ''; }
+  } catch {}
+
+  const settings = state._cookieSettings || { necessary: true, analytics: false, marketing: false };
+  const showSettings = state._cookieSettingsOpen;
+
   return `
     <div class="cookie-banner" id="cookie-banner">
       <div class="cookie-body">
-        <p class="cookie-text"><strong>Cookies a soukromí.</strong> Používáme pouze technicky nezbytné cookies a lokální úložiště pro přihlášení. Žádné reklamní ani analytické cookies třetích stran.</p>
+        <p class="cookie-text">
+          <strong>Cookies a soukromí.</strong>
+          Používáme pouze technicky nezbytné cookies a lokální úložiště pro přihlášení.
+          ${!showSettings ? ' Žádné reklamní ani analytické cookies třetích stran.' : ''}
+        </p>
+        ${showSettings ? `
+          <div class="cookie-settings">
+            <label class="cookie-toggle">
+              <span>Nezbytné (vždy zapnuto)</span>
+              <input type="checkbox" checked disabled />
+            </label>
+            <label class="cookie-toggle">
+              <span>Analytické (nepoužíváme)</span>
+              <input type="checkbox" data-action="cookie-setting" data-key="analytics" ${settings.analytics ? 'checked' : ''} />
+            </label>
+            <label class="cookie-toggle">
+              <span>Marketingové (nepoužíváme)</span>
+              <input type="checkbox" data-action="cookie-setting" data-key="marketing" ${settings.marketing ? 'checked' : ''} />
+            </label>
+          </div>
+        ` : ''}
         <div class="cookie-actions">
-          <button class="cookie-btn cookie-btn-primary" data-action="accept-cookies">Rozumím</button>
+          ${showSettings ? `
+            <button class="cookie-btn cookie-btn-primary" data-action="save-cookie-settings">Uložit nastavení</button>
+          ` : `
+            <button class="cookie-btn cookie-btn-primary" data-action="accept-cookies">Přijmout vše</button>
+            <button class="cookie-btn" data-action="reject-cookies">Odmítnout</button>
+            <button class="cookie-btn" data-action="open-cookie-settings">Nastavení</button>
+          `}
           <a class="cookie-btn" href="/ochrana-osobnich-udaju" target="_blank" rel="noopener">Více info</a>
         </div>
       </div>
@@ -579,8 +614,46 @@ function renderCookieBanner() {
 }
 
 function acceptCookies() {
-  try { localStorage.setItem('naskraj_cookies', '1'); } catch {}
+  try {
+    localStorage.setItem('naskraj_cookies', '1');
+    localStorage.setItem('naskraj_cookie_settings', JSON.stringify({ necessary: true, analytics: true, marketing: true }));
+  } catch {}
   state._cookieConsent = true;
+  state._cookieSettingsOpen = false;
+  document.getElementById('cookie-banner')?.remove();
+}
+
+function rejectCookies() {
+  try {
+    localStorage.setItem('naskraj_cookies', '0');
+    localStorage.setItem('naskraj_cookie_settings', JSON.stringify({ necessary: true, analytics: false, marketing: false }));
+  } catch {}
+  state._cookieConsent = true;
+  state._cookieSettingsOpen = false;
+  document.getElementById('cookie-banner')?.remove();
+}
+
+function openCookieSettings() {
+  state._cookieSettingsOpen = true;
+  try {
+    const stored = localStorage.getItem('naskraj_cookie_settings');
+    if (stored) state._cookieSettings = JSON.parse(stored);
+    else state._cookieSettings = { necessary: true, analytics: false, marketing: false };
+  } catch {}
+  renderApp();
+}
+
+function toggleCookieSetting(key, value) {
+  state._cookieSettings = { ...(state._cookieSettings || {}), [key]: value };
+}
+
+function saveCookieSettings() {
+  try {
+    localStorage.setItem('naskraj_cookies', '1');
+    localStorage.setItem('naskraj_cookie_settings', JSON.stringify(state._cookieSettings || { necessary: true }));
+  } catch {}
+  state._cookieConsent = true;
+  state._cookieSettingsOpen = false;
   document.getElementById('cookie-banner')?.remove();
 }
 
