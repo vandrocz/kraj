@@ -2093,3 +2093,181 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .profile-post-feed .post-card .post-comment-form {
   margin-top: auto !important;
 }
+
+/* ============================================================
+   COOKIE BANNER v2
+   ============================================================ */
+.cookie-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  margin-bottom: 8px;
+  border-top: 1px solid rgba(255,255,255,0.15);
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+}
+.cookie-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 13px;
+  color: white;
+}
+.cookie-toggle input[type="checkbox"] {
+  width: 18px; height: 18px;
+  accent-color: var(--c-primary);
+}
+.cookie-toggle input[type="checkbox"]:disabled {
+  opacity: 0.5;
+}
+
+/* ============================================================
+   ADMIN PANEL — rozšírené tabuľky a zoznamy
+   ============================================================ */
+.admin-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 16px 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.admin-tabs::-webkit-scrollbar { display: none; }
+.admin-tab {
+  flex-shrink: 0;
+  padding: 9px 14px;
+  border-radius: var(--radius-round);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--c-text-muted);
+}
+.admin-tab.is-active {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: white;
+}
+
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+@media (min-width: 480px) {
+  .admin-stats-grid { grid-template-columns: repeat(3, 1fr); }
+}
+.admin-stat-box {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  text-align: left;
+}
+.admin-stat-value {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--c-primary-dark);
+}
+.admin-stat-label {
+  font-size: 11.5px;
+  color: var(--c-text-muted);
+  margin-top: 2px;
+}
+
+.admin-search-bar {
+  padding: 0 16px 14px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.admin-search-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 10px 14px;
+  border-radius: var(--radius-round);
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  font-size: 13.5px;
+}
+.admin-filter-select {
+  padding: 10px 14px;
+  border-radius: var(--radius-round);
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.admin-user-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  margin: 0 16px 8px;
+}
+.admin-user-avatar {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(155deg, var(--c-primary-dark), var(--c-primary));
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.admin-user-info { flex: 1; min-width: 0; }
+.admin-user-name {
+  font-weight: 700;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-user-meta {
+  font-size: 11.5px;
+  color: var(--c-text-muted);
+  margin-top: 2px;
+}
+.admin-user-role {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.admin-user-role.role-user { background: var(--c-bg); color: var(--c-text-muted); }
+.admin-user-role.role-organization { background: var(--c-primary-light); color: var(--c-primary-dark); }
+.admin-user-role.role-hotelier { background: #FFF3D6; color: #6A4400; }
+.admin-user-role.role-admin { background: #FCE9EC; color: #B3273C; }
+.admin-user-role.status-suspended { background: #FCE9EC; color: #B3273C; }
+
+.admin-user-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.admin-user-actions button {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--c-bg);
+  color: var(--c-text-muted);
+  border: 1px solid var(--c-border);
+}
+.admin-user-actions button:hover { color: var(--c-text); }
+
+.admin-section-title {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--c-text);
+  padding: 16px 16px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
