@@ -4,6 +4,7 @@ import { verify } from 'hono/jwt';
 import { authRoutes } from './routes/auth.js';
 import { authGoogleRoutes } from './routes/auth-google.js';
 import { feedRoutes } from './routes/feed.js';
+import { hashtagsRoutes } from './routes/hashtags.js';
 import { postsRoutes } from './routes/posts.js';
 import { adminRoutes } from './routes/admin.js';
 import { profileRoutes } from './routes/profile.js';
@@ -119,6 +120,7 @@ app.route('/api/geo', geoRoutes);
 
 // Mentions
 app.route('/api/mentions', mentionsRoutes);
+app.route('/api/hashtags', hashtagsRoutes);
 
 // Checkins
 app.use('/api/checkins/me/*', requireAuth);
