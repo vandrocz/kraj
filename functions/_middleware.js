@@ -1,19 +1,15 @@
 // ============================================================
 // Cloudflare Pages Function — dynamické OG meta tagy pre boty
-// Beží na edge pre každý request. Deteguje, či ide o socialbota,
-// a ak áno, vráti HTML s dynamickými OG tagmi.
+// Beží na edge pre každý request. Ak ide o socialbota, vráti HTML
+// s dynamickými OG tagmi pre zdieľanie.
 // ============================================================
 
 const API_BASE = 'https://naskraj-api.vandrocz-contact.workers.dev';
 const SITE_URL = 'https://naskraj.vandro.cz';
-const DEFAULT_OG = {
-  title: 'Náš kraj — regionální platforma',
-  description: 'Objevuj hrady, zámky, ubytování a gastro v Česku.',
-  image: `${SITE_URL}/assets/og-default.jpg`,
-};
+const DEFAULT_IMAGE = 'https://cdn.vandro.cz/Untitled15_20260522160351.png';
 
 function isBot(ua) {
-  return /facebookexternalhit|twitterbot|whatsapp|telegrambot|slackbot|discordbot|linkedinbot|pinterest|applebot|googlebot|bingbot|embedly|quora|outbrain|vkshare|w3c_validator|redditbot|skypeuripreview/i.test(ua || '');
+  return /facebookexternalhit|twitterbot|whatsapp|telegrambot|slackbot|discordbot|linkedinbot|pinterest|applebot|googlebot|bingbot|embedly|quora|outbrain|vkshare|w3c_validator|redditbot|skypeuripreview|seznam|duckduckbot/i.test(ua || '');
 }
 
 function escapeHtml(s) {
@@ -38,19 +34,20 @@ export async function onRequest(context) {
   const postId = url.searchParams.get('post');
   const profile = url.searchParams.get('profile');
   const eventId = url.searchParams.get('event');
-  const pathEventMatch = url.pathname.match(/^\/e\/([^/]+)$/);
-  const pathPostMatch = url.pathname.match(/^\/p\/([^/]+)$/);
 
-  const realEvent = eventId || (pathEventMatch ? pathEventMatch[1] : null);
-  const realPost = postId || (pathPostMatch ? pathPostMatch[1] : null);
-
-  if (!realPost && !profile && !realEvent) return next();
+  if (!postId && !profile && !eventId) return next();
   if (!isBot(ua)) return next();
 
-  let og = { ...DEFAULT_OG };
+  let og = {
+    title: 'Náš kraj — regionální platforma',
+    description: 'Objevuj hrady, zámky, ubytování a gastro v Česku.',
+    image: DEFAULT_IMAGE,
+    url: SITE_URL,
+  };
+
   let ogUrl = null;
-  if (realPost) ogUrl = `${API_BASE}/api/seo/og?type=post&id=${encodeURIComponent(realPost)}`;
-  else if (realEvent) ogUrl = `${API_BASE}/api/seo/og?type=event&id=${encodeURIComponent(realEvent)}`;
+  if (postId) ogUrl = `${API_BASE}/api/seo/og?type=post&id=${encodeURIComponent(postId)}`;
+  else if (eventId) ogUrl = `${API_BASE}/api/seo/og?type=event&id=${encodeURIComponent(eventId)}`;
   else if (profile) {
     const [kind, id] = profile.split(':');
     if (kind && id) ogUrl = `${API_BASE}/api/seo/og?type=profile&kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}`;
