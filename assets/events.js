@@ -14,6 +14,22 @@ document.addEventListener('click', (e) => {
     case 'reject-cookies': rejectCookies(); break;
     case 'open-cookie-settings': openCookieSettings(); break;
     case 'save-cookie-settings': saveCookieSettings(); break;
+    case 'admin-tab': state._adminTab = el.dataset.tab; if (el.dataset.tab === 'users' && state.adminUsers === null) loadAdminUsers(); renderApp(); break;
+    case 'admin-suspend-user': suspendUser(el.dataset.id); break;
+    case 'admin-unsuspend-user': unsuspendUser(el.dataset.id); break;
+    case 'admin-change-role': changeUserRole(el.dataset.id); break;
+    case 'admin-user-detail': openUserDetail(el.dataset.id); break;
+    case 'admin-force-verify-email':
+      (async () => {
+        try { await apiPost(`/api/admin/users/${el.dataset.id}/force-verify-email`, {}); showToast('E-mail ověřen.'); } catch (err) { showToast(err.message); }
+      })();
+      break;
+    case 'resolve-user-report':
+      (async () => {
+        try { await apiPost(`/api/admin/user-reports/${el.dataset.id}/resolve`, {}); showToast('Vyřešeno.'); state.adminUserReports = null; renderApp(); } catch (err) { showToast(err.message); }
+      })();
+      break;
+    case 'open-broadcast-push': openBroadcastPush(); break;
 
     case 'open-lightbox': {
       e.preventDefault();
@@ -245,6 +261,9 @@ document.addEventListener('change', (e) => {
   }
   else if (a === 'files-selected') onFilesSelected(el);
   else if (a === 'file-selected') onFileSelected(el);
+  else if (a === 'admin-user-role-filter') { state._adminUserRole = el.value; state.adminUsers = null; loadAdminUsers(); }
+  else if (a === 'admin-user-status-filter') { state._adminUserStatus = el.value; state.adminUsers = null; loadAdminUsers(); }
+  else if (a === 'cookie-setting') toggleCookieSetting(el.dataset.key, el.checked);
   else if (a === 'setting-toggle') toggleSetting(el.dataset.key, el.checked);
   else if (a === 'story-file-selected') onStoryFileSelected(el);
   else if (a === 'event-filter') onEventFilterChange(el.dataset.field, el.value);
@@ -297,6 +316,12 @@ document.addEventListener('input', (e) => {
   }
   if (el.dataset.action === 'story-reply-input') {
     state.overlay.replyText = el.value;
+    return;
+  }
+  if (el.dataset.action === 'admin-user-search') {
+    state._adminUserQuery = el.value;
+    clearTimeout(window._adminUserSearchTimer);
+    window._adminUserSearchTimer = setTimeout(() => { state.adminUsers = null; loadAdminUsers(); }, 400);
     return;
   }
 });
