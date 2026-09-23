@@ -632,17 +632,114 @@ function renderAdminPanel() {
   if (state.adminReports === null && !state.adminReportsLoading) { state.adminReportsLoading = true; loadAdminReports(); }
   if (state.adminVerifications === null) loadAdminVerifications();
   if (state.adminPosts === null) loadAdminPosts();
+  if (state.adminUserReports === null) loadAdminUserReports();
+  if (state.adminStats === null) loadAdminStats();
 
-  const pending = state.adminPending;
-  const items = pending ? [
-    ...(pending.organizations || []).map((o) => ({ ...o, kind: 'organizations' })),
-    ...(pending.accommodation || []).map((o) => ({ ...o, kind: 'accommodation' })),
-    ...(pending.restaurants || []).map((o) => ({ ...o, kind: 'restaurants' })),
-  ] : [];
+  const tab = state._adminTab || 'overview';
 
+  return `
+    <div class="admin-tabs">
+      <button class="admin-tab ${tab === 'overview' ? 'is-active' : ''}" data-action="admin-tab" data-tab="overview">Přehled</button>
+      <button class="admin-tab ${tab === 'users' ? 'is-active' : ''}" data-action="admin-tab" data-tab="users">Uživatelé</button>
+      <button class="admin-tab ${tab === 'verifications' ? 'is-active' : ''}" data-action="admin-tab" data-tab="verifications">Žádosti</button>
+      <button class="admin-tab ${tab === 'reports' ? 'is-active' : ''}" data-action="admin-tab" data-tab="reports">Reporty</button>
+      <button class="admin-tab ${tab === 'posts' ? 'is-active' : ''}" data-action="admin-tab" data-tab="posts">Příspěvky</button>
+      <button class="admin-tab ${tab === 'tools' ? 'is-active' : ''}" data-action="admin-tab" data-tab="tools">Nástroje</button>
+    </div>
+    ${tab === 'overview' ? renderAdminOverview() : ''}
+    ${tab === 'users' ? renderAdminUsers() : ''}
+    ${tab === 'verifications' ? renderAdminVerifications() : ''}
+    ${tab === 'reports' ? renderAdminReports() : ''}
+    ${tab === 'posts' ? renderAdminPosts() : ''}
+    ${tab === 'tools' ? renderAdminTools() : ''}
+  `;
+}
+
+function renderAdminOverview() {
+  const s = state.adminStats;
+  if (!s) return '<p class="empty-state">Načítám…</p>';
+  return `
+    <div class="profile-section">
+      <h3 class="profile-section-title">Celkem</h3>
+      <div class="admin-stats-grid">
+        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.users)}</div><div class="admin-stat-label">Uživatelů</div></div>
+        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.organizations)}</div><div class="admin-stat-label">Organizací</div></div>
+        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.accommodation)}</div><div class="admin-stat-label">Ubytování</div></div>
+        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.restaurants)}</div><div class="admin-stat-label">Gastro</div></div>
+        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.posts)}</div><div class="admin-stat-label">Příspěvků</div></div>
+        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.events)}</div><div class="admin-stat-label">Akce</div></div>
+        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.comments)}</div><div class="admin-stat-label">Komentářů</div></div>
+        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.checkins)}</div><div class="admin-stat-label">Check-inů</div></div>
+        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.reviews)}</div><div class="admin-stat-label">Recenzí</div></div>
+      </div>
+    </div>
+    ${s.top_organizations?.length ? `
+      <div class="profile-section">
+        <h3 class="profile-section-title">Nejaktivnější organizace</h3>
+        ${s.top_organizations.map((o) => `
+          <div class="admin-user-row">
+            <div class="admin-user-avatar">${(o.name || '?').charAt(0).toUpperCase()}</div>
+            <div class="admin-user-info">
+              <p class="admin-user-name">${escapeHtml(o.name)}</p>
+              <p class="admin-user-meta">${o.post_count} příspěvků</p>
+            </div>
+          </div>`).join('')}
+      </div>
+    ` : ''}
+    <div class="profile-section">
+      <h3 class="profile-section-title">Rozšířené nástroje</h3>
+      <button class="settings-row" data-action="open-broadcast-push">${icon('bell', { size: 17 })} Poslat push všem uživatelům</button>
+    </div>`;
+}
+
+function renderAdminUsers() {
+  const users = state.adminUsers;
+  const counts = state.adminUsersCounts;
+  const q = state._adminUserQuery || '';
+  const role = state._adminUserRole || '';
+  const status = state._adminUserStatus || '';
+
+  return `
+    <div class="admin-search-bar">
+      <input class="admin-search-input" type="search" placeholder="Hledat jméno, e-mail, handle…" value="${escapeAttr(q)}" data-action="admin-user-search" />
+      <select class="admin-filter-select" data-action="admin-user-role-filter">
+        <option value="" ${!role ? 'selected' : ''}>Všechny role</option>
+        <option value="user" ${role === 'user' ? 'selected' : ''}>Uživatel</option>
+        <option value="organization" ${role === 'organization' ? 'selected' : ''}>Organizace</option>
+        <option value="hotelier" ${role === 'hotelier' ? 'selected' : ''}>Podnik</option>
+        <option value="admin" ${role === 'admin' ? 'selected' : ''}>Admin</option>
+      </select>
+      <select class="admin-filter-select" data-action="admin-user-status-filter">
+        <option value="" ${!status ? 'selected' : ''}>Všechny stavy</option>
+        <option value="active" ${status === 'active' ? 'selected' : ''}>Aktivní</option>
+        <option value="suspended" ${status === 'suspended' ? 'selected' : ''}>Pozastavení</option>
+      </select>
+    </div>
+    ${counts ? `
+      <p class="user-list-meta" style="padding:0 16px 12px">
+        Celkem: ${counts.total || 0} · Uživatelé: ${counts.users || 0} · Organizace: ${counts.organizations || 0} · Podniky: ${counts.hoteliers || 0} · Pozastavení: ${counts.suspended || 0}
+      </p>
+    ` : ''}
+    ${users == null ? '<p class="empty-state">Načítám…</p>'
+      : users.length === 0 ? '<p class="empty-state">Žádní uživatelé.</p>'
+      : users.map((u) => `
+        <div class="admin-user-row">
+          <div class="admin-user-avatar">${(u.display_name || u.email || '?').charAt(0).toUpperCase()}</div>
+          <div class="admin-user-info">
+            <p class="admin-user-name">${escapeHtml(u.display_name || '(bez jména)')}</p>
+            <p class="admin-user-meta">${escapeHtml(u.email)}${u.handle ? ` · @${escapeHtml(u.handle)}` : ''}</p>
+            <span class="admin-user-role role-${u.role}">${u.role}</span>
+            ${u.status === 'suspended' ? '<span class="admin-user-role status-suspended" style="margin-left:4px">Pozastaven</span>' : ''}
+          </div>
+          <div class="admin-user-actions">
+            <button data-action="admin-user-detail" data-id="${u.id}" title="Detail">${icon('more', { size: 16 })}</button>
+          </div>
+        </div>`).join('')}
+  `;
+}
+
+function renderAdminVerifications() {
   const verifs = state.adminVerifications;
-  const posts = state.adminPosts;
-
   return `
     <div class="profile-section">
       <h3 class="profile-section-title">Žádosti o ověření (${verifs ? verifs.length : '…'})</h3>
@@ -651,22 +748,56 @@ function renderAdminPanel() {
         : verifs.map((v) => `
           <div class="admin-list-item" style="flex-direction:column;align-items:stretch;gap:8px">
             <div class="admin-list-info">
-              <p class="admin-list-title">${escapeHtml(v.user_name || v.user_handle || 'Uživatel')}</p>
-              <p class="admin-list-meta">Podnik: ${escapeHtml(v.business_id)} · ${v.business_kind}</p>
-              <p class="admin-list-meta">E-mail: ${escapeHtml(v.user_email || '')}</p>
+              <p class="admin-list-title">${escapeHtml(v.business_name || v.user_name || 'Podnik')}</p>
+              <p class="admin-list-meta">Žadatel: ${escapeHtml(v.user_name || '')} (${escapeHtml(v.user_email || '')})</p>
               ${v.note ? `<p class="admin-list-meta" style="font-style:italic">„${escapeHtml(v.note)}"</p>` : ''}
               <p class="admin-list-meta">Předloženo: ${timeAgo(v.created_at)}</p>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              ${v.doc_url
-                ? `<a class="profile-action-btn" href="${escapeAttr(v.doc_url)}" target="_blank" rel="noopener">${icon('image', { size: 14 })} Otevřít dokument</a>`
-                : '<span class="admin-list-meta" style="color:#B3273C">⚠ Bez dokumentu</span>'}
+              ${v.doc_url ? `<a class="profile-action-btn" href="${escapeAttr(v.doc_url)}" target="_blank" rel="noopener">${icon('image', { size: 14 })} Otevřít dokument</a>` : '<span class="admin-list-meta" style="color:#B3273C">⚠ Bez dokumentu</span>'}
               <button class="admin-approve-btn" data-action="approve-verification" data-id="${v.id}">Schválit</button>
               <button class="admin-delete-btn" data-action="reject-verification" data-id="${v.id}">Zamítnout</button>
             </div>
           </div>`).join('')}
+    </div>`;
+}
+
+function renderAdminReports() {
+  const posts = state.adminReports;
+  const users = state.adminUserReports;
+  return `
+    <div class="profile-section">
+      <h3 class="profile-section-title">Reporty příspěvků (${posts ? posts.length : '…'})</h3>
+      ${posts === null ? '<p class="empty-state">Načítám…</p>'
+        : posts.length === 0 ? '<p class="empty-state">Žádné reporty.</p>'
+        : posts.map((r) => `
+          <div class="admin-list-item">
+            <div class="admin-list-info">
+              <p class="admin-list-title">${(r.text_content || '').slice(0, 60) || '(bez textu)'}</p>
+              <p class="admin-list-meta">Nahlásil: ${r.reporter_name || '?'}${r.reason ? ` · ${r.reason}` : ''}</p>
+            </div>
+            <button class="admin-delete-btn" data-action="delete-reported-post" data-post-id="${r.post_id}" data-report-id="${r.id}">Smazat</button>
+          </div>`).join('')}
     </div>
 
+    <div class="profile-section">
+      <h3 class="profile-section-title">Reporty uživatelů (${users ? users.length : '…'})</h3>
+      ${users === null ? '<p class="empty-state">Načítám…</p>'
+        : users.length === 0 ? '<p class="empty-state">Žádné reporty.</p>'
+        : users.map((r) => `
+          <div class="admin-list-item">
+            <div class="admin-list-info">
+              <p class="admin-list-title">${escapeHtml(r.target_name || '(bez jména)')} ${r.target_handle ? `· @${escapeHtml(r.target_handle)}` : ''}</p>
+              <p class="admin-list-meta">Nahlásil: ${escapeHtml(r.reporter_name || '?')}${r.reason ? ` · ${r.reason}` : ''}</p>
+            </div>
+            <button class="admin-delete-btn" data-action="resolve-user-report" data-id="${r.id}">Vyřešit</button>
+          </div>`).join('')}
+    </div>`;
+}
+
+function renderAdminPosts() {
+  const posts = state.adminPosts;
+  return `
     <div class="profile-section">
       <h3 class="profile-section-title">Nedávné příspěvky (${posts ? posts.length : '…'})</h3>
       ${posts === null ? '<p class="empty-state">Načítám…</p>'
@@ -679,42 +810,158 @@ function renderAdminPanel() {
             </div>
             <button class="admin-delete-btn" data-action="delete-admin-post" data-id="${p.id}">Smazat</button>
           </div>`).join('')}
-    </div>
+    </div>`;
+}
 
-    <div class="profile-section">
-      <h3 class="profile-section-title">Čekající na ověření (${pending ? items.length : '…'})</h3>
-      ${pending === null ? '<p class="empty-state">Načítám…</p>'
-        : items.length === 0 ? '<p class="empty-state">Žádné profily nečekají.</p>'
-        : items.map((it) => `
-          <div class="admin-list-item">
-            <div class="admin-list-info">
-              <p class="admin-list-title">${escapeHtml(it.name)}</p>
-              <p class="admin-list-meta">${it.type} · ${it.city ? `${it.city}, ` : ''}${it.region}</p>
-            </div>
-            <button class="admin-approve-btn" data-action="verify-business" data-kind="${it.kind}" data-id="${it.id}">Ověřit</button>
-          </div>`).join('')}
-    </div>
-
-    <div class="profile-section">
-      <h3 class="profile-section-title">Nahlášené příspěvky (${state.adminReports ? state.adminReports.length : '…'})</h3>
-      ${state.adminReports === null ? '<p class="empty-state">Načítám…</p>'
-        : state.adminReports.length === 0 ? '<p class="empty-state">Žádná nahlášení.</p>'
-        : state.adminReports.map((r) => `
-          <div class="admin-list-item">
-            <div class="admin-list-info">
-              <p class="admin-list-title">${(r.text_content || '').slice(0, 60) || '(bez textu)'}</p>
-              <p class="admin-list-meta">Nahlásil: ${r.reporter_name || 'uživatel'}${r.reason ? ` · ${r.reason}` : ''}</p>
-            </div>
-            <button class="admin-delete-btn" data-action="delete-reported-post" data-post-id="${r.post_id}" data-report-id="${r.id}">Smazat</button>
-          </div>`).join('')}
-    </div>
-
+function renderAdminTools() {
+  return `
     <div class="profile-section">
       <h3 class="profile-section-title">Nástroje</h3>
+      <button class="settings-row" data-action="open-broadcast-push">${icon('bell', { size: 17 })} Poslat push všem uživatelům</button>
       <button class="settings-row" data-action="admin-backfill-handles">${icon('edit', { size: 17 })} Doplň handles uživatelům</button>
       <button class="settings-row" data-action="admin-seed-test">${icon('plus', { size: 17 })} Vytvořit testovací obsah</button>
       <button class="settings-row" data-action="admin-cleanup-test" style="color:#B3273C">${icon('trash', { size: 17 })} Odstranit testovací obsah</button>
     </div>`;
+}
+
+// ============================================================
+// ADMIN LOADERS + AKCIE
+// ============================================================
+
+async function loadAdminStats() {
+  try { state.adminStats = await apiGet('/api/admin/stats'); }
+  catch { state.adminStats = { totals: {} }; }
+  finally { if (state.tab === 'account') renderApp(); }
+}
+
+async function loadAdminUsers() {
+  const q = state._adminUserQuery || '';
+  const role = state._adminUserRole || '';
+  const status = state._adminUserStatus || '';
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (role) params.set('role', role);
+  if (status) params.set('status', status);
+  try {
+    const data = await apiGet(`/api/admin/users?${params.toString()}`);
+    state.adminUsers = data.users || [];
+    state.adminUsersCounts = data.counts || null;
+  } catch { state.adminUsers = []; }
+  finally { if (state.tab === 'account') renderApp(); }
+}
+
+async function loadAdminUserReports() {
+  try { const d = await apiGet('/api/admin/user-reports'); state.adminUserReports = d.reports || []; }
+  catch { state.adminUserReports = []; }
+  finally { if (state.tab === 'account') renderApp(); }
+}
+
+async function loadAdminPosts() {
+  try { const d = await apiGet('/api/admin/posts'); state.adminPosts = d.posts || []; }
+  catch { state.adminPosts = []; }
+  finally { if (state.tab === 'account') renderApp(); }
+}
+
+async function suspendUser(id) {
+  const reason = prompt('Důvod pozastavení (nepovinné):') || '';
+  try {
+    await apiPost(`/api/admin/users/${id}/suspend`, { reason });
+    showToast('Uživatel pozastaven.');
+    state.adminUsers = null;
+    loadAdminUsers();
+  } catch (err) { showToast(err.message); }
+}
+
+async function unsuspendUser(id) {
+  try {
+    await apiPost(`/api/admin/users/${id}/unsuspend`, {});
+    showToast('Uživatel obnoven.');
+    state.adminUsers = null;
+    loadAdminUsers();
+  } catch (err) { showToast(err.message); }
+}
+
+function changeUserRole(id) {
+  openModal({
+    title: 'Změnit roli uživatele',
+    body: `
+      <div class="form-field">
+        <label class="form-label">Nová role</label>
+        <select class="form-select" name="role" required>
+          <option value="user">Turista</option>
+          <option value="organization">Organizace</option>
+          <option value="hotelier">Podnik</option>
+          <option value="admin">Administrátor</option>
+        </select>
+      </div>`,
+    submitLabel: 'Uložit roli',
+    onSubmit: async (data) => {
+      state._modalLoading = true; renderApp();
+      try {
+        await apiPost(`/api/admin/users/${id}/role`, { role: data.role });
+        closeModal();
+        showToast('Role změněna.');
+        state.adminUsers = null;
+        loadAdminUsers();
+      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
+    },
+  });
+}
+
+function openUserDetail(id) {
+  openModal({
+    title: 'Detail uživatele',
+    body: '<div id="admin-user-detail-body" style="min-height:120px"><p style="color:var(--c-text-muted)">Načítám…</p></div>',
+    submitLabel: 'Zavřít',
+    onSubmit: () => { closeModal(); },
+  });
+  setTimeout(async () => {
+    const el = document.getElementById('admin-user-detail-body');
+    if (!el) return;
+    try {
+      const d = await apiGet(`/api/admin/users/${id}/detail`);
+      el.innerHTML = `
+        <p style="font-weight:700;font-size:14px;margin-bottom:4px">${escapeHtml(d.user.display_name || '')}</p>
+        <p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:12px">${escapeHtml(d.user.email)}${d.user.handle ? ` · @${escapeHtml(d.user.handle)}` : ''}</p>
+        <div class="admin-stats-grid" style="padding:0;margin-bottom:12px">
+          <div class="admin-stat-box"><div class="admin-stat-value">${d.stats.posts}</div><div class="admin-stat-label">Příspěvků</div></div>
+          <div class="admin-stat-box"><div class="admin-stat-value">${d.stats.comments}</div><div class="admin-stat-label">Komentářů</div></div>
+          <div class="admin-stat-box"><div class="admin-stat-value">${d.stats.checkins}</div><div class="admin-stat-label">Check-inů</div></div>
+          <div class="admin-stat-box"><div class="admin-stat-value">${d.stats.followers}</div><div class="admin-stat-label">Sledujících</div></div>
+        </div>
+        <p style="font-size:12px;color:var(--c-text-muted)">Role: <strong>${d.user.role}</strong> · Status: <strong>${d.user.status}</strong></p>
+        <p style="font-size:12px;color:var(--c-text-muted)">Registrace: ${timeAgo(d.user.created_at)}</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
+          ${d.user.status === 'suspended'
+            ? `<button class="profile-action-btn" data-action="admin-unsuspend-user" data-id="${id}">Obnovit účet</button>`
+            : `<button class="profile-action-btn" style="color:#B3273C" data-action="admin-suspend-user" data-id="${id}">Pozastavit</button>`}
+          <button class="profile-action-btn" data-action="admin-change-role" data-id="${id}">Změnit roli</button>
+          ${!d.user.email_verified ? `<button class="profile-action-btn" data-action="admin-force-verify-email" data-id="${id}">Vynutit ověření e-mailu</button>` : ''}
+        </div>
+      `;
+    } catch (err) {
+      el.innerHTML = `<p style="color:#B3273C">Chyba: ${escapeHtml(err.message)}</p>`;
+    }
+  }, 100);
+}
+
+function openBroadcastPush() {
+  openModal({
+    title: 'Poslat push všem uživatelům',
+    body: `
+      <div class="form-field"><label class="form-label">Titulek</label><input class="form-input" name="title" maxlength="100" required /></div>
+      <div class="form-field"><label class="form-label">Zpráva</label><textarea class="form-textarea" name="message" maxlength="200" required></textarea></div>
+      <div class="form-field"><label class="form-label">Odkaz (URL)</label><input class="form-input" name="url" placeholder="/?tab=events" /></div>`,
+    submitLabel: 'Odeslat',
+    onSubmit: async (data) => {
+      state._modalLoading = true; renderApp();
+      try {
+        const res = await apiPost('/api/admin/broadcast-push', data);
+        closeModal();
+        showToast(`Odesláno ${res.sent} / ${res.users_targeted} uživatelům.`);
+      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
+    },
+  });
 }
 
 async function verifyBusiness(kind, id) {
