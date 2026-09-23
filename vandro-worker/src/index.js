@@ -7,8 +7,6 @@ import { feedRoutes } from './routes/feed.js';
 import { postsRoutes } from './routes/posts.js';
 import { adminRoutes } from './routes/admin.js';
 import { profileRoutes } from './routes/profile.js';
-import { messagesRoutes } from './routes/messages.js';
-import { groupsRoutes } from './routes/groups.js';
 import { storiesRoutes } from './routes/stories.js';
 import { seoRoutes } from './routes/seo.js';
 import { geoRoutes } from './routes/geo.js';
@@ -21,35 +19,12 @@ import { nearbyRoutes } from './routes/nearby.js';
 import { pushRoutes } from './routes/push.js';
 import { runDailyDistribution, ensureActiveProjectRotation, cleanupOrphanedR2 } from './cron.js';
 import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUISINE_TYPES } from './regions.js';
+import { rateLimit } from './ratelimit.js';
 
 const app = new Hono();
 
-app.get('/api/debug/r2', async (c) => {
-  const out = { has_media: !!c.env.MEDIA, r2_public_base: c.env.R2_PUBLIC_BASE || null };
-  if (c.env.MEDIA) {
-    try {
-      const key = `debug/test-${Date.now()}.txt`;
-      await c.env.MEDIA.put(key, new TextEncoder().encode('ok'), { httpMetadata: { contentType: 'text/plain' } });
-      const obj = await c.env.MEDIA.get(key);
-      out.put_ok = true;
-      out.get_ok = !!obj;
-      await c.env.MEDIA.delete(key);
-      out.delete_ok = true;
-      out.example_url = c.env.R2_PUBLIC_BASE ? `${c.env.R2_PUBLIC_BASE}/${key}` : null;
-    } catch (err) { out.error = err.message; out.put_ok = false; }
-  }
-  return c.json(out);
-});
-
-app.get('/api/debug/vapid', (c) => c.json({
-  public_set: !!c.env.VAPID_PUBLIC_KEY,
-  private_set: !!c.env.VAPID_PRIVATE_KEY,
-  subject: c.env.VAPID_SUBJECT || null,
-  public_prefix: c.env.VAPID_PUBLIC_KEY ? c.env.VAPID_PUBLIC_KEY.slice(0, 12) + '…' : null,
-}));
-
 app.use('*', async (c, next) => {
-  const allowed = (c.env.ALLOWED_ORIGIN || 'https://app.vandro.cz').split(',').map((s) => s.trim());
+  const allowed = (c.env.ALLOWED_ORIGIN || 'https://naskraj.vandro.cz').split(',').map((s) => s.trim());
   return cors({
     origin: [...allowed, 'http://localhost:5173', 'http://localhost:8934'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -82,7 +57,17 @@ app.route('/api/seo', seoRoutes);
 app.route('/api/auth', authRoutes);
 app.route('/api/auth', authGoogleRoutes);
 
-// Wallet (skryté v UI, ale API existuje)
+// ============================================================
+// RATE LIMIT pre view (pred feedRoutes)
+// ============================================================
+app.use('/api/feed/:id/view', async (c, next) => {
+  const ip = c.req.header('cf-connecting-ip') || 'unknown';
+  const rl = await rateLimit(c.env, 'view', ip, 120, 60);
+  if (!rl.ok) return c.json({ error: 'Příliš mnoho požadavků.' }, 429);
+  await next();
+});
+
+// Wallet
 app.get('/api/user/wallet', requireAuth, async (c) => {
   const user = c.get('user');
   const row = await c.env.DB.prepare('SELECT credit_balance, status FROM users WHERE id = ?').bind(user.sub).first();
@@ -156,7 +141,7 @@ app.use('/api/wishlist/*', requireAuth);
 app.use('/api/wishlist', requireAuth);
 app.route('/api/wishlist', wishlistRoutes);
 
-// Nearby (verejné)
+// Nearby
 app.route('/api/nearby', nearbyRoutes);
 
 // Push
@@ -166,7 +151,7 @@ app.use('/api/push/unsubscribe', requireAuth);
 app.use('/api/push/test', requireAuth);
 app.route('/api/push', pushRoutes);
 
-// Profile
+// Profile — search s rate limitom
 app.use('/api/profile/me/*', requireAuth);
 app.use('/api/profile/me', requireAuth);
 app.use('/api/profile/follow', requireAuth);
@@ -174,20 +159,13 @@ app.use('/api/profile/follow/*', requireAuth);
 app.use('/api/profile/block/*', requireAuth);
 app.use('/api/profile/report/*', requireAuth);
 app.use('/api/profile/search', requireAuth);
-// ⬇ Tieto tri riadky sú nové — chránia stats, ale NIE followers/badges/checkins (tie zostávajú verejné)
-app.use('/api/profile/:type/:id/stats', requireAuth);
+app.use('/api/profile/search', async (c, next) => {
+  const user = c.get('user');
+  const rl = await rateLimit(c.env, 'search', user?.sub || 'anon', 60, 60);
+  if (!rl.ok) return c.json({ error: 'Příliš mnoho vyhledávání.' }, 429);
+  await next();
+});
 app.route('/api/profile', profileRoutes);
-
-// Messages
-app.use('/api/messages/*', requireAuth);
-app.use('/api/messages', requireAuth);
-app.route('/api/messages', messagesRoutes);
-
-// Groups
-app.use('/api/groups/my', requireAuth);
-app.use('/api/groups/discover', requireAuth);
-app.use('/api/groups', requireAuth);
-app.route('/api/groups', groupsRoutes);
 
 // Stories
 app.use('/api/stories/feed', requireAuth);
@@ -195,17 +173,19 @@ app.use('/api/stories/upload', requireAuth);
 app.use('/api/stories', requireAuth);
 app.route('/api/stories', storiesRoutes);
 
-// Admin
+// Admin cron
 app.post('/api/admin/run-distribution-now', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
   return c.json(await runDailyDistribution(c.env));
 });
+
 app.post('/api/admin/r2-cleanup', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
   return c.json(await cleanupOrphanedR2(c.env));
 });
+
 app.use('/api/admin/*', requireAuth);
 app.route('/api/admin', adminRoutes);
 
@@ -219,7 +199,7 @@ export default {
   fetch: app.fetch,
   async scheduled(event, env, ctx) {
     if (event.cron === '0 8 * * *') ctx.waitUntil(runDailyDistribution(env));
-    else if (event.cron === '0 4 * * 0') ctx.waitUntil(cleanupOrphanedR2(env));
+    else if (event.cron === '0 4 * * *') ctx.waitUntil(cleanupOrphanedR2(env));
     else ctx.waitUntil(ensureActiveProjectRotation(env));
   },
 };
