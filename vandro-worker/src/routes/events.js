@@ -11,14 +11,17 @@ const BUSINESS_TABLE = {
   restaurants: 'restaurants',
 };
 
-function kindFromTable(table) {
-  if (table === 'organizations') return 'organizations';
-  if (table === 'accommodation') return 'accommodation';
-  if (table === 'restaurants') return 'restaurants';
-  return null;
+const MAX_EVENT_PHOTOS = 4;
+
+function parseGallery(ev) {
+  if (!ev) return [];
+  if (ev.gallery_json) {
+    try { const a = JSON.parse(ev.gallery_json); if (Array.isArray(a)) return a; } catch {}
+  }
+  // Fallback: vráť cover ako prvú fotku
+  return ev.cover_image_url ? [ev.cover_image_url] : [];
 }
 
-// GET /api/events
 eventsApiRoutes.get('/', async (c) => {
   const region = c.req.query('region') || '';
   const city = c.req.query('city') || '';
@@ -36,11 +39,8 @@ eventsApiRoutes.get('/', async (c) => {
   if (businessId) { conds.push('events.business_id = ?'); params.push(businessId); }
   if (search) { conds.push('events.title LIKE ?'); params.push(`%${search}%`); }
 
-  if (when === 'upcoming') {
-    conds.push(`(COALESCE(events.end_at, events.start_at) >= datetime('now'))`);
-  } else if (when === 'past') {
-    conds.push(`(COALESCE(events.end_at, events.start_at) < datetime('now'))`);
-  }
+  if (when === 'upcoming') conds.push(`(COALESCE(events.end_at, events.start_at) >= datetime('now'))`);
+  else if (when === 'past') conds.push(`(COALESCE(events.end_at, events.start_at) < datetime('now'))`);
 
   const order = when === 'past' ? 'DESC' : 'ASC';
 
@@ -61,7 +61,6 @@ eventsApiRoutes.get('/', async (c) => {
   return c.json({ events: results });
 });
 
-// GET /api/events/:id
 eventsApiRoutes.get('/:id', async (c) => {
   const id = c.req.param('id');
   const row = await c.env.DB.prepare(
@@ -75,10 +74,10 @@ eventsApiRoutes.get('/:id', async (c) => {
      WHERE events.id = ? AND events.status = 'published'`,
   ).bind(id).first();
   if (!row) return c.json({ error: 'Akce nenalezena.' }, 404);
-  return c.json({ event: row });
+  const gallery = parseGallery(row);
+  return c.json({ event: { ...row, gallery } });
 });
 
-// POST /api/events — multipart
 eventsApiRoutes.post('/', async (c) => {
   const user = c.get('user');
   if (!['organization', 'hotelier', 'admin'].includes(user.role)) {
@@ -91,7 +90,8 @@ eventsApiRoutes.post('/', async (c) => {
   const form = await c.req.parseBody({ all: true });
   const rawFiles = form.file;
   const fileList = (Array.isArray(rawFiles) ? rawFiles : rawFiles ? [rawFiles] : [])
-    .filter((f) => f && typeof f !== 'string' && f.size > 0);
+    .filter((f) => f && typeof f !== 'string' && f.size > 0)
+    .slice(0, MAX_EVENT_PHOTOS);
 
   const rawHtml = (form.description_html || form.description || '').toString();
   const contentHtml = sanitizeHtml(rawHtml);
@@ -122,34 +122,33 @@ eventsApiRoutes.post('/', async (c) => {
   if (!biz) return c.json({ error: 'Podnik nenájdený.' }, 404);
   if (biz.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
 
-  let coverUrl = null;
-  if (fileList.length > 0) {
+  const galleryUrls = [];
+  for (const f of fileList) {
     try {
-      const f = fileList[0];
-      const ext = ((f.name || 'x.jpg').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      const ext = ((f.name || 'x.jpg').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
       const key = `events/${newId()}.${ext}`;
       await c.env.MEDIA.put(key, await f.arrayBuffer(), { httpMetadata: { contentType: f.type || 'image/jpeg' } });
       const publicBase = c.env.R2_PUBLIC_BASE || '';
-      coverUrl = publicBase ? `${publicBase}/${key}` : key;
+      galleryUrls.push(publicBase ? `${publicBase}/${key}` : key);
     } catch (err) {
       console.error('[events] R2 upload zlyhal:', err);
-      return c.json({ error: 'Nepodařilo se nahrát obrázek.' }, 500);
     }
   }
 
+  const coverUrl = galleryUrls[0] || null;
   const id = newId('event');
   await c.env.DB.prepare(
-    `INSERT INTO events (id, user_id, business_id, business_kind, title, description, content_html, cover_image_url, start_at, end_at, location_name, city, region, geo_lat, geo_lng, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')`,
+    `INSERT INTO events (id, user_id, business_id, business_kind, title, description, content_html, cover_image_url, gallery_json, start_at, end_at, location_name, city, region, geo_lat, geo_lng, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')`,
   ).bind(
     id, user.sub, businessId, businessKind, title, plain, contentHtml, coverUrl,
+    galleryUrls.length > 0 ? JSON.stringify(galleryUrls) : null,
     startAt, endAt, locationName || null, city || null, region || null, geoLat, geoLng,
   ).run();
 
-  return c.json({ id, cover_image_url: coverUrl, title, start_at: startAt }, 201);
+  return c.json({ id, cover_image_url: coverUrl, gallery: galleryUrls, title, start_at: startAt }, 201);
 });
 
-// DELETE /api/events/:id
 eventsApiRoutes.delete('/:id', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -158,19 +157,4 @@ eventsApiRoutes.delete('/:id', async (c) => {
   if (ev.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
   await c.env.DB.prepare(`UPDATE events SET status = 'removed' WHERE id = ?`).bind(id).run();
   return c.json({ ok: true });
-});
-
-// GET /api/events/my — akce, ktoré vytvoril prihlásený user
-eventsApiRoutes.get('/my/list', async (c) => {
-  const user = c.get('user');
-  const { results } = await c.env.DB.prepare(
-    `SELECT events.*, COALESCE(o.name, a.name, r.name) AS business_name
-     FROM events
-     LEFT JOIN organizations o ON o.id = events.business_id AND events.business_kind = 'organizations'
-     LEFT JOIN accommodation a ON a.id = events.business_id AND events.business_kind = 'accommodation'
-     LEFT JOIN restaurants r ON r.id = events.business_id AND events.business_kind = 'restaurants'
-     WHERE events.user_id = ? AND events.status = 'published'
-     ORDER BY events.start_at DESC LIMIT 100`,
-  ).bind(user.sub).all();
-  return c.json({ events: results });
 });
