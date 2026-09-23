@@ -178,7 +178,7 @@ function renderSocialPostCard(post, feedKey) {
         <p class="post-likes" data-like-count="${post.id}">${fmt(post.likes || 0)} páči sa mi${post.views ? ` · ${fmt(post.views)} zobrazení` : ''}</p>
         <p class="post-caption" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(captionText)}">
           <strong class="post-caption-author">${escapeHtml(post.business.name)}</strong>
-          <span class="post-caption-text">${escapeHtml(captionText)}</span>
+          <span class="post-caption-text">${linkifyHashtags(captionText)}</span>
         </p>
         ${linksHtml}
         ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
