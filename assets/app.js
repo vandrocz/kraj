@@ -33,6 +33,15 @@ const state = {
   notifications: null,
   unreadNotifications: 0,
 
+  _adminTab: 'overview',
+  adminUsers: null,
+  adminUsersCounts: null,
+  adminUserReports: null,
+  adminStats: null,
+  _adminUserQuery: '',
+  _adminUserRole: '',
+  _adminUserStatus: '',
+
   _settings: null, _blocks: null, _followers: null, _following: null,
   _searchQuery: '', _searchResults: null,
   _totpSetup: null, _loginLogs: null,
