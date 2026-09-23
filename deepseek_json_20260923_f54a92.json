@@ -1,0 +1,45 @@
+{
+  "name": "Náš kraj — regionální platforma",
+  "short_name": "Náš kraj",
+  "description": "Objevuj hrady, zámky, ubytování a gastro v Česku. Podpoř regionální projekty.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F6FAF7",
+  "theme_color": "#2FBF71",
+  "lang": "cs",
+  "categories": ["travel", "social", "lifestyle"],
+  "icons": [
+    {
+      "src": "https://cdn.vandro.cz/Untitled15_20260522160351.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn.vandro.cz/Untitled15_20260522160351.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn.vandro.cz/Untitled15_20260522160351.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Sbírky",
+      "url": "/?tab=collections",
+      "icons": [{ "src": "https://cdn.vandro.cz/Untitled15_20260522160351.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Akce",
+      "url": "/?tab=events",
+      "icons": [{ "src": "https://cdn.vandro.cz/Untitled15_20260522160351.png", "sizes": "192x192" }]
+    }
+  ]
+}
