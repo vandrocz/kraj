@@ -4,6 +4,7 @@ import { newId } from '../auth.js';
 import { ensureActiveProjectRotation } from '../cron.js';
 import { checkText, flagContent, sanitizeHtml, htmlToPlain, escapeLike } from '../moderation.js';
 import { rateLimit } from '../ratelimit.js';
+import { extractHashtags } from '../hashtags.js';
 
 export const feedRoutes = new Hono();
 
@@ -48,9 +49,7 @@ async function getBlockedIds(env, viewerId) {
     const { results: a } = await env.DB.prepare(`SELECT blocked_id AS id FROM blocks WHERE blocker_id = ?`).bind(viewerId).all();
     const { results: b } = await env.DB.prepare(`SELECT blocker_id AS id FROM blocks WHERE blocked_id = ?`).bind(viewerId).all();
     return new Set([...a.map((r) => r.id), ...b.map((r) => r.id)]);
-  } catch {
-    return new Set();
-  }
+  } catch { return new Set(); }
 }
 
 async function getViewerId(c, env) {
@@ -62,9 +61,7 @@ async function getViewerId(c, env) {
   } catch { return null; }
 }
 
-function encodeCursor(createdAt, id) {
-  return btoa(`${createdAt}|${id}`);
-}
+function encodeCursor(createdAt, id) { return btoa(`${createdAt}|${id}`); }
 function decodeCursor(cursor) {
   try {
     const [createdAt, id] = atob(cursor).split('|');
@@ -73,6 +70,19 @@ function decodeCursor(cursor) {
   } catch { return null; }
 }
 
+// Uloží hashtags pre post
+async function saveHashtags(env, postId, text) {
+  const tags = extractHashtags(text);
+  if (tags.length === 0) return [];
+  try {
+    await env.DB.prepare(`DELETE FROM post_hashtags WHERE post_id = ?`).bind(postId).run();
+    const stmt = env.DB.prepare(`INSERT OR IGNORE INTO post_hashtags (post_id, hashtag) VALUES (?, ?)`);
+    await env.DB.batch(tags.map((t) => stmt.bind(postId, t)));
+  } catch (err) { console.warn('saveHashtags:', err.message); }
+  return tags;
+}
+
+// Kolekcie (neaktívne v UI)
 feedRoutes.get('/collections', async (c) => {
   await ensureActiveProjectRotation(c.env);
   const active = await c.env.DB.prepare(
@@ -110,7 +120,6 @@ function scorePostForUser(post, { followedIds, userCity, userRegion, verifiedBoo
   const now = Date.now();
   const created = new Date(post.created_at.replace(' ', 'T') + 'Z').getTime();
   const ageHours = (now - created) / 3600000;
-
   let score = 100 * Math.pow(0.5, ageHours / 24);
   score += (post.likes || 0) * 2;
   score += (post.comment_count || 0) * 5;
@@ -122,7 +131,6 @@ function scorePostForUser(post, { followedIds, userCity, userRegion, verifiedBoo
   return score;
 }
 
-// Dynamická voľba stĺpca pre logo podľa typu tabuľky
 function logoColumnFor(table) {
   if (table === 'organizations') return 'logo_url';
   if (table === 'accommodation') return 'image_url';
@@ -234,7 +242,7 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
     out = out.map((p) => ({ ...p, __score: scorePostForUser(p, {}) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
   } else if (sort === 'for_you') {
-    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedIds, userCity, userRegion }) })).sort((a, b) => b.__score - a.__score);
+    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedId: null, followedIds, userCity, userRegion }) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
   } else {
     const hasMore = out.length > limit;
@@ -250,6 +258,58 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
 feedRoutes.get('/organization', (c) => loadSocialFeed(c, { targetFeed: 'organization', table: 'organizations' }));
 feedRoutes.get('/accommodation', (c) => loadSocialFeed(c, { targetFeed: 'accommodation', table: 'accommodation' }));
 feedRoutes.get('/gastro', (c) => loadSocialFeed(c, { targetFeed: 'gastro', table: 'restaurants', extraFilterCols: ['cuisine_type'] }));
+
+// Post podľa ID (pre deep-linking)
+feedRoutes.get('/post-by-id/:id', async (c) => {
+  const id = c.req.param('id');
+  const post = await c.env.DB.prepare(
+    `SELECT posts.*,
+            COALESCE(o.id, a.id, r.id) AS business_id,
+            COALESCE(o.name, a.name, r.name) AS business_name,
+            COALESCE(o.type, a.type, r.type) AS business_type,
+            COALESCE(o.region, a.region, r.region) AS region,
+            COALESCE(o.district, a.district, r.district) AS district,
+            COALESCE(o.city, a.city, r.city) AS city,
+            COALESCE(o.is_verified, a.is_verified, r.is_verified) AS is_verified,
+            COALESCE(o.logo_url, a.image_url, r.image_url) AS logo_url
+     FROM posts
+     LEFT JOIN organizations o ON o.id = posts.business_id AND posts.target_feed = 'organization'
+     LEFT JOIN accommodation a ON a.id = posts.business_id AND posts.target_feed = 'accommodation'
+     LEFT JOIN restaurants r ON r.id = posts.business_id AND posts.target_feed = 'gastro'
+     WHERE posts.id = ? AND posts.status = 'published'`,
+  ).bind(id).first();
+  if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
+
+  const mediaMap = await fetchMediaForPosts(c.env, [post.id]);
+  const likesRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${post.id}`);
+  const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(post.id).first();
+
+  return c.json({
+    post: {
+      id: post.id,
+      text: post.text_content,
+      html: post.content_html || escapePlain(post.text_content),
+      image_url: post.image_url,
+      media: mediaMap[post.id] || (post.image_url ? [post.image_url] : []),
+      created_at: post.created_at,
+      comment_count: cc?.n || 0,
+      likes: likesRaw ? parseInt(likesRaw, 10) : 0,
+      views: post.view_count || 0,
+      geo: post.geo_place ? { place: post.geo_place, lat: post.geo_lat, lng: post.geo_lng } : null,
+      business: {
+        id: post.business_id,
+        name: post.business_name,
+        type: post.business_type,
+        region: post.region,
+        district: post.district,
+        city: post.city,
+        is_verified: !!post.is_verified,
+        logo_url: post.logo_url,
+      },
+      __feedKey: post.target_feed === 'organization' ? 'organization' : post.target_feed === 'accommodation' ? 'accommodation' : 'gastro',
+    },
+  });
+});
 
 feedRoutes.post('/:id/view', async (c) => {
   const postId = c.req.param('id');
@@ -344,6 +404,8 @@ feedRoutes.patch('/post/:id', async (c) => {
   await c.env.DB.prepare(`UPDATE posts SET text_content = ?, content_html = ? WHERE id = ?`)
     .bind(plainText, contentHtml, id).run();
 
+  if (plainText) await saveHashtags(c.env, id, plainText);
+
   return c.json({ ok: true, id, text: plainText, html: contentHtml });
 });
 
@@ -380,7 +442,6 @@ feedRoutes.get('/:id/comments', async (c) => {
   ).bind(postId).all();
 
   const filtered = results.filter((r) => !blockedIds.has(r.user_id));
-
   const byId = {};
   const roots = [];
   for (const r of filtered) byId[r.id] = { ...r, replies: [] };
@@ -454,22 +515,5 @@ feedRoutes.post('/:id/report', async (c) => {
   return c.json({ id, ok: true }, 201);
 });
 
-feedRoutes.get('/business/:kind/:id', async (c) => {
-  const kind = c.req.param('kind');
-  const id = c.req.param('id');
-  const map = { organizations: 'organizations', accommodation: 'accommodation', restaurants: 'restaurants' };
-  const table = map[kind];
-  if (!table) return c.json({ error: 'Neznámý typ.' }, 400);
-  const business = await c.env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(id).first();
-  if (!business) return c.json({ error: 'Nenalezeno.' }, 404);
-  const { results: posts } = await c.env.DB.prepare(
-    `SELECT id, text_content, content_html, image_url, geo_place, created_at FROM posts WHERE business_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 30`,
-  ).bind(id).all();
-  const mediaMap = await fetchMediaForPosts(c.env, posts.map((p) => p.id));
-  const postsWithMedia = posts.map((p) => ({
-    ...p,
-    html: p.content_html || escapePlain(p.text_content),
-    media: mediaMap[p.id] || (p.image_url ? [p.image_url] : []),
-  }));
-  return c.json({ business, posts: postsWithMedia });
-});
+// Uloží hashtags pri vytvorení postu (volané z posts.js)
+export { saveHashtags };
