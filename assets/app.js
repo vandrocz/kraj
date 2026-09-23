@@ -526,6 +526,14 @@ function updateLightboxDOM() {
         ? `<img src="${escapeAttr(logo)}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--c-primary-light);" />`
         : `<span style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:var(--c-primary-light);color:var(--c-primary-dark);font-weight:800;font-size:17px;flex-shrink:0;border:2px solid var(--c-primary-light);">${initial}</span>`;
 
+      const commentsHtml = (post.__comments || []).map((c) => `
+        <div class="lightbox-comment">
+          <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}">${escapeHtml(c.user_name || 'Uživatel')}</strong>
+          <span>${escapeHtml(c.comment_text)}</span>
+          <span class="lightbox-comment-time">${timeAgo(c.created_at)}</span>
+        </div>
+      `).join('');
+
       info.innerHTML = `
         <header class="lightbox-post-head">
           <button data-action="open-profile" data-kind="${post.__feedKey || ''}" data-id="${biz.id || ''}" style="background:none;border:none;padding:0;cursor:pointer;flex-shrink:0;">
@@ -537,7 +545,7 @@ function updateLightboxDOM() {
           </div>
         </header>
         <div class="lightbox-post-body">
-          <div class="lightbox-post-text rich-text">${shortenLinksInHtml(post.html || escapeHtml(post.text || ''))}</div>
+          <div class="lightbox-post-text rich-text">${linkifyHashtags(htmlToPlain(getPostText(post)))}</div>
           ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
         </div>
         <div class="lightbox-post-actions">
@@ -545,17 +553,39 @@ function updateLightboxDOM() {
             ${icon('heart', { size: 22, filled: !!post.__liked })}
           </button>
           <span class="lightbox-stat">${fmt(post.likes || 0)}</span>
-          <button class="post-action" data-action="toggle-comments" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
-            ${icon('comment', { size: 21 })}
-          </button>
-          <span class="lightbox-stat">${fmt(post.comment_count || 0)}</span>
-          <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(post.text || '')}">
+          <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(getPostText(post))}">
             ${icon('share', { size: 21 })}
           </button>
+        </div>
+
+        <div class="lightbox-comments-section">
+          <p class="lightbox-comments-title">Komentáře (${post.comment_count || 0})</p>
+          <div class="lightbox-comments-list" id="lightbox-comments-list">
+            ${post.__comments ? (commentsHtml || '<p class="lightbox-comment-empty">Zatím žádné komentáře.</p>') : '<p class="lightbox-comment-empty">Načítám…</p>'}
+          </div>
+          ${isLoggedIn() ? `
+            <form class="lightbox-comment-form" data-action="submit-lightbox-comment" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
+              <input class="lightbox-comment-input" placeholder="Napiš komentář…" data-lightbox-comment-input />
+              <button type="submit" class="lightbox-comment-send">${icon('send', { size: 18 })}</button>
+            </form>
+          ` : `
+            <p class="lightbox-comment-empty" style="margin-top:8px">
+              <a href="#" data-action="set-tab" data-tab="account" style="color:var(--c-primary-dark);font-weight:700">Přihlas se</a> pro komentování.
+            </p>
+          `}
         </div>
       `;
     }
   }
+}
+
+function getPostText(post) {
+  return post.text || post.text_content || '';
+}
+
+function htmlToPlain(html) {
+  if (!html) return '';
+  return String(html).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function renderLightbox() {
