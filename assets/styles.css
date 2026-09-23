@@ -2271,3 +2271,244 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* ============================================================
+   HASHTAGS
+   ============================================================ */
+.hashtag-link {
+  color: var(--c-primary-dark);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.hashtag-link:hover { text-decoration: underline; }
+
+.trending-hashtags {
+  padding: 8px 16px 14px;
+  border-bottom: 1px solid var(--c-border);
+  margin-bottom: 8px;
+}
+.trending-hashtags-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.trending-hashtags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hashtag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-round);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--c-text);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.hashtag-chip:hover {
+  background: var(--c-primary-light);
+  border-color: var(--c-primary);
+  color: var(--c-primary-dark);
+}
+.hashtag-chip-count {
+  font-size: 10.5px;
+  background: var(--c-surface);
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--c-text-muted);
+}
+
+/* ============================================================
+   LIGHTBOX — komentáre
+   ============================================================ */
+.lightbox-comments-section {
+  border-top: 1px solid var(--c-border);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.lightbox-comments-title {
+  font-size: 12.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--c-text-muted);
+  margin-bottom: 8px;
+}
+.lightbox-comments-list {
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+  margin-bottom: 10px;
+}
+.lightbox-comment {
+  font-size: 13px;
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.lightbox-comment strong {
+  font-weight: 700;
+  color: var(--c-text);
+  cursor: pointer;
+}
+.lightbox-comment strong:hover { color: var(--c-primary-dark); }
+.lightbox-comment span { color: var(--c-text); }
+.lightbox-comment-time {
+  font-size: 11px;
+  color: var(--c-text-muted) !important;
+  margin-top: 1px;
+}
+.lightbox-comment-empty {
+  font-size: 12.5px;
+  color: var(--c-text-muted);
+  text-align: center;
+  padding: 8px 0;
+}
+.lightbox-comment-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.lightbox-comment-input {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: var(--radius-round);
+  border: 1px solid var(--c-border);
+  background: var(--c-bg);
+  font-size: 13px;
+  font-family: inherit;
+}
+.lightbox-comment-send {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: var(--c-primary);
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+@media (max-width: 899px) {
+  .lightbox-comments-list { max-height: 100px; }
+  .lightbox-info-pane { max-height: 45vh; }
+}
+
+/* ============================================================
+   EVENT DETAIL — užšia cover + galéria
+   ============================================================ */
+.event-detail-cover-narrow {
+  position: relative;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+.event-detail-cover-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16/9;
+  max-height: 420px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--c-border);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+}
+.event-detail-cover-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.event-detail-gallery-badge {
+  position: absolute;
+  top: 12px; right: 12px;
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 10px;
+  background: rgba(0,0,0,0.55);
+  color: white;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  backdrop-filter: blur(6px);
+}
+.event-detail-cover-content {
+  margin-top: 16px;
+  padding: 0 4px;
+}
+.event-detail-kind {
+  display: inline-block;
+  background: var(--c-primary-light);
+  color: var(--c-primary-dark);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: var(--radius-round);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.event-detail-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--c-text);
+  line-height: 1.2;
+  margin: 0;
+}
+@media (max-width: 719px) {
+  .event-detail-cover-narrow { padding: 0 12px; }
+  .event-detail-cover-image { max-height: 260px; }
+  .event-detail-title { font-size: 21px; }
+}
+
+.event-detail-thumbs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 0;
+  max-width: 720px;
+  margin: 0 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.event-detail-thumbs::-webkit-scrollbar { display: none; }
+.event-detail-thumb {
+  flex-shrink: 0;
+  width: 80px; height: 80px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 2px solid var(--c-border);
+  background: var(--c-border);
+  padding: 0;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.event-detail-thumb:hover { border-color: var(--c-primary); }
+.event-detail-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ============================================================
+   LIGHTBOX linky bez ::before
+   ============================================================ */
+.lightbox-post-text .hashtag-link {
+  color: var(--c-primary-dark) !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  display: inline !important;
+  font-size: inherit !important;
+}
