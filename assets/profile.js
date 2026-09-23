@@ -6,6 +6,26 @@ async function loadProfile(kind, id) {
   const cacheKey = `${kind}:${id}`;
   try {
     const data = await apiGet(`/api/profile/${kind}/${id}`);
+
+    // Ak je to USER s business rolou a má podniky → automaticky otvor business profil
+    // (aby sa nezobrazoval duplicitný "user profil" popri podniku)
+    if (kind === 'user' && data.type === 'user' && Array.isArray(data.businesses) && data.businesses.length > 0) {
+      const b = data.businesses[0];
+      state.profiles[cacheKey] = data;
+      state.overlay = { type: 'profile', kind: b.kind, id: b.id };
+      state._bizProfileTab = 'posts';
+      state._bizEvents = null;
+      state._bizStats = null;
+      state._reviews = null;
+      state._myReview = null;
+      state._checkinStatus = undefined;
+      state._wishlistStatus = undefined;
+      state._verificationStatus = undefined;
+      state._userProfileCheckins = undefined;
+      await loadProfile(b.kind, b.id);
+      return;
+    }
+
     state.profiles[cacheKey] = data;
     if (isLoggedIn()) {
       try {
