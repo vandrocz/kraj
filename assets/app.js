@@ -86,9 +86,9 @@ function fmt(n) { return Number(n || 0).toLocaleString('cs-CZ'); }
 // 1 iskra, 2-4 iskry, 5+ iskier
 function getLikeCountLabel(n) {
   const num = Number(n || 0);
-  if (num === 1) return '1 iskra';
-  if (num >= 2 && num <= 4) return `${num} iskry`;
-  return `${num} iskier`;
+  if (num === 1) return '1 super';
+  if (num >= 2 && num <= 4) return `${num} super`;
+  return `${num} super`;
 }
 
 // ============================================================
