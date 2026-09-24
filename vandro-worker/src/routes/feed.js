@@ -5,6 +5,7 @@ import { ensureActiveProjectRotation } from '../cron.js';
 import { checkText, flagContent, sanitizeHtml, htmlToPlain, escapeLike } from '../moderation.js';
 import { rateLimit } from '../ratelimit.js';
 import { extractHashtags } from '../hashtags.js';
+import { sendPushToUser } from '../push.js';
 
 export const feedRoutes = new Hono();
 
@@ -405,7 +406,16 @@ feedRoutes.post('/:id/like', async (c) => {
         `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
          VALUES (?, ?, 'like', ?, 'post', ?, 'dal(a) iskru tvému příspěvku')`,
       ).bind(newId('notif'), post.user_id, user.sub, postId).run();
-    } catch {}
+
+      // 🔔 Pošli push notifikáciu
+      const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
+      await sendPushToUser(c.env, post.user_id, {
+        title: 'Nová iskra ✦',
+        body: `${actor?.display_name || 'Někdo'} dal(a) iskru tvému příspěvku`,
+        url: `/?post=${encodeURIComponent(postId)}`,
+        tag: `like-${postId}`,
+      });
+    } catch (err) { console.warn('push on like failed:', err.message); }
   }
   return c.json({ liked: true, likes: n }, 201);
 });
@@ -551,13 +561,24 @@ feedRoutes.post('/:id/comment', async (c) => {
   await c.env.DB.prepare('INSERT INTO comments (id, post_id, user_id, comment_text, parent_id) VALUES (?, ?, ?, ?, ?)')
     .bind(id, postId, user.sub, text, parentId).run();
 
+  const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
+  const actorName = actor?.display_name || 'Někdo';
+
   if (post.user_id && post.user_id !== user.sub) {
     try {
       await c.env.DB.prepare(
         `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
          VALUES (?, ?, 'comment', ?, 'post', ?, 'okomentoval(a) tvůj příspěvek')`,
       ).bind(newId('notif'), post.user_id, user.sub, postId).run();
-    } catch {}
+
+      // 🔔 Push
+      await sendPushToUser(c.env, post.user_id, {
+        title: 'Nový komentář',
+        body: `${actorName}: ${text.slice(0, 80)}`,
+        url: `/?post=${encodeURIComponent(postId)}`,
+        tag: `comment-${postId}`,
+      });
+    } catch (err) { console.warn('push on comment failed:', err.message); }
   }
 
   if (parentComment && parentComment.user_id !== user.sub && parentComment.user_id !== post.user_id) {
@@ -566,9 +587,16 @@ feedRoutes.post('/:id/comment', async (c) => {
         `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
          VALUES (?, ?, 'reply', ?, 'comment', ?, 'odpověděl(a) na tvůj komentář')`,
       ).bind(newId('notif'), parentComment.user_id, user.sub, id).run();
-    } catch {}
-  }
 
+      // 🔔 Push
+      await sendPushToUser(c.env, parentComment.user_id, {
+        title: 'Odpověď na komentář',
+        body: `${actorName}: ${text.slice(0, 80)}`,
+        url: `/?post=${encodeURIComponent(postId)}`,
+        tag: `reply-${id}`,
+      });
+    } catch (err) { console.warn('push on reply failed:', err.message); }
+  }
   return c.json({ id, post_id: postId, parent_id: parentId, text, created_at: new Date().toISOString() }, 201);
 });
 
