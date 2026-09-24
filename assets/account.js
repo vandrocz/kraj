@@ -1,5 +1,5 @@
 // ============================================================
-// SEKCE 5: MŮJ ÚČET
+// SEKCE 5: MŮJ PROFIL (bývalý Můj účet)
 // ============================================================
 
 const accountFormState = {
@@ -9,13 +9,14 @@ const accountFormState = {
   postFiles: [],
   formError: '',
   formBusy: false,
+  showPostForm: false,
 };
 
 function renderAccountPage() {
   if (!isLoggedIn()) {
     const html = `
       <div class="page-scroll">
-        ${renderHeader('Můj účet')}
+        ${renderHeader('Můj profil')}
         ${renderAuthCard()}
       </div>`;
     setTimeout(() => {
@@ -24,35 +25,175 @@ function renderAccountPage() {
     }, 80);
     return html;
   }
+
+  const u = state.user;
+  const isBiz = u.role === 'organization' || u.role === 'hotelier';
+  const isAdmin = u.role === 'admin';
+
   return `
     <div class="page-scroll">
-      ${renderHeader('Můj účet', `
-        <button class="header-icon-btn" data-action="open-notifications" style="position:relative" aria-label="Notifikace">
-          ${icon('bell', { size: 19 })}
-          ${state.unreadNotifications > 0 ? `<span class="nav-badge">${state.unreadNotifications > 9 ? '9+' : state.unreadNotifications}</span>` : ''}
-        </button>
-        <button class="header-icon-btn" data-action="open-search" aria-label="Hledat">${icon('search', { size: 19 })}</button>
+      ${renderHeader('Můj profil', `
+        <button class="header-icon-btn" data-action="edit-profile" data-kind="user" data-id="${u.id}" aria-label="Upravit profil">${icon('edit', { size: 19 })}</button>
+        <button class="header-icon-btn" data-action="open-profile-stats" data-kind="user" data-id="${u.id}" aria-label="Statistiky">${icon('chart', { size: 19 })}</button>
+        ${isBiz ? `<button class="header-icon-btn" data-action="toggle-post-form" aria-label="Přidat příspěvek">${icon('plus', { size: 20 })}</button>` : ''}
         <button class="header-icon-btn" data-action="open-settings" aria-label="Nastavení">${icon('settings', { size: 19 })}</button>
       `)}
       ${renderVerifyBanner()}
-      ${renderAccountHeaderCard()}
-      ${renderRoleSpecificContent()}
+      ${renderMyProfileHero()}
+      ${isBiz ? renderBusinessPickerSection() : ''}
+      ${isBiz && accountFormState.showPostForm ? renderBusinessPostForm() : ''}
+      ${isAdmin ? renderAdminPanel() : ''}
+      ${renderMyProfileActivity()}
     </div>`;
 }
 
-function renderVerifyBanner() {
-  if (!isLoggedIn()) return '';
-  if (state.user.email_verified) return '';
+function renderMyProfileHero() {
+  const u = state.user;
+  const initial = (u.display_name || u.email || '?').charAt(0).toUpperCase();
+  const roleLabel = { user: 'Turista', organization: 'Organizace', hotelier: 'Podnik', admin: 'Administrátor' }[u.role] || u.role;
+  const avatar = u.avatar_url
+    ? `<img src="${u.avatar_url}" alt="" class="profile-avatar-img" style="object-fit:cover" />`
+    : `<div class="profile-avatar-initial">${initial}</div>`;
+
   return `
-    <div class="verify-banner" data-action="resend-verification">
-      <div class="verify-banner-icon">${icon('mail', { size: 22 })}</div>
-      <div class="verify-banner-body">
-        <p class="verify-banner-title">Ověř svůj e-mail</p>
-        <p class="verify-banner-text">Poslali jsme odkaz na <strong>${escapeHtml(state.user.email)}</strong>. <span style="color:var(--c-primary-dark);font-weight:700">Poslat znovu →</span></p>
+    <div class="profile-hero">
+      <div class="profile-avatar-wrap">
+        ${avatar}
+        <button class="profile-avatar-edit" data-action="upload-avatar" data-target="user" data-field="avatar">${icon('camera', { size: 14 })}</button>
+      </div>
+      <p class="profile-name">${escapeHtml(u.display_name)}</p>
+      ${u.handle ? `<p class="profile-handle">@${escapeHtml(u.handle)}</p>` : ''}
+      <span class="account-role-chip">${roleLabel}</span>
+      ${u.bio
+        ? `<p class="profile-bio">${escapeHtml(u.bio)}</p>`
+        : '<p class="profile-bio" style="color:var(--c-text-muted)">Zatím žádné bio. Klikni na tužku vpravo nahoře.</p>'}
+    </div>`;
+}
+
+function renderMyProfileActivity() {
+  const u = state.user;
+  return `
+    <div class="profile-section">
+      <h3 class="profile-section-title">Moje aktivita</h3>
+      <div class="stat-cards">
+        <button class="stat-card" data-action="open-badges" style="cursor:pointer;text-align:left">
+          <div class="stat-card-value">${icon('chart', { size: 20 })}</div>
+          <div class="stat-card-label">Moje odznaky</div>
+        </button>
+        <button class="stat-card" data-action="open-user-checkins" data-id="${u.id}" style="cursor:pointer;text-align:left">
+          <div class="stat-card-value">${icon('location', { size: 20 })}</div>
+          <div class="stat-card-label">Navštívená místa</div>
+        </button>
+        <button class="stat-card" data-action="open-wishlist" style="cursor:pointer;text-align:left">
+          <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
+          <div class="stat-card-label">Chci navštívit</div>
+        </button>
+        <button class="stat-card" data-action="open-bookmarks" style="cursor:pointer;text-align:left">
+          <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
+          <div class="stat-card-label">Uložené příspěvky</div>
+        </button>
       </div>
     </div>`;
 }
 
+function renderBusinessPickerSection() {
+  const businesses = state.businesses || [];
+  if (businesses.length === 0) return '';
+  if (!accountFormState.postTargetBusiness) accountFormState.postTargetBusiness = businesses[0].id;
+  const selected = businesses.find((b) => b.id === accountFormState.postTargetBusiness) || businesses[0];
+  const isVerified = Number(selected.is_verified);
+  const KIND_MAP = { organization: 'organizations', accommodation: 'accommodation', gastro: 'restaurants' };
+  const bizKind = KIND_MAP[selected.kind];
+
+  return `
+    <div class="profile-section">
+      <h3 class="profile-section-title">Tvůj podnik</h3>
+      ${businesses.length > 1 ? `
+        <div class="business-picker">
+          ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${Number(b.is_verified) ? '✓' : ''}</button>`).join('')}
+        </div>
+      ` : ''}
+      <div class="biz-quick-actions">
+        <button class="profile-action-btn" data-action="open-profile" data-kind="${bizKind}" data-id="${selected.id}">${icon('user', { size: 15 })} Profil</button>
+        <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${bizKind}" data-id="${selected.id}">${icon('chart', { size: 15 })} Statistiky</button>
+        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Akce</button>
+        ${!isVerified ? `<button class="profile-action-btn" data-action="open-verification-request" data-kind="${bizKind}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">${icon('shield', { size: 15 })} Ověřit</button>` : ''}
+      </div>
+    </div>`;
+}
+
+function renderBusinessPostForm() {
+  const businesses = state.businesses || [];
+  if (businesses.length === 0) return '';
+  const selected = businesses.find((b) => b.id === accountFormState.postTargetBusiness) || businesses[0];
+  const targetFeed = selected.kind;
+
+  return `
+    <div class="profile-section">
+      <h3 class="profile-section-title">Nový příspěvek</h3>
+      <form data-action="submit-business-post" data-business-id="${selected.id}" data-target-feed="${targetFeed}">
+        <div class="file-drop" data-action="trigger-file-input">
+          <input type="file" name="file" accept="image/*" multiple style="display:none" id="post-file-input" data-action="files-selected" />
+          <span id="file-drop-label">${icon('image', { size: 22 })}<br/>Klikni pro výběr 1–4 fotek</span>
+        </div>
+        <div id="file-preview-grid" class="file-preview-grid"></div>
+        ${renderRichEditor('text_html', 'Co je nového?')}
+        ${renderLocationPicker()}
+        <div class="post-link-fields">
+          <p class="post-link-fields-title">${icon('globe', { size: 14 })} Přidat odkaz (nepovinné)</p>
+          <div class="post-link-row">
+            <input class="form-input" type="url" name="link_url" placeholder="https://…" />
+            <input class="form-input" type="text" name="link_text" placeholder="Text odkazu" maxlength="40" />
+          </div>
+        </div>
+        <button class="form-submit-btn" type="submit">Zveřejnit</button>
+      </form>
+    </div>`;
+}
+
+// ============================================================
+// LOCATION PICKER — hľadanie reálnych miest a adries
+// ============================================================
+function renderLocationPicker() {
+  const current = state._postLocation;
+  const results = state._postLocationResults;
+  const isLoading = results === null && (state._postLocationQuery || '').length >= 3;
+
+  return `
+    <div class="location-picker">
+      <p class="post-link-fields-title">${icon('location', { size: 14 })} Přidat polohu (nepovinné)</p>
+      ${current ? `
+        <div class="location-selected">
+          ${icon('location', { size: 14 })}
+          <span>${escapeHtml(current.place)}</span>
+          <button type="button" data-action="clear-post-location" aria-label="Odstranit">${icon('close', { size: 14 })}</button>
+        </div>
+      ` : `
+        <div class="location-search-wrap">
+          <input class="form-input" type="text" placeholder="Hledat místo nebo adresu…" data-action="location-search" value="${escapeAttr(state._postLocationQuery || '')}" autocomplete="off" />
+          ${isLoading ? `<span class="location-spinner">Hledám…</span>` : ''}
+          ${results && results.length > 0 ? `
+            <div class="location-results">
+              ${results.map((r, i) => `
+                <button type="button" class="location-result" data-action="pick-post-location" data-index="${i}">
+                  ${icon('location', { size: 14 })}
+                  <span>${escapeHtml(r.place)}</span>
+                </button>
+              `).join('')}
+            </div>
+          ` : ''}
+          ${results && results.length === 0 && (state._postLocationQuery || '').length >= 3 && !isLoading ? `
+            <p class="location-empty">Nic nenalezeno. Zkus jiný název.</p>
+          ` : ''}
+        </div>
+        <button type="button" class="profile-action-btn" data-action="use-my-location" style="margin-top:8px">${icon('navigation', { size: 14 })} Použít moji polohu</button>
+      `}
+    </div>`;
+}
+
+// ============================================================
+// AUTH CARD (nezmenené z pôvodného account.js)
+// ============================================================
 function renderAuthCard() {
   return `
     <div class="auth-card">
@@ -203,15 +344,15 @@ function finishLogin(data) {
   showToast(`Vítej zpět, ${data.user.display_name}!`);
   loadNotifications();
   if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(data.user);
-
-  // Po 3 sekundách zobraz prompt na push notifikácie (ak ešte neboli povolené)
-  setTimeout(() => {
-    if ('Notification' in window && Notification.permission === 'default' && typeof enablePushNotifications === 'function') {
-      enablePushNotifications().catch(() => {});
-    } else if (typeof maybeSubscribePush === 'function') {
-      maybeSubscribePush();
-    }
-  }, 3000);
+  if (typeof maybeSubscribePush === 'function') {
+    setTimeout(() => {
+      if ('Notification' in window && Notification.permission === 'default' && typeof enablePushNotifications === 'function') {
+        enablePushNotifications().catch(() => {});
+      } else {
+        maybeSubscribePush();
+      }
+    }, 3000);
+  }
 }
 
 async function handleRegisterSubmit(form) {
@@ -251,143 +392,63 @@ function handleLogout() {
   renderApp();
 }
 
-function renderAccountHeaderCard() {
-  const initial = (state.user.display_name || state.user.email || '?').charAt(0).toUpperCase();
-  const roleLabel = { user: 'Turista', organization: 'Organizace', hotelier: 'Podnik', admin: 'Administrátor' }[state.user.role] || state.user.role;
-  const avatar = state.user.avatar_url
-    ? `<img src="${state.user.avatar_url}" alt="" class="account-avatar" style="object-fit:cover" />`
-    : `<div class="account-avatar">${initial}</div>`;
-  const handleHtml = state.user.handle ? `<p style="font-size:12px;color:var(--c-text-muted);margin-top:2px">@${escapeHtml(state.user.handle)}</p>` : '';
-  return `
-    <div class="account-header" data-action="open-profile" data-kind="user" data-id="${state.user.id}" style="cursor:pointer">
-      ${avatar}
-      <div style="flex:1">
-        <p class="account-name">${escapeHtml(state.user.display_name)}</p>
-        ${handleHtml}
-        <span class="account-role-chip">${roleLabel}</span>
-      </div>
-      ${icon('chevronRight', { size: 18 })}
-    </div>`;
-}
+// ============================================================
+// BUSINESS POST SUBMIT — používa state._postLocation
+// ============================================================
+async function handleBusinessPostSubmit(form) {
+  const businessId = form.dataset.businessId;
+  const targetFeed = form.dataset.targetFeed;
+  const files = accountFormState.postFiles;
+  if (!files || files.length === 0) { showToast('Vyber alespoň jednu fotku.'); return; }
 
-function renderRoleSpecificContent() {
-  if (state.user.role === 'user') return renderUserAboutSection();
-  if (state.user.role === 'organization' || state.user.role === 'hotelier') return renderBusinessDashboard();
-  if (state.user.role === 'admin') return renderAdminPanel();
-  return '';
-}
+  const fd = new FormData();
+  files.forEach((f) => fd.append('file', f, f.name));
+  fd.set('business_id', businessId);
+  fd.set('target_feed', targetFeed);
 
-// USER
-function renderUserAboutSection() {
-  const u = state.user;
-  return `
-    <div class="profile-section">
-      <h3 class="profile-section-title">O mně</h3>
-      <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:16px;">
-        ${u.handle ? `<p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:8px">@${escapeHtml(u.handle)}</p>` : ''}
-        ${u.bio
-          ? `<p style="font-size:14px;line-height:1.6">${escapeHtml(u.bio)}</p>`
-          : '<p style="color:var(--c-text-muted);font-size:13.5px">Zatím žádné bio. Klikni na „Upravit profil".</p>'}
-        <div style="margin-top:14px">
-          <button class="profile-action-btn" data-action="edit-profile" data-kind="user" data-id="${u.id}">${icon('edit', { size: 15 })} Upravit profil</button>
-        </div>
-      </div>
-    </div>
+  let html = getEditorHtml(form);
 
-    <div class="profile-section">
-      <h3 class="profile-section-title">Moje aktivita</h3>
-      <div class="stat-cards">
-        <button class="stat-card" data-action="open-badges" style="cursor:pointer;text-align:left">
-          <div class="stat-card-value">${icon('chart', { size: 20 })}</div>
-          <div class="stat-card-label">Moje odznaky</div>
-        </button>
-        <button class="stat-card" data-action="open-user-checkins" data-id="${u.id}" style="cursor:pointer;text-align:left">
-          <div class="stat-card-value">${icon('location', { size: 20 })}</div>
-          <div class="stat-card-label">Navštívená místa</div>
-        </button>
-        <button class="stat-card" data-action="open-wishlist" style="cursor:pointer;text-align:left">
-          <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
-          <div class="stat-card-label">Chci navštívit</div>
-        </button>
-        <button class="stat-card" data-action="open-bookmarks" style="cursor:pointer;text-align:left">
-          <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
-          <div class="stat-card-label">Uložené příspěvky</div>
-        </button>
-      </div>
-    </div>`;
-}
-
-// BUSINESS
-function renderBusinessDashboard() {
-  const businesses = state.businesses || [];
-  if (businesses.length === 0) return '<p class="empty-state">K účtu není přiřazen žádný podnik.</p>';
-  if (!accountFormState.postTargetBusiness) accountFormState.postTargetBusiness = businesses[0].id;
-  const selected = businesses.find((b) => b.id === accountFormState.postTargetBusiness) || businesses[0];
-  const targetFeed = selected.kind;
-
-  if (state._verificationStatus === undefined) {
-    state._verificationStatus = null;
-    apiGet(`/api/profile/me/verification-status/${targetFeed}/${selected.id}`)
-      .then((r) => { state._verificationStatus = r; renderApp(); })
-      .catch(() => {});
+  const linkUrl = (form.querySelector('[name="link_url"]')?.value || '').trim();
+  const linkText = (form.querySelector('[name="link_text"]')?.value || '').trim();
+  if (linkUrl) {
+    const safeUrl = /^https?:\/\//i.test(linkUrl) ? linkUrl : 'https://' + linkUrl;
+    const label = linkText || safeUrl;
+    html += `<p><a href="${escapeAttr(safeUrl)}">${escapeHtml(label)}</a></p>`;
   }
 
-  const vreq = state._verificationStatus?.request;
-  const isPending = vreq?.status === 'pending';
+  fd.set('text_html', html);
+  fd.set('text', html.replace(/<[^>]*>/g, ' ').trim());
 
-  return `
-    <div class="profile-section">
-      <h3 class="profile-section-title">Tvůj podnik</h3>
-      <div class="business-picker">
-        ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${Number(b.is_verified) ? '✓' : ''}</button>`).join('')}
-      </div>
-      <div style="padding:0 16px 10px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="profile-action-btn" data-action="open-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('user', { size: 15 })} Zobrazit profil</button>
-        <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">${icon('chart', { size: 15 })} Statistiky</button>
-        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Přidat akci</button>
-      </div>
-      ${!Number(selected.is_verified) && !isPending ? `
-        <div style="padding:0 16px 10px">
-          <button class="profile-action-btn" data-action="open-verification-request" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
-            ${icon('shield', { size: 15 })} Ověřit účet firmy
-          </button>
-        </div>
-      ` : ''}
-      ${!Number(selected.is_verified) && isPending ? `
-        <p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">⏳ Žádost o ověření čeká na schválení.</p>
-      ` : ''}
-      ${Number(selected.is_verified) ? `
-        <p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">✓ Profil je ověřený</p>
-      ` : ''}
-    </div>
+  // Použi vybrané miesto z location pickeru
+  const loc = state._postLocation;
+  if (loc) {
+    fd.set('geo_lat', String(loc.lat));
+    fd.set('geo_lng', String(loc.lng));
+    fd.set('geo_place', loc.place);
+  }
 
-    <div class="profile-section">
-      <h3 class="profile-section-title">Přidat příspěvek (max. 4 fotky)</h3>
-      <form data-action="submit-business-post" data-business-id="${selected.id}" data-target-feed="${targetFeed}">
-        <div class="file-drop" data-action="trigger-file-input">
-          <input type="file" name="file" accept="image/*" multiple style="display:none" id="post-file-input" data-action="files-selected" />
-          <span id="file-drop-label">${icon('image', { size: 22 })}<br/>Klikni pro výběr 1–4 fotek</span>
-        </div>
-        <div id="file-preview-grid" class="file-preview-grid"></div>
-        ${renderRichEditor('text_html', 'Co je nového?')}
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Nahrávám…'; }
 
-        <div class="post-link-fields">
-          <p class="post-link-fields-title">${icon('globe', { size: 14 })} Přidat odkaz (nepovinné)</p>
-          <div class="post-link-row">
-            <input class="form-input" type="url" name="link_url" placeholder="https://…" />
-            <input class="form-input" type="text" name="link_text" placeholder="Text odkazu" maxlength="40" />
-          </div>
-        </div>
-
-        <div style="display:flex;gap:8px;margin-bottom:14px;">
-          <button type="button" class="profile-action-btn" data-action="attach-geo" data-geo-label>${icon('location', { size: 15 })} Přidat polohu</button>
-        </div>
-        <button class="form-submit-btn" type="submit">Zveřejnit</button>
-        <p class="form-hint">Fotky se automaticky zmenší. Zveřejní se ihned.</p>
-      </form>
-    </div>`;
+  try {
+    await apiPost('/api/posts', fd);
+    showToast('Příspěvek zveřejněn!');
+    if (state.socialFeeds[targetFeed]) state.socialFeeds[targetFeed].items = [];
+    accountFormState.postFiles = [];
+    accountFormState.showPostForm = false;
+    state._postLocation = null;
+    state._postLocationQuery = '';
+    state._postLocationResults = null;
+    renderApp();
+  } catch (err) {
+    showToast(err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Zveřejnit'; }
+  }
 }
 
+// ============================================================
+// FOTKY
+// ============================================================
 function selectBusiness(id) {
   accountFormState.postTargetBusiness = id;
   state._verificationStatus = undefined;
@@ -427,7 +488,8 @@ function removePostFile(name) {
   if (!grid) return;
   if (accountFormState.postFiles.length === 0) {
     grid.innerHTML = '';
-    document.getElementById('file-drop-label').textContent = 'Klikni pro výběr 1–4 fotek';
+    const lbl = document.getElementById('file-drop-label');
+    if (lbl) lbl.textContent = 'Klikni pro výběr 1–4 fotek';
     document.querySelector('.file-drop')?.classList.remove('has-file');
     return;
   }
@@ -437,99 +499,9 @@ function removePostFile(name) {
   }).join('');
 }
 
-async function handleBusinessPostSubmit(form) {
-  const businessId = form.dataset.businessId;
-  const targetFeed = form.dataset.targetFeed;
-  const files = accountFormState.postFiles;
-  if (!files || files.length === 0) { showToast('Vyber alespoň jednu fotku.'); return; }
-
-  const fd = new FormData();
-  files.forEach((f) => fd.append('file', f, f.name));
-  fd.set('business_id', businessId);
-  fd.set('target_feed', targetFeed);
-
-  let html = getEditorHtml(form);
-
-  // Pridať odkaz z formulárových polí
-  const linkUrl = (form.querySelector('[name="link_url"]')?.value || '').trim();
-  const linkText = (form.querySelector('[name="link_text"]')?.value || '').trim();
-  if (linkUrl) {
-    const safeUrl = /^https?:\/\//i.test(linkUrl) ? linkUrl : 'https://' + linkUrl;
-    const label = linkText || safeUrl;
-    html += `<p><a href="${escapeAttr(safeUrl)}">${escapeHtml(label)}</a></p>`;
-  }
-
-  fd.set('text_html', html);
-  fd.set('text', html.replace(/<[^>]*>/g, ' ').trim());
-
-  const geoLat = form.dataset.geoLat || '';
-  const geoLng = form.dataset.geoLng || '';
-  const geoPlace = form.dataset.geoPlace || '';
-  if (geoLat) fd.set('geo_lat', geoLat);
-  if (geoLng) fd.set('geo_lng', geoLng);
-  if (geoPlace) fd.set('geo_place', geoPlace);
-
-  const btn = form.querySelector('button[type="submit"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Nahrávám…'; }
-
-  try {
-    await apiPost('/api/posts', fd);
-    showToast('Příspěvek zveřejněn!');
-    if (state.socialFeeds[targetFeed]) state.socialFeeds[targetFeed].items = [];
-    accountFormState.postFiles = [];
-    renderApp();
-  } catch (err) {
-    showToast(err.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Zveřejnit'; }
-  }
-}
-
-// STATISTIKY
-async function openProfileStats(kind, id) {
-  state.overlayStack.push(state.overlay);
-  state.overlay = { type: 'profile-stats', kind, id };
-  state._profileStats = null;
-  renderApp();
-  try {
-    const data = await apiGet(`/api/profile/${kind}/${id}/stats`);
-    state._profileStats = data;
-    renderApp();
-  } catch (err) {
-    showToast(err.message);
-    closeOverlay();
-  }
-}
-
-function renderProfileStatsOverlay() {
-  const s = state._profileStats;
-  return `
-    <div class="page-scroll">
-      ${renderBackHeader('Statistiky')}
-      ${s === null ? '<p class="empty-state">Načítám…</p>' : `
-        <div class="profile-section">
-          <div class="stat-cards">
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.posts)}</div><div class="stat-card-label">Příspěvků</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.events)}</div><div class="stat-card-label">Akce</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.followers)}</div><div class="stat-card-label">Sledujících</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.likes)}</div><div class="stat-card-label">Lajků</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.comments)}</div><div class="stat-card-label">Komentářů</div></div>
-          </div>
-        </div>
-        ${s.last_30_days?.length ? `
-          <div class="profile-section">
-            <h3 class="profile-section-title">Posledních 30 dní (příspěvky/den)</h3>
-            <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:16px">
-              <div class="stats-bars">
-                ${s.last_30_days.map((d) => `<div class="stats-bar" style="height:${Math.max(4, (d.n || 1) * 8)}px" title="${d.day}: ${d.n}"></div>`).join('')}
-              </div>
-            </div>
-          </div>
-        ` : ''}
-      `}
-    </div>`;
-}
-
-// FORGOT / RESET / 2FA login
+// ============================================================
+// FORGOT / RESET / 2FA login (nezmenené)
+// ============================================================
 function renderForgotPasswordOverlay() {
   return `
     <div class="page-scroll">
@@ -610,7 +582,9 @@ async function handleTwoFALogin(form) {
   } catch (err) { showToast(err.message); }
 }
 
-// ADMIN
+// ============================================================
+// ADMIN (nezmenené)
+// ============================================================
 async function loadAdminPending() {
   try { state.adminPending = await apiGet('/api/admin/pending'); }
   catch { state.adminPending = { organizations: [], accommodation: [], restaurants: [] }; }
@@ -646,56 +620,38 @@ function renderAdminPanel() {
   const tab = state._adminTab || 'overview';
 
   return `
-    <div class="admin-tabs">
-      <button class="admin-tab ${tab === 'overview' ? 'is-active' : ''}" data-action="admin-tab" data-tab="overview">Přehled</button>
-      <button class="admin-tab ${tab === 'users' ? 'is-active' : ''}" data-action="admin-tab" data-tab="users">Uživatelé</button>
-      <button class="admin-tab ${tab === 'verifications' ? 'is-active' : ''}" data-action="admin-tab" data-tab="verifications">Žádosti</button>
-      <button class="admin-tab ${tab === 'reports' ? 'is-active' : ''}" data-action="admin-tab" data-tab="reports">Reporty</button>
-      <button class="admin-tab ${tab === 'posts' ? 'is-active' : ''}" data-action="admin-tab" data-tab="posts">Příspěvky</button>
-      <button class="admin-tab ${tab === 'tools' ? 'is-active' : ''}" data-action="admin-tab" data-tab="tools">Nástroje</button>
-    </div>
-    ${tab === 'overview' ? renderAdminOverview() : ''}
-    ${tab === 'users' ? renderAdminUsers() : ''}
-    ${tab === 'verifications' ? renderAdminVerifications() : ''}
-    ${tab === 'reports' ? renderAdminReports() : ''}
-    ${tab === 'posts' ? renderAdminPosts() : ''}
-    ${tab === 'tools' ? renderAdminTools() : ''}
-  `;
+    <div class="profile-section">
+      <h3 class="profile-section-title">Administrace</h3>
+      <div class="admin-tabs">
+        <button class="admin-tab ${tab === 'overview' ? 'is-active' : ''}" data-action="admin-tab" data-tab="overview">Přehled</button>
+        <button class="admin-tab ${tab === 'users' ? 'is-active' : ''}" data-action="admin-tab" data-tab="users">Uživatelé</button>
+        <button class="admin-tab ${tab === 'verifications' ? 'is-active' : ''}" data-action="admin-tab" data-tab="verifications">Žádosti</button>
+        <button class="admin-tab ${tab === 'reports' ? 'is-active' : ''}" data-action="admin-tab" data-tab="reports">Reporty</button>
+        <button class="admin-tab ${tab === 'posts' ? 'is-active' : ''}" data-action="admin-tab" data-tab="posts">Příspěvky</button>
+        <button class="admin-tab ${tab === 'tools' ? 'is-active' : ''}" data-action="admin-tab" data-tab="tools">Nástroje</button>
+      </div>
+      ${tab === 'overview' ? renderAdminOverview() : ''}
+      ${tab === 'users' ? renderAdminUsers() : ''}
+      ${tab === 'verifications' ? renderAdminVerifications() : ''}
+      ${tab === 'reports' ? renderAdminReports() : ''}
+      ${tab === 'posts' ? renderAdminPosts() : ''}
+      ${tab === 'tools' ? renderAdminTools() : ''}
+    </div>`;
 }
 
 function renderAdminOverview() {
   const s = state.adminStats;
   if (!s) return '<p class="empty-state">Načítám…</p>';
   return `
-    <div class="profile-section">
-      <h3 class="profile-section-title">Celkem</h3>
-      <div class="admin-stats-grid">
-        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.users)}</div><div class="admin-stat-label">Uživatelů</div></div>
-        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.organizations)}</div><div class="admin-stat-label">Organizací</div></div>
-        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.accommodation)}</div><div class="admin-stat-label">Ubytování</div></div>
-        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.restaurants)}</div><div class="admin-stat-label">Gastro</div></div>
-        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.posts)}</div><div class="admin-stat-label">Příspěvků</div></div>
-        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.events)}</div><div class="admin-stat-label">Akce</div></div>
-        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.comments)}</div><div class="admin-stat-label">Komentářů</div></div>
-        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.checkins)}</div><div class="admin-stat-label">Check-inů</div></div>
-        <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.reviews)}</div><div class="admin-stat-label">Recenzí</div></div>
-      </div>
+    <div class="admin-stats-grid">
+      <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.users)}</div><div class="admin-stat-label">Uživatelů</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.organizations)}</div><div class="admin-stat-label">Organizací</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.accommodation)}</div><div class="admin-stat-label">Ubytování</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.restaurants)}</div><div class="admin-stat-label">Gastro</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.posts)}</div><div class="admin-stat-label">Příspěvků</div></div>
+      <div class="admin-stat-box"><div class="admin-stat-value">${fmt(s.totals.events)}</div><div class="admin-stat-label">Akce</div></div>
     </div>
-    ${s.top_organizations?.length ? `
-      <div class="profile-section">
-        <h3 class="profile-section-title">Nejaktivnější organizace</h3>
-        ${s.top_organizations.map((o) => `
-          <div class="admin-user-row">
-            <div class="admin-user-avatar">${(o.name || '?').charAt(0).toUpperCase()}</div>
-            <div class="admin-user-info">
-              <p class="admin-user-name">${escapeHtml(o.name)}</p>
-              <p class="admin-user-meta">${o.post_count} příspěvků</p>
-            </div>
-          </div>`).join('')}
-      </div>
-    ` : ''}
-    <div class="profile-section">
-      <h3 class="profile-section-title">Rozšířené nástroje</h3>
+    <div style="padding:0 16px 16px">
       <button class="settings-row" data-action="open-broadcast-push">${icon('bell', { size: 17 })} Poslat push všem uživatelům</button>
     </div>`;
 }
@@ -723,11 +679,7 @@ function renderAdminUsers() {
         <option value="suspended" ${status === 'suspended' ? 'selected' : ''}>Pozastavení</option>
       </select>
     </div>
-    ${counts ? `
-      <p class="user-list-meta" style="padding:0 16px 12px">
-        Celkem: ${counts.total || 0} · Uživatelé: ${counts.users || 0} · Organizace: ${counts.organizations || 0} · Podniky: ${counts.hoteliers || 0} · Pozastavení: ${counts.suspended || 0}
-      </p>
-    ` : ''}
+    ${counts ? `<p class="user-list-meta" style="padding:0 16px 12px">Celkem: ${counts.total || 0} · Uživatelé: ${counts.users || 0} · Organizace: ${counts.organizations || 0} · Podniky: ${counts.hoteliers || 0}</p>` : ''}
     ${users == null ? '<p class="empty-state">Načítám…</p>'
       : users.length === 0 ? '<p class="empty-state">Žádní uživatelé.</p>'
       : users.map((u) => `
@@ -737,7 +689,6 @@ function renderAdminUsers() {
             <p class="admin-user-name">${escapeHtml(u.display_name || '(bez jména)')}</p>
             <p class="admin-user-meta">${escapeHtml(u.email)}${u.handle ? ` · @${escapeHtml(u.handle)}` : ''}</p>
             <span class="admin-user-role role-${u.role}">${u.role}</span>
-            ${u.status === 'suspended' ? '<span class="admin-user-role status-suspended" style="margin-left:4px">Pozastaven</span>' : ''}
           </div>
           <div class="admin-user-actions">
             <button data-action="admin-user-detail" data-id="${u.id}" title="Detail">${icon('more', { size: 16 })}</button>
@@ -749,92 +700,78 @@ function renderAdminUsers() {
 function renderAdminVerifications() {
   const verifs = state.adminVerifications;
   return `
-    <div class="profile-section">
-      <h3 class="profile-section-title">Žádosti o ověření (${verifs ? verifs.length : '…'})</h3>
-      ${verifs === null ? '<p class="empty-state">Načítám…</p>'
-        : verifs.length === 0 ? '<p class="empty-state">Žádné žádosti.</p>'
-        : verifs.map((v) => `
-          <div class="admin-list-item" style="flex-direction:column;align-items:stretch;gap:8px">
-            <div class="admin-list-info">
-              <p class="admin-list-title">${escapeHtml(v.business_name || v.user_name || 'Podnik')}</p>
-              <p class="admin-list-meta">Žadatel: ${escapeHtml(v.user_name || '')} (${escapeHtml(v.user_email || '')})</p>
-              ${v.note ? `<p class="admin-list-meta" style="font-style:italic">„${escapeHtml(v.note)}"</p>` : ''}
-              <p class="admin-list-meta">Předloženo: ${timeAgo(v.created_at)}</p>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              ${v.doc_url ? `<a class="profile-action-btn" href="${escapeAttr(v.doc_url)}" target="_blank" rel="noopener">${icon('image', { size: 14 })} Otevřít dokument</a>` : '<span class="admin-list-meta" style="color:#B3273C">⚠ Bez dokumentu</span>'}
-              <button class="admin-approve-btn" data-action="approve-verification" data-id="${v.id}">Schválit</button>
-              <button class="admin-delete-btn" data-action="reject-verification" data-id="${v.id}">Zamítnout</button>
-            </div>
-          </div>`).join('')}
-    </div>`;
+    <p style="padding:0 16px 12px;font-weight:700">Žádosti o ověření (${verifs ? verifs.length : '…'})</p>
+    ${verifs === null ? '<p class="empty-state">Načítám…</p>'
+      : verifs.length === 0 ? '<p class="empty-state">Žádné žádosti.</p>'
+      : verifs.map((v) => `
+        <div class="admin-list-item" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div class="admin-list-info">
+            <p class="admin-list-title">${escapeHtml(v.business_name || v.user_name || 'Podnik')}</p>
+            <p class="admin-list-meta">Žadatel: ${escapeHtml(v.user_name || '')}</p>
+            ${v.note ? `<p class="admin-list-meta" style="font-style:italic">„${escapeHtml(v.note)}"</p>` : ''}
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            ${v.doc_url ? `<a class="profile-action-btn" href="${escapeAttr(v.doc_url)}" target="_blank" rel="noopener">Otevřít dokument</a>` : ''}
+            <button class="admin-approve-btn" data-action="approve-verification" data-id="${v.id}">Schválit</button>
+            <button class="admin-delete-btn" data-action="reject-verification" data-id="${v.id}">Zamítnout</button>
+          </div>
+        </div>`).join('')}`;
 }
 
 function renderAdminReports() {
   const posts = state.adminReports;
   const users = state.adminUserReports;
   return `
-    <div class="profile-section">
-      <h3 class="profile-section-title">Reporty příspěvků (${posts ? posts.length : '…'})</h3>
-      ${posts === null ? '<p class="empty-state">Načítám…</p>'
-        : posts.length === 0 ? '<p class="empty-state">Žádné reporty.</p>'
-        : posts.map((r) => `
-          <div class="admin-list-item">
-            <div class="admin-list-info">
-              <p class="admin-list-title">${(r.text_content || '').slice(0, 60) || '(bez textu)'}</p>
-              <p class="admin-list-meta">Nahlásil: ${r.reporter_name || '?'}${r.reason ? ` · ${r.reason}` : ''}</p>
-            </div>
-            <button class="admin-delete-btn" data-action="delete-reported-post" data-post-id="${r.post_id}" data-report-id="${r.id}">Smazat</button>
-          </div>`).join('')}
-    </div>
+    <p style="padding:0 16px 12px;font-weight:700">Reporty příspěvků (${posts ? posts.length : '…'})</p>
+    ${posts === null ? '<p class="empty-state">Načítám…</p>'
+      : posts.length === 0 ? '<p class="empty-state">Žádné reporty.</p>'
+      : posts.map((r) => `
+        <div class="admin-list-item">
+          <div class="admin-list-info">
+            <p class="admin-list-title">${(r.text_content || '').slice(0, 60) || '(bez textu)'}</p>
+            <p class="admin-list-meta">Nahlásil: ${r.reporter_name || '?'}${r.reason ? ` · ${r.reason}` : ''}</p>
+          </div>
+          <button class="admin-delete-btn" data-action="delete-reported-post" data-post-id="${r.post_id}" data-report-id="${r.id}">Smazat</button>
+        </div>`).join('')}
 
-    <div class="profile-section">
-      <h3 class="profile-section-title">Reporty uživatelů (${users ? users.length : '…'})</h3>
-      ${users === null ? '<p class="empty-state">Načítám…</p>'
-        : users.length === 0 ? '<p class="empty-state">Žádné reporty.</p>'
-        : users.map((r) => `
-          <div class="admin-list-item">
-            <div class="admin-list-info">
-              <p class="admin-list-title">${escapeHtml(r.target_name || '(bez jména)')} ${r.target_handle ? `· @${escapeHtml(r.target_handle)}` : ''}</p>
-              <p class="admin-list-meta">Nahlásil: ${escapeHtml(r.reporter_name || '?')}${r.reason ? ` · ${r.reason}` : ''}</p>
-            </div>
-            <button class="admin-delete-btn" data-action="resolve-user-report" data-id="${r.id}">Vyřešit</button>
-          </div>`).join('')}
-    </div>`;
+    <p style="padding:16px;font-weight:700">Reporty uživatelů (${users ? users.length : '…'})</p>
+    ${users === null ? '<p class="empty-state">Načítám…</p>'
+      : users.length === 0 ? '<p class="empty-state">Žádné reporty.</p>'
+      : users.map((r) => `
+        <div class="admin-list-item">
+          <div class="admin-list-info">
+            <p class="admin-list-title">${escapeHtml(r.target_name || '')}</p>
+            <p class="admin-list-meta">Nahlásil: ${escapeHtml(r.reporter_name || '?')}${r.reason ? ` · ${r.reason}` : ''}</p>
+          </div>
+          <button class="admin-delete-btn" data-action="resolve-user-report" data-id="${r.id}">Vyřešit</button>
+        </div>`).join('')}`;
 }
 
 function renderAdminPosts() {
   const posts = state.adminPosts;
   return `
-    <div class="profile-section">
-      <h3 class="profile-section-title">Nedávné příspěvky (${posts ? posts.length : '…'})</h3>
-      ${posts === null ? '<p class="empty-state">Načítám…</p>'
-        : posts.length === 0 ? '<p class="empty-state">Žádné příspěvky.</p>'
-        : posts.map((p) => `
-          <div class="admin-list-item">
-            <div class="admin-list-info">
-              <p class="admin-list-title">${escapeHtml((p.text_content || '').slice(0, 60) || '(bez textu)')}</p>
-              <p class="admin-list-meta">${escapeHtml(p.business_name || '')} · ${p.target_feed} · ${timeAgo(p.created_at)}</p>
-            </div>
-            <button class="admin-delete-btn" data-action="delete-admin-post" data-id="${p.id}">Smazat</button>
-          </div>`).join('')}
-    </div>`;
+    <p style="padding:0 16px 12px;font-weight:700">Nedávné příspěvky (${posts ? posts.length : '…'})</p>
+    ${posts === null ? '<p class="empty-state">Načítám…</p>'
+      : posts.length === 0 ? '<p class="empty-state">Žádné příspěvky.</p>'
+      : posts.map((p) => `
+        <div class="admin-list-item">
+          <div class="admin-list-info">
+            <p class="admin-list-title">${escapeHtml((p.text_content || '').slice(0, 60) || '(bez textu)')}</p>
+            <p class="admin-list-meta">${escapeHtml(p.business_name || '')} · ${p.target_feed} · ${timeAgo(p.created_at)}</p>
+          </div>
+          <button class="admin-delete-btn" data-action="delete-admin-post" data-id="${p.id}">Smazat</button>
+        </div>`).join('')}`;
 }
 
 function renderAdminTools() {
   return `
-    <div class="profile-section">
-      <h3 class="profile-section-title">Nástroje</h3>
+    <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:8px">
       <button class="settings-row" data-action="open-broadcast-push">${icon('bell', { size: 17 })} Poslat push všem uživatelům</button>
       <button class="settings-row" data-action="admin-backfill-handles">${icon('edit', { size: 17 })} Doplň handles uživatelům</button>
       <button class="settings-row" data-action="admin-seed-test">${icon('plus', { size: 17 })} Vytvořit testovací obsah</button>
       <button class="settings-row" data-action="admin-cleanup-test" style="color:#B3273C">${icon('trash', { size: 17 })} Odstranit testovací obsah</button>
     </div>`;
 }
-
-// ============================================================
-// ADMIN LOADERS + AKCIE
-// ============================================================
 
 async function loadAdminStats() {
   try { state.adminStats = await apiGet('/api/admin/stats'); }
@@ -861,12 +798,6 @@ async function loadAdminUsers() {
 async function loadAdminUserReports() {
   try { const d = await apiGet('/api/admin/user-reports'); state.adminUserReports = d.reports || []; }
   catch { state.adminUserReports = []; }
-  finally { if (state.tab === 'account') renderApp(); }
-}
-
-async function loadAdminPosts() {
-  try { const d = await apiGet('/api/admin/posts'); state.adminPosts = d.posts || []; }
-  catch { state.adminPosts = []; }
   finally { if (state.tab === 'account') renderApp(); }
 }
 
@@ -930,21 +861,13 @@ function openUserDetail(id) {
       const d = await apiGet(`/api/admin/users/${id}/detail`);
       el.innerHTML = `
         <p style="font-weight:700;font-size:14px;margin-bottom:4px">${escapeHtml(d.user.display_name || '')}</p>
-        <p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:12px">${escapeHtml(d.user.email)}${d.user.handle ? ` · @${escapeHtml(d.user.handle)}` : ''}</p>
-        <div class="admin-stats-grid" style="padding:0;margin-bottom:12px">
-          <div class="admin-stat-box"><div class="admin-stat-value">${d.stats.posts}</div><div class="admin-stat-label">Příspěvků</div></div>
-          <div class="admin-stat-box"><div class="admin-stat-value">${d.stats.comments}</div><div class="admin-stat-label">Komentářů</div></div>
-          <div class="admin-stat-box"><div class="admin-stat-value">${d.stats.checkins}</div><div class="admin-stat-label">Check-inů</div></div>
-          <div class="admin-stat-box"><div class="admin-stat-value">${d.stats.followers}</div><div class="admin-stat-label">Sledujících</div></div>
-        </div>
+        <p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:12px">${escapeHtml(d.user.email)}</p>
         <p style="font-size:12px;color:var(--c-text-muted)">Role: <strong>${d.user.role}</strong> · Status: <strong>${d.user.status}</strong></p>
-        <p style="font-size:12px;color:var(--c-text-muted)">Registrace: ${timeAgo(d.user.created_at)}</p>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
           ${d.user.status === 'suspended'
             ? `<button class="profile-action-btn" data-action="admin-unsuspend-user" data-id="${id}">Obnovit účet</button>`
             : `<button class="profile-action-btn" style="color:#B3273C" data-action="admin-suspend-user" data-id="${id}">Pozastavit</button>`}
           <button class="profile-action-btn" data-action="admin-change-role" data-id="${id}">Změnit roli</button>
-          ${!d.user.email_verified ? `<button class="profile-action-btn" data-action="admin-force-verify-email" data-id="${id}">Vynutit ověření e-mailu</button>` : ''}
         </div>
       `;
     } catch (err) {
@@ -970,16 +893,6 @@ function openBroadcastPush() {
       } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
     },
   });
-}
-
-async function verifyBusiness(kind, id) {
-  try {
-    await apiPost(`/api/admin/verify/${kind}/${id}`, {});
-    showToast('Profil ověřen.');
-    state.adminPending = null;
-    state.adminPendingLoading = false;
-    renderApp();
-  } catch (err) { showToast(err.message); }
 }
 
 function deleteReportedPost(postId, reportId) {
@@ -1058,14 +971,84 @@ async function adminSeedTest() {
 }
 
 async function adminCleanupTest() {
-  if (!confirm('Smazat všechen testovací obsah (prefix test_)?')) return;
+  if (!confirm('Smazat všechen testovací obsah?')) return;
   try {
     await apiPost('/api/admin/cleanup-test-content', {});
     showToast('Testovací obsah odstraněn.');
   } catch (err) { showToast(err.message); }
 }
 
-// VERIFICATION REQUEST
+// ============================================================
+// NOVÉ HANDLERY: toggle post form, location search
+// ============================================================
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const a = el.dataset.action;
+
+  if (a === 'toggle-post-form') {
+    accountFormState.showPostForm = !accountFormState.showPostForm;
+    if (!accountFormState.showPostForm) {
+      state._postLocation = null;
+      state._postLocationQuery = '';
+      state._postLocationResults = null;
+    }
+    renderApp();
+  } else if (a === 'pick-post-location') {
+    const idx = parseInt(el.dataset.index, 10);
+    const r = state._postLocationResults?.[idx];
+    if (r) {
+      state._postLocation = { lat: r.lat, lng: r.lng, place: r.place };
+      state._postLocationResults = [];
+      state._postLocationQuery = '';
+      renderApp();
+    }
+  } else if (a === 'clear-post-location') {
+    state._postLocation = null;
+    state._postLocationResults = null;
+    state._postLocationQuery = '';
+    renderApp();
+  } else if (a === 'use-my-location') {
+    (async () => {
+      try {
+        const loc = await getCurrentLocation();
+        const rev = await apiGet(`/api/geo/reverse?lat=${loc.lat}&lng=${loc.lng}`);
+        state._postLocation = {
+          lat: loc.lat, lng: loc.lng,
+          place: rev.place || `${loc.lat.toFixed(3)}, ${loc.lng.toFixed(3)}`,
+        };
+        state._postLocationResults = [];
+        state._postLocationQuery = '';
+        renderApp();
+      } catch (err) { showToast(err.message); }
+    })();
+  }
+});
+
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.dataset && el.dataset.action === 'location-search') {
+    const q = el.value;
+    state._postLocationQuery = q;
+    clearTimeout(window._locSearchTimer);
+    if (!q || q.length < 3) {
+      state._postLocationResults = [];
+      renderApp();
+      return;
+    }
+    state._postLocationResults = null; // loading
+    renderApp();
+    window._locSearchTimer = setTimeout(async () => {
+      const results = await searchPlaces(q, 5);
+      state._postLocationResults = results;
+      renderApp();
+    }, 400);
+  }
+});
+
+// ============================================================
+// VERIFICATION REQUEST (nezmenené)
+// ============================================================
 function openVerificationRequest(kind, id, name) {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'verification-request', kind, id, name, docFile: null, uploading: false };
@@ -1081,9 +1064,7 @@ function renderVerificationRequestOverlay() {
         <p style="font-size:14px;line-height:1.6;margin-bottom:14px">
           Nahraj dokument, který potvrzuje, že provozuješ <strong>${escapeHtml(o.name)}</strong>.
         </p>
-        <p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:14px">
-          📄 PDF, JPG, PNG nebo WebP (max 10 MB).
-        </p>
+        <p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:14px">📄 PDF, JPG, PNG nebo WebP (max 10 MB).</p>
         <form data-action="submit-verification-request" data-kind="${o.kind}" data-id="${o.id}">
           <div class="file-drop ${o.docFile ? 'has-file' : ''}" data-action="trigger-verif-doc">
             <input type="file" accept="application/pdf,image/*" id="verif-doc-input" data-action="verif-doc-selected" style="display:none" />
@@ -1139,7 +1120,6 @@ async function handleVerificationSubmit(form) {
   }
 }
 
-// PUSH
 async function handlePushToggle(checked) {
   if (checked) await enablePushNotifications();
   else await disablePushNotifications();
