@@ -242,6 +242,9 @@ function renderBusinessProfile(data, id, kind) {
       b.type ? { icon: 'bookmark', label: 'Typ', value: b.type } : null,
       b.capacity ? { icon: 'users', label: 'Kapacita', value: `${b.capacity} osob` } : null,
       b.cuisine_type ? { icon: 'utensils', label: 'Kuchyně', value: b.cuisine_type } : null,
+      b.opening_hours ? { icon: 'clock', label: 'Otevírací hodiny', value: b.opening_hours } : null,
+      b.entrance_fee ? { icon: 'ticket', label: 'Vstupné', value: b.entrance_fee } : null,
+      b.price_range ? { icon: 'coffee', label: 'Cenová hladina', value: ['', '€', '€€', '€€€', '€€€€'][b.price_range] } : null,
     ].filter(Boolean);
 
     tabContent = `
@@ -440,32 +443,93 @@ function renderEditProfileForm() {
 
   const isGastro = kind === 'restaurants';
   const isAcc = kind === 'accommodation';
+  const isOrg = kind === 'organizations';
   return `
     <form data-action="submit-edit-profile" data-kind="${kind}" data-id="${id}" class="edit-profile-form">
       <div class="form-field"><label class="form-label">Název</label><input class="form-input" name="name" value="${escapeAttr(p.name || '')}" required /></div>
       <div class="form-field"><label class="form-label">Popis</label><textarea class="form-textarea" name="description" maxlength="500">${escapeHtml(p.description || '')}</textarea></div>
+
+      <h4 class="form-section-title">${icon('location', { size: 14 })} Adresa</h4>
       ${renderEditRegionDistrictCity(p)}
-      ${isGastro ? `<div class="form-field"><label class="form-label">Kuchyně</label><select class="form-select" name="cuisine_type">
-        ${TYPES.cuisine.map((t) => `<option value="${t.value}" ${p.cuisine_type === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}</select></div>` : ''}
-      ${isAcc ? `<div class="form-field"><label class="form-label">Kapacita</label><input class="form-input" type="number" name="capacity" min="1" value="${p.capacity || ''}" /></div>` : ''}
-      <div class="form-field"><label class="form-label">Web</label><input class="form-input" name="website" value="${escapeAttr(p.website || '')}" /></div>
-      <div class="form-field"><label class="form-label">Telefon</label><input class="form-input" name="phone" value="${escapeAttr(p.phone || '')}" /></div>
-      <button class="form-submit-btn" type="submit">Uložit</button>
+
+      <h4 class="form-section-title">${icon('phone', { size: 14 })} Kontakt</h4>
+      <div class="form-grid-2">
+        <div class="form-field"><label class="form-label">Web</label><input class="form-input" name="website" value="${escapeAttr(p.website || '')}" placeholder="https://" /></div>
+        <div class="form-field"><label class="form-label">Telefon</label><input class="form-input" name="phone" value="${escapeAttr(p.phone || '')}" /></div>
+      </div>
+
+      <h4 class="form-section-title">${icon('clock', { size: 14 })} Otevírací hodiny</h4>
+      <div class="form-field">
+        <textarea class="form-textarea" name="opening_hours" maxlength="500" rows="3" placeholder="Např. Po–Pá 9:00–17:00, So–Ne 10:00–18:00">${escapeHtml(p.opening_hours || '')}</textarea>
+        <p class="form-hint">Napiš jednoduše jako text — uvidí to návštěvníci na profilu.</p>
+      </div>
+
+      ${isOrg ? `
+        <h4 class="form-section-title">${icon('ticket', { size: 14 })} Vstupné</h4>
+        <div class="form-field">
+          <textarea class="form-textarea" name="entrance_fee" maxlength="500" rows="3" placeholder="Např. Dospělí 150 Kč, děti 80 Kč, senioři 100 Kč">${escapeHtml(p.entrance_fee || '')}</textarea>
+        </div>
+      ` : ''}
+
+      ${isGastro ? `
+        <h4 class="form-section-title">${icon('coffee', { size: 14 })} Kuchyně a cenová hladina</h4>
+        <div class="form-grid-2">
+          <div class="form-field"><label class="form-label">Kuchyně</label>
+            <select class="form-select" name="cuisine_type">
+              ${TYPES.cuisine.map((t) => `<option value="${t.value}" ${p.cuisine_type === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-field"><label class="form-label">Cenová hladina</label>
+            <select class="form-select" name="price_range">
+              <option value="">— nevybráno —</option>
+              <option value="1" ${p.price_range === '1' ? 'selected' : ''}>€ levné</option>
+              <option value="2" ${p.price_range === '2' ? 'selected' : ''}>€€ střední</option>
+              <option value="3" ${p.price_range === '3' ? 'selected' : ''}>€€€ vyšší</option>
+              <option value="4" ${p.price_range === '4' ? 'selected' : ''}>€€€€ luxusní</option>
+            </select>
+          </div>
+        </div>
+      ` : ''}
+
+      ${isAcc ? `
+        <h4 class="form-section-title">${icon('users', { size: 14 })} Ubytování</h4>
+        <div class="form-grid-2">
+          <div class="form-field"><label class="form-label">Kapacita (osob)</label><input class="form-input" type="number" name="capacity" min="1" value="${p.capacity || ''}" /></div>
+          <div class="form-field"><label class="form-label">Cenová hladina</label>
+            <select class="form-select" name="price_range">
+              <option value="">— nevybráno —</option>
+              <option value="1" ${p.price_range === '1' ? 'selected' : ''}>€ levné</option>
+              <option value="2" ${p.price_range === '2' ? 'selected' : ''}>€€ střední</option>
+              <option value="3" ${p.price_range === '3' ? 'selected' : ''}>€€€ vyšší</option>
+              <option value="4" ${p.price_range === '4' ? 'selected' : ''}>€€€€ luxusní</option>
+            </select>
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="form-actions-sticky">
+        <button class="form-submit-btn" type="submit">Uložit změny</button>
+      </div>
     </form>`;
 }
 
 function renderEditRegionDistrictCity(p) {
   return `
-    <div class="form-field"><label class="form-label">Kraj</label>
-      <select class="form-select" name="region" data-action="edit-region-change" required>
-        ${Object.keys(REGIONS).map((r) => `<option value="${r}" ${p.region === r ? 'selected' : ''}>${r}</option>`).join('')}
-      </select></div>
-    <div class="form-field"><label class="form-label">Okres</label>
-      <select class="form-select" name="district" required>
-        ${(REGIONS[p.region] || []).map((d) => `<option value="${d}" ${p.district === d ? 'selected' : ''}>${d}</option>`).join('')}
-      </select></div>
+    <div class="form-grid-2">
+      <div class="form-field"><label class="form-label">Kraj</label>
+        <select class="form-select" name="region" data-action="edit-region-change" required>
+          ${Object.keys(REGIONS).map((r) => `<option value="${r}" ${p.region === r ? 'selected' : ''}>${r}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-field"><label class="form-label">Okres</label>
+        <select class="form-select" name="district" required>
+          ${(REGIONS[p.region] || []).map((d) => `<option value="${d}" ${p.district === d ? 'selected' : ''}>${d}</option>`).join('')}
+        </select>
+      </div>
+    </div>
     <div class="form-field"><label class="form-label">Obec</label>
-      <input class="form-input" name="city" value="${escapeAttr(p.city || '')}" required /></div>`;
+      <input class="form-input" name="city" value="${escapeAttr(p.city || '')}" required />
+    </div>`;
 }
 
 async function handleEditProfileSubmit(form) {
