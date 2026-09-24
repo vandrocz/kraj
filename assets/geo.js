@@ -32,3 +32,30 @@ async function saveMyLocation() {
     showToast('Poloha uložena.');
   } catch (err) { showToast(err.message); }
 }
+
+// Forward geocoding — nájde reálne miesta/adresy podľa textu
+// Používa Nominatim (OpenStreetMap) — zdarma, bez API kľúča.
+async function searchPlaces(query, limit = 5) {
+  const q = String(query || '').trim();
+  if (q.length < 3) return [];
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=${limit}&accept-language=cs,sk&q=${encodeURIComponent(q)}`;
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data || []).map((r) => {
+      const parts = (r.display_name || '').split(',').map((s) => s.trim()).filter(Boolean);
+      // Krátky label: prvé 2-3 časti (názov + mesto/obec)
+      const short = parts.slice(0, 3).join(', ');
+      return {
+        place: short || r.display_name,
+        display_name: r.display_name,
+        lat: parseFloat(r.lat),
+        lng: parseFloat(r.lon),
+      };
+    }).filter((r) => !isNaN(r.lat) && !isNaN(r.lng));
+  } catch (err) {
+    console.warn('searchPlaces error:', err);
+    return [];
+  }
+}
