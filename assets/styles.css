@@ -2712,3 +2712,34 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .profile-hero .account-role-chip {
   margin-top: 8px;
 }
+
+/* ============================================================
+   FIX: text v lightboxe musí byť blokový, nie inline
+   ============================================================ */
+.lightbox-post-text {
+  display: block;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--c-text);
+  min-height: 1.2em;
+}
+.lightbox-post-text:empty { display: none; }
+
+/* Medzera medzi textom a polohou */
+.lightbox-post-text + .post-geo {
+  margin-top: 8px;
+}
+
+/* Na mobile zväčši max-height, aby sa oboje vošlo */
+@media (max-width: 899px) {
+  .lightbox-post-body {
+    max-height: 180px;
+  }
+}
+
+/* Poistka: ak by bol text prázdny, .post-geo sa zobrazí sám */
+.lightbox-post-text:empty + .post-geo {
+  margin-top: 0;
+}
