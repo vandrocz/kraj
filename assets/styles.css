@@ -199,7 +199,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .post-actions { display: flex; align-items: center; gap: 4px; padding: 10px 10px 0; }
 .post-action { padding: 8px; border-radius: var(--radius-round); transition: transform .15s, color .15s; }
 .post-action:active { transform: scale(.85); }
-.post-action.is-liked { color: var(--c-heart); }
+.post-action.is-liked { color: #FF9F1C; } /* spark orange */
 .post-action.is-bookmarked { color: var(--c-gold); }
 
 .post-body { padding: 6px 14px 14px; }
@@ -2511,4 +2511,29 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   padding: 0 !important;
   display: inline !important;
   font-size: inherit !important;
+}
+
+/* Comment action button s počtom vedľa ikony */
+.post-action--with-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.post-action-count {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--c-text-muted);
+  margin-left: -2px;
+}
+.post-action.is-liked .post-action-count,
+.post-action--with-count.is-liked .post-action-count {
+  color: inherit;
+}
+
+/* Lightbox — loading indikátor komentárov */
+.lightbox-comment-empty {
+  font-size: 12.5px;
+  color: var(--c-text-muted);
+  text-align: center;
+  padding: 8px 0;
 }
