@@ -76,6 +76,10 @@ const state = {
   loading: {},
 };
 
+// Uchováva aktuálnu "routu" (overlay alebo tab), aby sme vedeli,
+// kedy resetovať scroll pri prepnutí — a kedy nie (napr. infinite scroll)
+let _prevRouteKey = '';
+
 function fmt(n) { return Number(n || 0).toLocaleString('cs-CZ'); }
 
 function timeAgo(iso) {
@@ -341,6 +345,11 @@ function renderApp() {
   else if (state.overlay?.type === 'onboarding') pageHtml = renderOnboardingOverlay();
   else if (state.overlay?.type === 'edit-post') pageHtml = renderEditPostOverlay();
   else if (state.overlay?.type === 'verification-request') pageHtml = renderVerificationRequestOverlay();
+  else if (state.overlay?.type === 'hashtag') pageHtml = renderHashtagOverlay();
+  else if (state.overlay?.type === 'threads') pageHtml = renderThreadsOverlay();
+  else if (state.overlay?.type === 'thread') pageHtml = renderThreadOverlay();
+  else if (state.overlay?.type === 'groups') pageHtml = renderGroupsOverlay();
+  else if (state.overlay?.type === 'group') pageHtml = renderGroupDetailOverlay();
   else if (state.tab === 'organizations') pageHtml = renderFeedPage('organization', TYPES.organization, false);
   else if (state.tab === 'accommodation') pageHtml = renderFeedPage('accommodation', TYPES.accommodation, false);
   else if (state.tab === 'gastro') pageHtml = renderFeedPage('gastro', TYPES.restaurant, true);
@@ -361,6 +370,24 @@ function renderApp() {
       ${hideCookieBanner ? '' : renderCookieBanner()}
     </div>
     ${renderModal()}`;
+
+  // Ak sa lightbox práve skryl kvôli overlayu (story-viewer/onboarding/mapa),
+  // musíme vyčistiť stav aj body overflow — inak ostane scroll zablokovaný.
+  if (hideLightbox && state.lightbox) {
+    state.lightbox = null;
+    document.body.style.overflow = '';
+  }
+
+  // Reset scroll pozície LEN pri zmene "routy" (overlay alebo tab).
+  // Pri infinite scroll / focus re-renderi scroll zachováme.
+  const routeKey = state.overlay
+    ? `${state.overlay.type}:${state.overlay.id || state.overlay.tag || state.overlay.groupKey || ''}`
+    : `tab:${state.tab}`;
+  if (routeKey !== _prevRouteKey) {
+    _prevRouteKey = routeKey;
+    const scrollEl = root.querySelector('.page-scroll');
+    if (scrollEl) scrollEl.scrollTop = 0;
+  }
 
   applySeo();
 
@@ -424,7 +451,6 @@ function openProfile(kind, id) {
   state._checkinStatus = undefined; state._wishlistStatus = undefined; state._verificationStatus = undefined;
   state._userProfileCheckins = undefined;
   renderApp();
-  window.scrollTo(0, 0);
 }
 
 function closeOverlay() { const prev = state.overlayStack.pop(); state.overlay = prev || null; renderApp(); }
@@ -466,7 +492,9 @@ function switchTab(tab) {
   if (tab === 'account' && isLoggedIn()) loadNotifications();
 }
 
+// ============================================================
 // LIGHTBOX
+// ============================================================
 function openLightbox(images, index = 0, caption = '', post = null) {
   state.lightbox = {
     images,
@@ -477,6 +505,25 @@ function openLightbox(images, index = 0, caption = '', post = null) {
   updateLightboxDOM();
   document.getElementById('lightbox')?.classList.add('is-open');
   document.body.style.overflow = 'hidden';
+
+  // Načítaj komentáre, ak ide o reálny post (nie fake event post, nie post bez id)
+  const isRealPost = post && post.id && !String(post.id).startsWith('event-');
+  if (isRealPost && !post.__comments) {
+    post.__commentsLoading = true;
+    updateLightboxDOM();
+    apiGet(`/api/feed/${post.id}/comments`)
+      .then((data) => {
+        post.__comments = data.comments || [];
+        if (data.total != null) post.comment_count = data.total;
+      })
+      .catch(() => {
+        post.__comments = [];
+      })
+      .finally(() => {
+        post.__commentsLoading = false;
+        if (state.lightbox && state.lightbox.post === post) updateLightboxDOM();
+      });
+  }
 }
 
 function closeLightbox() {
@@ -526,13 +573,23 @@ function updateLightboxDOM() {
         ? `<img src="${escapeAttr(logo)}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--c-primary-light);" />`
         : `<span style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:var(--c-primary-light);color:var(--c-primary-dark);font-weight:800;font-size:17px;flex-shrink:0;border:2px solid var(--c-primary-light);">${initial}</span>`;
 
-      const commentsHtml = (post.__comments || []).map((c) => `
-        <div class="lightbox-comment">
-          <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}">${escapeHtml(c.user_name || 'Uživatel')}</strong>
-          <span>${escapeHtml(c.comment_text)}</span>
-          <span class="lightbox-comment-time">${timeAgo(c.created_at)}</span>
-        </div>
-      `).join('');
+      // --- Komentáre: 3 stavy (loading / prázdne / so záznamami) ---
+      let commentsHtml = '';
+      let commentsTitle = 'Komentáře';
+      if (post.__commentsLoading) {
+        commentsHtml = '<p class="lightbox-comment-empty">Načítám…</p>';
+      } else if (post.__comments && post.__comments.length > 0) {
+        commentsTitle = `Komentáře (${post.comment_count || post.__comments.length})`;
+        commentsHtml = post.__comments.map((c) => `
+          <div class="lightbox-comment">
+            <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}">${escapeHtml(c.user_name || 'Uživatel')}</strong>
+            <span>${escapeHtml(c.comment_text)}</span>
+            <span class="lightbox-comment-time">${timeAgo(c.created_at)}</span>
+          </div>
+        `).join('');
+      } else {
+        commentsHtml = '<p class="lightbox-comment-empty">Zatím žádné komentáře.</p>';
+      }
 
       info.innerHTML = `
         <header class="lightbox-post-head">
@@ -550,18 +607,18 @@ function updateLightboxDOM() {
         </div>
         <div class="lightbox-post-actions">
           <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
-            ${icon('heart', { size: 22, filled: !!post.__liked })}
+            ${icon('spark', { size: 22, filled: !!post.__liked })}
           </button>
-          <span class="lightbox-stat">${fmt(post.likes || 0)}</span>
+          <span class="lightbox-stat">${fmt(post.likes || 0)} obdivov</span>
           <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(getPostText(post))}">
             ${icon('share', { size: 21 })}
           </button>
         </div>
 
         <div class="lightbox-comments-section">
-          <p class="lightbox-comments-title">Komentáře (${post.comment_count || 0})</p>
+          <p class="lightbox-comments-title">${commentsTitle}</p>
           <div class="lightbox-comments-list" id="lightbox-comments-list">
-            ${post.__comments ? (commentsHtml || '<p class="lightbox-comment-empty">Zatím žádné komentáře.</p>') : '<p class="lightbox-comment-empty">Načítám…</p>'}
+            ${commentsHtml}
           </div>
           ${isLoggedIn() ? `
             <form class="lightbox-comment-form" data-action="submit-lightbox-comment" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
