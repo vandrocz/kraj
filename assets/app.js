@@ -628,7 +628,7 @@ function updateLightboxDOM() {
           </div>
         </header>
         <div class="lightbox-post-body">
-          <div class="lightbox-post-text rich-text">${linkifyHashtags(htmlToPlain(getPostText(post)))}</div>
+          <div class="lightbox-post-text">${linkifyHashtags(htmlToPlain(getPostText(post)))}</div>
           ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
         </div>
         <div class="lightbox-post-actions">
