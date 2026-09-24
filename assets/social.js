@@ -88,31 +88,6 @@ function renderMediaCarousel(post) {
     </div>`;
 }
 
-function renderCommentRow(c, feedKey, postId, isReply = false) {
-  const isMine = isLoggedIn() && state.user.id === c.user_id;
-  const repliesHtml = (c.replies || []).map((r) => renderCommentRow(r, feedKey, postId, true)).join('');
-  return `
-    <div class="post-comment-block ${isReply ? 'is-reply' : ''}" data-comment-id="${c.id}">
-      <p class="post-comment-row">
-        <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}" style="cursor:pointer">${escapeHtml(c.user_name || 'Uživatel')}</strong>
-        ${escapeHtml(c.comment_text)}
-        ${isMine ? `<button class="comment-del" data-action="delete-comment" data-id="${c.id}" data-feed="${feedKey}" data-post-id="${postId}">${icon('close', { size: 12 })}</button>` : ''}
-      </p>
-      ${isLoggedIn() ? `
-        <button class="comment-reply-btn" data-action="reply-comment" data-id="${c.id}" data-post-id="${postId}" data-feed="${feedKey}" data-name="${escapeAttr(c.user_name || '')}">
-          Odpovědět
-        </button>
-      ` : ''}
-      <div class="comment-reply-form" data-reply-form="${c.id}" style="display:none">
-        <form data-action="submit-reply" data-id="${c.id}" data-post-id="${postId}" data-feed="${feedKey}">
-          <input class="post-comment-input" placeholder="Odpovědět ${escapeAttr(c.user_name || '')}…" data-reply-input="${c.id}" />
-          <button type="submit" class="post-comment-send">Odeslat</button>
-        </form>
-      </div>
-      ${repliesHtml ? `<div class="comment-replies">${repliesHtml}</div>` : ''}
-    </div>`;
-}
-
 // Pomocná funkcia — vykreslí avatar podniku (obrázok alebo iniciála)
 function renderBusinessAvatar(business, feedKey, size = 38) {
   const logo = business.logo_url || business.image_url;
@@ -134,7 +109,6 @@ function renderBusinessAvatar(business, feedKey, size = 38) {
 }
 
 function renderSocialPostCard(post, feedKey) {
-  const commentsHtml = (post.__comments || []).map((c) => renderCommentRow(c, feedKey, post.id)).join('');
   const isMinePost = isLoggedIn() && state.businesses.some((b) => b.id === post.business.id);
   const isVerified = Number(post.business.is_verified) === 1 || post.business.is_verified === true;
 
@@ -166,34 +140,32 @@ function renderSocialPostCard(post, feedKey) {
       ${renderMediaCarousel(post)}
       <div class="post-actions">
         <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${feedKey}">
-          ${icon('heart', { size: 22, filled: !!post.__liked })}
+          ${icon('spark', { size: 22, filled: !!post.__liked })}
         </button>
-        <button class="post-action" data-action="toggle-comments" data-id="${post.id}" data-feed="${feedKey}">${icon('comment', { size: 21 })}</button>
+        <button class="post-action post-action--with-count" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(captionText)}">
+          ${icon('comment', { size: 21 })}
+          ${post.comment_count > 0 ? `<span class="post-action-count">${post.comment_count}</span>` : ''}
+        </button>
         <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(post.text || '')}">${icon('share', { size: 21 })}</button>
         ${isLoggedIn() ? `<button class="post-action ${post.__bookmarked ? 'is-bookmarked' : ''}" data-action="toggle-bookmark" data-id="${post.id}">${icon('bookmark', { size: 20, filled: !!post.__bookmarked })}</button>` : ''}
         ${isMinePost ? `<button class="post-action" data-action="edit-post" data-id="${post.id}" data-feed="${feedKey}">${icon('edit', { size: 18 })}</button>` : ''}
         ${isMinePost ? `<button class="post-action" data-action="delete-post" data-id="${post.id}" data-feed="${feedKey}" style="color:#B3273C">${icon('trash', { size: 18 })}</button>` : ''}
       </div>
       <div class="post-body">
-        <p class="post-likes" data-like-count="${post.id}">${fmt(post.likes || 0)} páči sa mi${post.views ? ` · ${fmt(post.views)} zobrazení` : ''}</p>
+        <p class="post-likes" data-like-count="${post.id}">${fmt(post.likes || 0)} obdivov${post.views ? ` · ${fmt(post.views)} zobrazení` : ''}</p>
         <p class="post-caption" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(captionText)}">
           <strong class="post-caption-author">${escapeHtml(post.business.name)}</strong>
           <span class="post-caption-text">${linkifyHashtags(captionText)}</span>
         </p>
         ${linksHtml}
         ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
-        ${post.comment_count > 0 ? `<button class="post-comments-link" data-action="toggle-comments" data-id="${post.id}" data-feed="${feedKey}">Zobrazit všech ${post.comment_count} komentářů</button>` : ''}
-        <div class="post-comments" data-comments-list="${post.id}" style="display:none">${commentsHtml}</div>
-        <form class="post-comment-form" data-action="submit-social-comment" data-id="${post.id}" data-feed="${feedKey}">
-          <input class="post-comment-input" placeholder="Napiš komentář…" data-comment-input="${post.id}" />
-          <button type="submit" class="post-comment-send">Odeslat</button>
-        </form>
+        ${post.comment_count > 0 ? `<button class="post-comments-link" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(captionText)}">Zobrazit všech ${post.comment_count} komentářů</button>` : ''}
       </div>
     </article>`;
 }
 
 async function togglePostLike(postId, feedKey, btnEl) {
-  if (!isLoggedIn()) { showToast('Pro lajkování se musíš přihlásit.'); switchTab('account'); return; }
+  if (!isLoggedIn()) { showToast('Pro obdivování se musíš přihlásit.'); switchTab('account'); return; }
   let post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
   if (!post) {
     for (const k of Object.keys(state.profiles)) {
@@ -208,13 +180,13 @@ async function togglePostLike(postId, feedKey, btnEl) {
   post.__liked = true;
   post.likes = (post.likes || 0) + 1;
   btnEl.classList.add('is-liked');
-  btnEl.innerHTML = icon('heart', { size: 22, filled: true });
+  btnEl.innerHTML = icon('spark', { size: 22, filled: true });
   const likesEl = document.querySelector(`[data-like-count="${postId}"]`);
-  if (likesEl) likesEl.textContent = `${fmt(post.likes)} páči sa mi`;
+  if (likesEl) likesEl.textContent = `${fmt(post.likes)} obdivov`;
   try {
     const data = await apiPost(`/api/feed/${postId}/like`, {});
     post.likes = data.likes;
-    if (likesEl) likesEl.textContent = `${fmt(post.likes)} páči sa mi`;
+    if (likesEl) likesEl.textContent = `${fmt(post.likes)} obdivov`;
   } catch (err) { showToast(err.message); }
 }
 
@@ -272,6 +244,7 @@ function renderSocialFeedBody(feedKey) {
   `;
 }
 
+// Toggle už nepoužíváme v karte, ale necháváme pro případ nouze
 async function toggleSocialComments(postId, feedKey) {
   const list = document.querySelector(`[data-comments-list="${postId}"]`);
   if (!list) return;
@@ -306,8 +279,6 @@ async function submitSocialComment(postId, feedKey, text, inputEl) {
     inputEl.value = '';
     const post = state.socialFeeds[feedKey].items.find((p) => p.id === postId);
     if (post) post.comment_count = (post.comment_count || 0) + 1;
-    const list = document.querySelector(`[data-comments-list="${postId}"]`);
-    if (list) { list.dataset.loaded = 'false'; list.style.display = 'none'; await toggleSocialComments(postId, feedKey); }
     showToast('Komentář přidán.');
   } catch (err) { showToast(err.message); }
 }
@@ -324,9 +295,12 @@ async function submitReply(parentId, postId, feedKey, text, inputEl) {
   try {
     await apiPost(`/api/feed/${postId}/comment`, { text: text.trim(), parent_id: parentId });
     inputEl.value = '';
-    const list = document.querySelector(`[data-comments-list="${postId}"]`);
-    if (list) { list.dataset.loaded = 'false'; list.style.display = 'none'; await toggleSocialComments(postId, feedKey); }
     showToast('Odpověď přidána.');
+    if (state.lightbox && state.lightbox.post && state.lightbox.post.id === postId) {
+      const c = await apiGet(`/api/feed/${postId}/comments`);
+      state.lightbox.post.__comments = c.comments || [];
+      updateLightboxDOM();
+    }
   } catch (err) { showToast(err.message); }
 }
 
@@ -368,20 +342,6 @@ function deletePost(postId, feedKey) {
       } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
     },
   });
-}
-
-async function deleteComment(commentId, feedKey, postId) {
-  try {
-    await apiDelete(`/api/feed/comment/${commentId}`);
-    const post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
-    if (post) {
-      post.comment_count = Math.max(0, (post.comment_count || 1) - 1);
-      post.__comments = (post.__comments || []).filter((c) => c.id !== commentId);
-    }
-    const list = document.querySelector(`[data-comments-list="${postId}"]`);
-    if (list) { list.dataset.loaded = 'false'; list.style.display = 'none'; await toggleSocialComments(postId, feedKey); }
-    showToast('Komentář smazán.');
-  } catch (err) { showToast(err.message); }
 }
 
 async function openPostFromProfile(postId, kind, businessId) {
@@ -470,18 +430,16 @@ async function submitLightboxComment(postId, feedKey, text) {
   if (!isLoggedIn()) { showToast('Pro komentování se musíš přihlásit.'); return; }
   try {
     await apiPost(`/api/feed/${postId}/comment`, { text: text.trim() });
-    // Reload do lightboxu
     if (state.lightbox && state.lightbox.post) {
       try {
         const c = await apiGet(`/api/feed/${postId}/comments`);
         state.lightbox.post.__comments = c.comments || [];
-        state.lightbox.post.comment_count = c.total || 0;
+        state.lightbox.post.comment_count = c.total || (state.lightbox.post.comment_count || 0) + 1;
       } catch {}
     }
-    // Refresh feed itemov
     for (const k of Object.keys(state.socialFeeds)) {
       const p = state.socialFeeds[k].items.find((x) => x.id === postId);
-      if (p) { p.comment_count = (p.comment_count || 0) + 1; p.__comments = null; }
+      if (p) { p.comment_count = (p.comment_count || 0) + 1; }
     }
     updateLightboxDOM();
     showToast('Komentář přidán.');
