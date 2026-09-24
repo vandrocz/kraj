@@ -110,16 +110,23 @@ function renderGoogleButton(containerEl, onCredential) {
 async function handleGoogleCredential(credential) {
   try {
     const data = await apiPost('/api/auth/google', { credential });
-    setToken(data.token);
-    setStoredUser(data.user);
-    setStoredBusinesses(data.businesses || []);
-    state.token = data.token;
-    state.user = data.user;
-    state.businesses = data.businesses || [];
-    showToast(`Vítej, ${data.user.display_name}!`);
-    if (typeof loadNotifications === 'function') loadNotifications();
-    if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(data.user);
-    if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
+    // 🔑 Použi zdieľaný finishLogin z account.js (obsahuje renderApp + redirect)
+    if (typeof finishLogin === 'function') {
+      finishLogin(data);
+    } else {
+      // Fallback (keby sa account.js nenačítal)
+      setToken(data.token);
+      setStoredUser(data.user);
+      setStoredBusinesses(data.businesses || []);
+      state.token = data.token;
+      state.user = data.user;
+      state.businesses = data.businesses || [];
+      state.tab = 'account';
+      state.overlay = null;
+      showToast(`Vítej, ${data.user.display_name}!`);
+      if (typeof renderApp === 'function') renderApp();
+      if (typeof loadNotifications === 'function') loadNotifications();
+    }
   } catch (err) {
     showToast(err.message);
   }
