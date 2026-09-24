@@ -39,6 +39,35 @@ async function fetchMediaForPosts(env, postIds) {
   return map;
 }
 
+// 🔑 NOVÉ: bulk fetch lajkov pre daného viewera (KV)
+async function fetchLikedSet(env, postIds, viewerId) {
+  const set = new Set();
+  if (!viewerId || postIds.length === 0) return set;
+  await Promise.all(postIds.map(async (id) => {
+    try {
+      const v = await env.NASKRAJ_LAJKY.get(`like:post:${id}:${viewerId}`);
+      if (v) set.add(id);
+    } catch {}
+  }));
+  return set;
+}
+
+// 🔑 NOVÉ: bulk fetch bookmarkov z DB
+async function fetchBookmarkedSet(env, postIds, viewerId) {
+  const set = new Set();
+  if (!viewerId || postIds.length === 0) return set;
+  try {
+    const ph = postIds.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(
+      `SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${ph})`,
+    ).bind(viewerId, ...postIds).all();
+    for (const r of results) set.add(r.post_id);
+  } catch (err) {
+    console.warn('fetchBookmarkedSet:', err.message);
+  }
+  return set;
+}
+
 function escapePlain(t) {
   return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -70,7 +99,6 @@ function decodeCursor(cursor) {
   } catch { return null; }
 }
 
-// Uloží hashtags pre post
 async function saveHashtags(env, postId, text) {
   const tags = extractHashtags(text);
   if (tags.length === 0) return [];
@@ -82,7 +110,9 @@ async function saveHashtags(env, postId, text) {
   return tags;
 }
 
-// Kolekcie (neaktívne v UI)
+// ============================================================
+// KOLEKCIE
+// ============================================================
 feedRoutes.get('/collections', async (c) => {
   await ensureActiveProjectRotation(c.env);
   const active = await c.env.DB.prepare(
@@ -193,6 +223,13 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
   const { results } = await c.env.DB.prepare(sql).bind(...params).all();
   const mediaMap = await fetchMediaForPosts(c.env, results.map((r) => r.id));
 
+  // 🔑 NOVÉ: bulk fetch liked + bookmarked pre celý feed naraz
+  const postIds = results.map((r) => r.id);
+  const [likedSet, bookmarkedSet] = await Promise.all([
+    fetchLikedSet(c.env, postIds, viewerId),
+    fetchBookmarkedSet(c.env, postIds, viewerId),
+  ]);
+
   let followedIds = new Set(), userCity = null, userRegion = null;
   if (viewerId && sort !== 'recent') {
     try {
@@ -222,6 +259,9 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
       created_at: post.created_at,
       comment_count: cc?.n || 0,
       likes,
+      // 🔑 KLÚČOVÉ POLIA PRE FRONTEND
+      liked: likedSet.has(post.id),
+      bookmarked: bookmarkedSet.has(post.id),
       views: post.view_count || 0,
       geo: post.geo_place ? { place: post.geo_place, lat: post.geo_lat, lng: post.geo_lng } : null,
       business: {
@@ -242,7 +282,7 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
     out = out.map((p) => ({ ...p, __score: scorePostForUser(p, {}) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
   } else if (sort === 'for_you') {
-    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedId: null, followedIds, userCity, userRegion }) })).sort((a, b) => b.__score - a.__score);
+    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedIds, userCity, userRegion }) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
   } else {
     const hasMore = out.length > limit;
@@ -259,9 +299,13 @@ feedRoutes.get('/organization', (c) => loadSocialFeed(c, { targetFeed: 'organiza
 feedRoutes.get('/accommodation', (c) => loadSocialFeed(c, { targetFeed: 'accommodation', table: 'accommodation' }));
 feedRoutes.get('/gastro', (c) => loadSocialFeed(c, { targetFeed: 'gastro', table: 'restaurants', extraFilterCols: ['cuisine_type'] }));
 
-// Post podľa ID (pre deep-linking)
+// ============================================================
+// POST PODĽA ID (deep-linking)
+// ============================================================
 feedRoutes.get('/post-by-id/:id', async (c) => {
   const id = c.req.param('id');
+  const viewerId = await getViewerId(c, c.env);
+
   const post = await c.env.DB.prepare(
     `SELECT posts.*,
             COALESCE(o.id, a.id, r.id) AS business_id,
@@ -284,6 +328,12 @@ feedRoutes.get('/post-by-id/:id', async (c) => {
   const likesRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${post.id}`);
   const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(post.id).first();
 
+  // 🔑 liked + bookmarked pre aktuálneho viewera
+  const [likedSet, bookmarkedSet] = await Promise.all([
+    fetchLikedSet(c.env, [post.id], viewerId),
+    fetchBookmarkedSet(c.env, [post.id], viewerId),
+  ]);
+
   return c.json({
     post: {
       id: post.id,
@@ -294,6 +344,8 @@ feedRoutes.get('/post-by-id/:id', async (c) => {
       created_at: post.created_at,
       comment_count: cc?.n || 0,
       likes: likesRaw ? parseInt(likesRaw, 10) : 0,
+      liked: likedSet.has(post.id),
+      bookmarked: bookmarkedSet.has(post.id),
       views: post.view_count || 0,
       geo: post.geo_place ? { place: post.geo_place, lat: post.geo_lat, lng: post.geo_lng } : null,
       business: {
@@ -319,23 +371,40 @@ feedRoutes.post('/:id/view', async (c) => {
   return c.json({ ok: true });
 });
 
+// ============================================================
+// 🔑 TOGGLE LAJK — teraz skutočne toggle (like ↔ unlike)
+// ============================================================
 feedRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const postId = c.req.param('id');
   const post = await c.env.DB.prepare(`SELECT id, user_id FROM posts WHERE id = ? AND status = 'published'`).bind(postId).first();
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
+
   const likeKey = `like:post:${postId}:${user.sub}`;
-  if (await c.env.NASKRAJ_LAJKY.get(likeKey)) {
-    const r = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${postId}`);
-    return c.json({ liked: true, likes: r ? parseInt(r, 10) : 0 });
+  const countKey = `likecount:post:${postId}`;
+  const existing = await c.env.NASKRAJ_LAJKY.get(likeKey);
+  const cur = await c.env.NASKRAJ_LAJKY.get(countKey);
+  const curN = cur ? parseInt(cur, 10) : 0;
+
+  // ---- UNLIKE ----
+  if (existing) {
+    try { await c.env.NASKRAJ_LAJKY.delete(likeKey); } catch (err) { console.warn('KV delete:', err.message); }
+    const n = Math.max(0, curN - 1);
+    await c.env.NASKRAJ_LAJKY.put(countKey, String(n));
+    return c.json({ liked: false, likes: n });
   }
+
+  // ---- LIKE ----
   await c.env.NASKRAJ_LAJKY.put(likeKey, '1');
-  const cur = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${postId}`);
-  const n = (cur ? parseInt(cur, 10) : 0) + 1;
-  await c.env.NASKRAJ_LAJKY.put(`likecount:post:${postId}`, String(n));
+  const n = curN + 1;
+  await c.env.NASKRAJ_LAJKY.put(countKey, String(n));
+
   if (post.user_id && post.user_id !== user.sub) {
     try {
-      await c.env.DB.prepare(`INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text) VALUES (?, ?, 'like', ?, 'post', ?, 'dal(a) like tvému příspěvku')`).bind(newId('notif'), post.user_id, user.sub, postId).run();
+      await c.env.DB.prepare(
+        `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
+         VALUES (?, ?, 'like', ?, 'post', ?, 'dal(a) iskru tvému příspěvku')`,
+      ).bind(newId('notif'), post.user_id, user.sub, postId).run();
     } catch {}
   }
   return c.json({ liked: true, likes: n }, 201);
@@ -515,5 +584,4 @@ feedRoutes.post('/:id/report', async (c) => {
   return c.json({ id, ok: true }, 201);
 });
 
-// Uloží hashtags pri vytvorení postu (volané z posts.js)
 export { saveHashtags };
