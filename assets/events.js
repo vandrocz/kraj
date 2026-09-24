@@ -9,6 +9,14 @@ document.addEventListener('click', (e) => {
 
   switch (action) {
     case 'set-tab': switchTab(el.dataset.tab); break;
+    case 'close-modal': closeModal(); break;
+    case 'close-modal-scrim':
+      // Zavrieť len ak klik bol priamo na scrim (nie na sheet vnútri)
+      if (e.target.classList.contains('modal-scrim')) closeModal();
+      break;
+    case 'submit-modal':
+      // Spracuje sa v submit handleri nižšie
+      break;
     case 'share-event': shareEvent(el.dataset.id); break;
     case 'add-to-calendar': addEventToCalendar(el.dataset.id); break;
     case 'reject-cookies': rejectCookies(); break;
@@ -373,6 +381,7 @@ document.addEventListener('submit', (e) => {
   else if (a === 'submit-review') handleReviewSubmit(form);
   else if (a === 'submit-edit-post') handleEditPostSubmit(form);
   else if (a === 'submit-verification-request') handleVerificationSubmit(form);
+  else if (a === 'submit-modal') handleModalSubmit(form);
 });
 
 document.addEventListener('keydown', (e) => {
@@ -391,6 +400,33 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+// ============================================================
+// MODAL SUBMIT
+// ============================================================
+async function handleModalSubmit(form) {
+  const m = state._modal;
+  if (!m) { closeModal(); return; }
+
+  // Zber dát z formulára
+  const fd = new FormData(form);
+  const data = {};
+  for (const [k, v] of fd.entries()) data[k] = v;
+
+  if (typeof m.onSubmit !== 'function') {
+    closeModal();
+    return;
+  }
+
+  try {
+    await m.onSubmit(data);
+  } catch (err) {
+    console.error('modal submit error:', err);
+    showToast(err.message || 'Něco se pokazilo.');
+    state._modalLoading = false;
+    renderApp();
+  }
+}
 
 // ============================================================
 // BOOTSTRAP
