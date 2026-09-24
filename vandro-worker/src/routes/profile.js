@@ -6,8 +6,12 @@ import { getUserBadges } from '../badges.js';
 export const profileRoutes = new Hono();
 
 const TYPE_TO_TABLE = {
-  user: 'users', organizations: 'organizations', organization: 'organizations',
-  accommodation: 'accommodation', restaurants: 'restaurants', gastro: 'restaurants',
+  user: 'users',
+  organizations: 'organizations',
+  organization: 'organizations',
+  accommodation: 'accommodation',
+  restaurants: 'restaurants',
+  gastro: 'restaurants',
 };
 
 function normalizeType(t) {
@@ -15,30 +19,40 @@ function normalizeType(t) {
   if (t === 'gastro') return 'restaurants';
   return t;
 }
+
 function bizKindFromType(table) {
   if (table === 'organizations') return 'organization';
   if (table === 'accommodation') return 'accommodation';
   if (table === 'restaurants') return 'gastro';
   return null;
 }
+
 function feedKeyFromType(table) {
   if (table === 'organizations') return 'organization';
   if (table === 'accommodation') return 'accommodation';
   if (table === 'restaurants') return 'gastro';
   return null;
 }
+
 async function getFollowCount(env, type, id) {
-  const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first();
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`,
+  ).bind(type, id).first();
   return row?.n || 0;
 }
+
 function escapePlain(t) {
   return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// ============================================================
+// SEARCH
+// ============================================================
 profileRoutes.get('/search', async (c) => {
   const user = c.get('user');
   const q = (c.req.query('q') || '').trim();
   if (!q || q.length < 2) return c.json({ results: [] });
+
   const like = `%${escapeLike(q)}%`;
   const qRaw = q.startsWith('@') ? q.slice(1) : q;
   const likeHandle = `%${escapeLike(qRaw.toLowerCase())}%`;
@@ -61,7 +75,8 @@ profileRoutes.get('/search', async (c) => {
      SELECT 'restaurants', id, name, type, region, district, city, description, is_verified, NULL
        FROM restaurants WHERE name LIKE ? ESCAPE '\\'
      UNION ALL
-     SELECT 'users', id, display_name AS name, role AS type, NULL AS region, NULL AS district, NULL AS city, bio AS description, email_verified AS is_verified, handle
+     SELECT 'users', id, display_name AS name, role AS type, NULL AS region, NULL AS district, NULL AS city,
+            bio AS description, email_verified AS is_verified, handle
        FROM users
        WHERE deleted_at IS NULL AND (display_name LIKE ? ESCAPE '\\' OR handle LIKE ? ESCAPE '\\')
      LIMIT 50`,
@@ -71,102 +86,140 @@ profileRoutes.get('/search', async (c) => {
   return c.json({ results: filtered });
 });
 
+// ============================================================
+// FOLLOW
+// ============================================================
 profileRoutes.post('/follow', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
-  const type = normalizeType(body.type);
-  const id = body.id;
-  if (!TYPE_TO_TABLE[type] || !id) return c.json({ error: 'Neplatný cieľ.' }, 400);
-  if (type === 'users' && id === user.sub) return c.json({ error: 'Nemôžeš sledovať sám seba.' }, 400);
+  const type = normalizeType((body.type || '').toString());
+  const id = (body.id || '').toString();
+  const table = TYPE_TO_TABLE[type];
 
-  const blocked = await c.env.DB.prepare(`SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?`).bind(id, user.sub).first();
-  if (blocked && type === 'users') return c.json({ error: 'Tento uživatel tě zablokoval.' }, 403);
+  if (!table || !id) return c.json({ error: 'Neplatný cieľ.' }, 400);
+  if (type === 'users' && id === user.sub) return c.json({ error: 'Nemůžeš sledovat sám sebe.' }, 400);
 
-  const existing = await c.env.DB.prepare(`SELECT 1 FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`).bind(user.sub, type, id).first();
+  try {
+    const blocked = await c.env.DB.prepare(
+      `SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)`,
+    ).bind(user.sub, id, id, user.sub).first();
+    if (blocked) return c.json({ error: 'Nelze sledovat.' }, 403);
+  } catch {}
+
+  const existing = await c.env.DB.prepare(
+    `SELECT 1 FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`,
+  ).bind(user.sub, type, id).first();
+
   if (existing) {
-    await c.env.DB.prepare(`DELETE FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`).bind(user.sub, type, id).run();
-    return c.json({ following: false, followers: await getFollowCount(c.env, type, id) });
+    await c.env.DB.prepare(
+      `DELETE FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`,
+    ).bind(user.sub, type, id).run();
+    const followers = await getFollowCount(c.env, type, id);
+    return c.json({ following: false, followers });
   }
-  await c.env.DB.prepare(`INSERT INTO follows (follower_id, target_type, target_id) VALUES (?, ?, ?)`).bind(user.sub, type, id).run();
-  if (type === 'users') {
-    try {
-      await c.env.DB.prepare(`INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text) VALUES (?, ?, 'follow', ?, 'user', ?, 'tě začal(a) sledovat')`).bind(newId('notif'), id, user.sub, user.sub).run();
-    } catch {}
-  }
-  return c.json({ following: true, followers: await getFollowCount(c.env, type, id) });
+
+  await c.env.DB.prepare(
+    `INSERT INTO follows (id, follower_id, target_type, target_id) VALUES (?, ?, ?, ?)`,
+  ).bind(newId('fol'), user.sub, type, id).run();
+  const followers = await getFollowCount(c.env, type, id);
+  return c.json({ following: true, followers }, 201);
 });
 
+// ============================================================
+// FOLLOW STATUS
+// ============================================================
 profileRoutes.get('/follow/status', async (c) => {
   const user = c.get('user');
-  const type = normalizeType(c.req.query('type') || '');
-  const id = c.req.query('id') || '';
-  if (!TYPE_TO_TABLE[type] || !id) return c.json({ following: false, followers: 0 });
-  const row = await c.env.DB.prepare(`SELECT 1 FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`).bind(user.sub, type, id).first();
-  return c.json({ following: !!row, followers: await getFollowCount(c.env, type, id) });
+  const type = normalizeType((c.req.query('type') || '').toString());
+  const id = (c.req.query('id') || '').toString();
+  if (!type || !id) return c.json({ following: false });
+  const row = await c.env.DB.prepare(
+    `SELECT 1 FROM follows WHERE follower_id = ? AND target_type = ? AND target_id = ?`,
+  ).bind(user.sub, type, id).first();
+  const followers = await getFollowCount(c.env, type, id);
+  return c.json({ following: !!row, followers });
 });
 
+// ============================================================
+// FOLLOWERS / FOLLOWING
+// ============================================================
 profileRoutes.get('/:type/:id/followers', async (c) => {
   const type = normalizeType(c.req.param('type'));
   const id = c.req.param('id');
+  if (type !== 'users') return c.json({ users: [] });
   const { results } = await c.env.DB.prepare(
-    `SELECT users.id, users.display_name, users.handle, users.avatar_url, users.role, follows.created_at
-     FROM follows JOIN users ON users.id = follows.follower_id
-     WHERE follows.target_type = ? AND follows.target_id = ? AND users.deleted_at IS NULL
-     ORDER BY follows.created_at DESC LIMIT 200`,
-  ).bind(type, id).all();
+    `SELECT u.id, u.display_name, u.handle, u.avatar_url
+       FROM follows f JOIN users u ON u.id = f.follower_id
+      WHERE f.target_type = 'users' AND f.target_id = ?
+      ORDER BY f.created_at DESC LIMIT 200`,
+  ).bind(id).all();
   return c.json({ users: results });
 });
 
 profileRoutes.get('/me/following', async (c) => {
   const user = c.get('user');
   const { results } = await c.env.DB.prepare(
-    `SELECT follows.target_type, follows.target_id, follows.created_at,
-            users.display_name AS user_name, users.handle AS user_handle, users.avatar_url AS user_avatar,
-            organizations.name AS org_name, accommodation.name AS acc_name, restaurants.name AS rest_name
-     FROM follows
-     LEFT JOIN users ON users.id = follows.target_id AND follows.target_type = 'users'
-     LEFT JOIN organizations ON organizations.id = follows.target_id AND follows.target_type = 'organizations'
-     LEFT JOIN accommodation ON accommodation.id = follows.target_id AND follows.target_type = 'accommodation'
-     LEFT JOIN restaurants ON restaurants.id = follows.target_id AND follows.target_type = 'restaurants'
-     WHERE follows.follower_id = ? ORDER BY follows.created_at DESC LIMIT 200`,
+    `SELECT f.target_type, f.target_id,
+            u.display_name AS user_name, u.handle AS user_handle, u.avatar_url AS user_avatar,
+            o.name AS org_name, a.name AS acc_name, r.name AS rest_name
+       FROM follows f
+       LEFT JOIN users u ON u.id = f.target_id AND f.target_type = 'users'
+       LEFT JOIN organizations o ON o.id = f.target_id AND f.target_type = 'organizations'
+       LEFT JOIN accommodation a ON a.id = f.target_id AND f.target_type = 'accommodation'
+       LEFT JOIN restaurants r ON r.id = f.target_id AND f.target_type = 'restaurants'
+      WHERE f.follower_id = ?
+      ORDER BY f.created_at DESC LIMIT 200`,
   ).bind(user.sub).all();
   return c.json({ items: results });
 });
 
+// ============================================================
+// BLOCK / UNBLOCK
+// ============================================================
 profileRoutes.post('/block/:id', async (c) => {
   const user = c.get('user');
-  const id = c.req.param('id');
-  if (id === user.sub) return c.json({ error: 'Nemůžeš blokovat sám sebe.' }, 400);
-  await c.env.DB.prepare(`INSERT OR IGNORE INTO blocks (blocker_id, blocked_id) VALUES (?, ?)`).bind(user.sub, id).run();
-  await c.env.DB.prepare(`DELETE FROM follows WHERE follower_id = ? AND target_type = 'users' AND target_id = ?`).bind(user.sub, id).run();
-  await c.env.DB.prepare(`DELETE FROM follows WHERE follower_id = ? AND target_type = 'users' AND target_id = ?`).bind(id, user.sub).run();
-  return c.json({ ok: true, blocked: true });
+  const targetId = c.req.param('id');
+  if (targetId === user.sub) return c.json({ error: 'Nelze blokovat sám sebe.' }, 400);
+  await c.env.DB.prepare(
+    `INSERT OR IGNORE INTO blocks (id, blocker_id, blocked_id) VALUES (?, ?, ?)`,
+  ).bind(newId('blk'), user.sub, targetId).run();
+  await c.env.DB.prepare(
+    `DELETE FROM follows WHERE (follower_id = ? AND target_type = 'users' AND target_id = ?)
+        OR (follower_id = ? AND target_type = 'users' AND target_id = ?)`,
+  ).bind(user.sub, targetId, targetId, user.sub).run();
+  return c.json({ ok: true }, 201);
 });
 
 profileRoutes.delete('/block/:id', async (c) => {
   const user = c.get('user');
-  await c.env.DB.prepare(`DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?`).bind(user.sub, c.req.param('id')).run();
-  return c.json({ ok: true, blocked: false });
+  const targetId = c.req.param('id');
+  await c.env.DB.prepare(
+    `DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?`,
+  ).bind(user.sub, targetId).run();
+  return c.json({ ok: true });
 });
 
 profileRoutes.get('/me/blocks', async (c) => {
   const user = c.get('user');
   const { results } = await c.env.DB.prepare(
-    `SELECT users.id, users.display_name, users.handle, users.avatar_url, blocks.created_at
-     FROM blocks JOIN users ON users.id = blocks.blocked_id
-     WHERE blocks.blocker_id = ? ORDER BY blocks.created_at DESC`,
+    `SELECT u.id, u.display_name, u.handle, u.avatar_url
+       FROM blocks b JOIN users u ON u.id = b.blocked_id
+      WHERE b.blocker_id = ?
+      ORDER BY b.created_at DESC LIMIT 200`,
   ).bind(user.sub).all();
   return c.json({ users: results });
 });
 
+// ============================================================
+// SETTINGS
+// ============================================================
 profileRoutes.get('/me/settings', async (c) => {
   const user = c.get('user');
-  const row = await c.env.DB.prepare(`SELECT settings_json, public_checkins FROM users WHERE id = ?`).bind(user.sub).first();
-  let settings = { push_notifications: true, email_notifications: true, public_profile: true, show_contributions: true, public_checkins: true };
-  if (row?.settings_json) { try { settings = { ...settings, ...JSON.parse(row.settings_json) }; } catch {} }
-  // Public checkins je aj samostatný stĺpec
-  if (row && row.public_checkins != null) settings.public_checkins = !!row.public_checkins;
-  return c.json({ settings });
+  const row = await c.env.DB.prepare(`SELECT settings_json FROM users WHERE id = ?`).bind(user.sub).first();
+  let settings = {};
+  try { settings = row?.settings_json ? JSON.parse(row.settings_json) : {}; } catch {}
+  const defaults = { push_notifications: true, email_notifications: true, public_profile: true, show_contributions: true, public_checkins: true };
+  return c.json({ settings: { ...defaults, ...settings } });
 });
 
 profileRoutes.patch('/me/settings', async (c) => {
@@ -175,20 +228,18 @@ profileRoutes.patch('/me/settings', async (c) => {
   const allowed = ['push_notifications', 'email_notifications', 'public_profile', 'show_contributions', 'public_checkins'];
   const row = await c.env.DB.prepare(`SELECT settings_json FROM users WHERE id = ?`).bind(user.sub).first();
   let settings = {};
-  if (row?.settings_json) { try { settings = JSON.parse(row.settings_json); } catch {} }
+  try { settings = row?.settings_json ? JSON.parse(row.settings_json) : {}; } catch {}
   for (const k of allowed) if (k in body) settings[k] = !!body[k];
-
-  // Public checkins uložíme aj do samostatného stĺpca (rýchlejší read na profile)
   if ('public_checkins' in body) {
-    try {
-      await c.env.DB.prepare(`UPDATE users SET public_checkins = ? WHERE id = ?`).bind(body.public_checkins ? 1 : 0, user.sub).run();
-    } catch {}
+    try { await c.env.DB.prepare(`UPDATE users SET public_checkins = ? WHERE id = ?`).bind(body.public_checkins ? 1 : 0, user.sub).run(); } catch {}
   }
-
   await c.env.DB.prepare(`UPDATE users SET settings_json = ? WHERE id = ?`).bind(JSON.stringify(settings), user.sub).run();
   return c.json({ ok: true, settings });
 });
 
+// ============================================================
+// UPDATE USER
+// ============================================================
 profileRoutes.patch('/me/user', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -207,53 +258,85 @@ profileRoutes.patch('/me/user', async (c) => {
     }
     const taken = await c.env.DB.prepare('SELECT 1 FROM users WHERE handle = ? AND id != ?').bind(normalized, user.sub).first();
     if (taken) return c.json({ error: 'Tento handle je již obsazený.' }, 409);
-    sets.push('handle = ?');
-    params.push(normalized);
+    sets.push('handle = ?'); params.push(normalized);
   }
 
   const fields = ['display_name', 'bio', 'location', 'website', 'phone'];
   for (const f of fields) if (f in body) { sets.push(`${f} = ?`); params.push(body[f] ?? null); }
 
-  if ('onboarding_done' in body) {
-    sets.push('onboarding_done = ?');
-    params.push(body.onboarding_done ? 1 : 0);
-  }
+  if ('onboarding_done' in body) { sets.push('onboarding_done = ?'); params.push(body.onboarding_done ? 1 : 0); }
 
   if (sets.length === 0) return c.json({ error: 'Žiadne polia.' }, 400);
+
   params.push(user.sub);
   await c.env.DB.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run();
 
   const updated = await c.env.DB.prepare(
-    `SELECT id, email, role, display_name, handle, bio, avatar_url, cover_url, location, website, phone, email_verified, totp_enabled, onboarding_done FROM users WHERE id = ?`,
+    `SELECT id, email, role, display_name, handle, bio, avatar_url, cover_url, location,
+            website, phone, email_verified, totp_enabled, onboarding_done
+       FROM users WHERE id = ?`,
   ).bind(user.sub).first();
   return c.json({ user: updated });
 });
 
+// ============================================================
+// UPDATE BUSINESS — 🔑 ROZŠÍRENÉ O NOVÉ POLIA
+// ============================================================
 profileRoutes.patch('/me/:type/:id', async (c) => {
   const user = c.get('user');
   const table = TYPE_TO_TABLE[normalizeType(c.req.param('type'))];
   const id = c.req.param('id');
+
   if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
+
   const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(id).first();
   if (!owned) return c.json({ error: 'Nenájdené.' }, 404);
   if (owned.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
 
+  // 🔑 Rozšírené allowedFields o nové polia:
+  // - opening_hours  → všetky typy (organizácie, ubytovanie, gastro)
+  // - entrance_fee   → iba organizácie (hrady, zámky, ZOO...)
+  // - price_range    → gastro a ubytovanie (€ / €€ / €€€ / €€€€)
   const allowedFields = table === 'restaurants'
-    ? ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'cuisine_type', 'type']
+    ? ['name', 'description', 'region', 'district', 'city', 'website', 'phone',
+       'cuisine_type', 'type', 'opening_hours', 'price_range']
     : table === 'accommodation'
-      ? ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'capacity', 'type']
-      : ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'type'];
+    ? ['name', 'description', 'region', 'district', 'city', 'website', 'phone',
+       'capacity', 'type', 'opening_hours', 'price_range']
+    : ['name', 'description', 'region', 'district', 'city', 'website', 'phone',
+       'type', 'opening_hours', 'entrance_fee', 'price_range'];
 
   const body = await c.req.json().catch(() => ({}));
   const sets = [], params = [];
-  for (const f of allowedFields) if (f in body) { sets.push(`${f} = ?`); params.push(body[f] ?? null); }
+
+  for (const f of allowedFields) {
+    if (f in body) {
+      let v = body[f];
+      // Normalizácia: price_range na integer alebo NULL
+      if (f === 'price_range') {
+        if (v === '' || v == null) v = null;
+        else v = parseInt(v, 10);
+        if (v !== null && (isNaN(v) || v < 1 || v > 4)) v = null;
+      }
+      // Prázdne stringy na NULL (aby sa v DB neukladalo "")
+      if (typeof v === 'string' && v.trim() === '') v = null;
+      sets.push(`${f} = ?`);
+      params.push(v ?? null);
+    }
+  }
+
   if (sets.length === 0) return c.json({ error: 'Žiadne polia.' }, 400);
+
   params.push(id);
   await c.env.DB.prepare(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run();
+
   const updated = await c.env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(id).first();
   return c.json({ business: updated });
 });
 
+// ============================================================
+// UPLOAD
+// ============================================================
 profileRoutes.post('/me/upload', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -261,13 +344,16 @@ profileRoutes.post('/me/upload', async (c) => {
   const target = (form.target || 'user').toString();
   const targetId = (form.target_id || '').toString();
   const field = (form.field || 'avatar').toString();
+
   if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
   if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
 
   const publicBase = c.env.R2_PUBLIC_BASE || '';
   const ext = ((file.name || 'x.jpg').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
   const key = `profile/${newId()}.${ext}`;
-  await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type || 'image/jpeg' } });
+  await c.env.MEDIA.put(key, await file.arrayBuffer(), {
+    httpMetadata: { contentType: file.type || 'image/jpeg' },
+  });
   const url = publicBase ? `${publicBase}/${key}` : key;
 
   if (target === 'user') {
@@ -275,10 +361,13 @@ profileRoutes.post('/me/upload', async (c) => {
     await c.env.DB.prepare(`UPDATE users SET ${col} = ? WHERE id = ?`).bind(url, user.sub).run();
     return c.json({ url, field: col });
   }
+
   const table = TYPE_TO_TABLE[normalizeType(target)];
   if (!table || !targetId) return c.json({ error: 'Neplatný cieľ.' }, 400);
+
   const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(targetId).first();
   if (!owned || (owned.user_id !== user.sub && user.role !== 'admin')) return c.json({ error: 'Nemáš oprávnenie.' }, 403);
+
   const col = field === 'cover' ? 'cover_url' : (table === 'organizations' ? 'logo_url' : 'image_url');
   await c.env.DB.prepare(`UPDATE ${table} SET ${col} = ? WHERE id = ?`).bind(url, targetId).run();
   return c.json({ url, field: col });
@@ -288,6 +377,7 @@ profileRoutes.post('/me/upload-verification-doc', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
   const file = form.file;
+
   if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
   if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
   if (file.size > 10 * 1024 * 1024) return c.json({ error: 'Soubor je příliš velký (max 10 MB).' }, 400);
@@ -298,11 +388,16 @@ profileRoutes.post('/me/upload-verification-doc', async (c) => {
   const publicBase = c.env.R2_PUBLIC_BASE || '';
   const ext = ((file.name || 'doc.pdf').split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '');
   const key = `verifications/${newId()}.${ext}`;
-  await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+  await c.env.MEDIA.put(key, await file.arrayBuffer(), {
+    httpMetadata: { contentType: file.type },
+  });
   const url = publicBase ? `${publicBase}/${key}` : key;
   return c.json({ url }, 201);
 });
 
+// ============================================================
+// VERIFICATION REQUEST
+// ============================================================
 profileRoutes.post('/me/request-verification', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -320,12 +415,15 @@ profileRoutes.post('/me/request-verification', async (c) => {
   if (biz.user_id !== user.sub) return c.json({ error: 'Nemáš oprávnění.' }, 403);
   if (biz.is_verified) return c.json({ error: 'Podnik je již ověřen.' }, 400);
 
-  const existing = await c.env.DB.prepare(`SELECT id FROM verification_requests WHERE business_id = ? AND status = 'pending'`).bind(businessId).first();
+  const existing = await c.env.DB.prepare(
+    `SELECT id FROM verification_requests WHERE business_id = ? AND status = 'pending'`,
+  ).bind(businessId).first();
   if (existing) return c.json({ error: 'Žádost už čeká na schválení.' }, 400);
 
   const id = newId('vreq');
   await c.env.DB.prepare(
-    `INSERT INTO verification_requests (id, business_id, business_kind, user_id, doc_url, note) VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO verification_requests (id, business_id, business_kind, user_id, doc_url, note)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   ).bind(id, businessId, businessKind, user.sub, docUrl, note || null).run();
 
   await c.env.DB.prepare(`UPDATE ${businessKind} SET verification_status = 'pending' WHERE id = ?`).bind(businessId).run();
@@ -337,12 +435,17 @@ profileRoutes.get('/me/verification-status/:kind/:id', async (c) => {
   const kind = c.req.param('kind');
   const id = c.req.param('id');
   const req = await c.env.DB.prepare(
-    `SELECT id, status, admin_note, created_at, resolved_at FROM verification_requests
-     WHERE business_id = ? AND business_kind = ? ORDER BY created_at DESC LIMIT 1`,
+    `SELECT id, status, admin_note, created_at, resolved_at
+       FROM verification_requests
+      WHERE business_id = ? AND business_kind = ?
+      ORDER BY created_at DESC LIMIT 1`,
   ).bind(id, kind).first();
   return c.json({ request: req || null });
 });
 
+// ============================================================
+// DELETE ACCOUNT
+// ============================================================
 profileRoutes.delete('/me/account', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -350,22 +453,36 @@ profileRoutes.delete('/me/account', async (c) => {
 
   const now = new Date().toISOString();
   const anonEmail = `deleted+${user.sub}@naskraj.local`;
+
   await c.env.DB.prepare(
-    `UPDATE users SET deleted_at = ?, status = 'deleted', email = ?, display_name = 'Smazaný účet',
-      bio = NULL, avatar_url = NULL, cover_url = NULL, location = NULL, website = NULL, phone = NULL,
-      password_hash = 'deleted', password_salt = 'deleted', totp_secret = NULL, totp_enabled = 0
+    `UPDATE users SET
+       deleted_at = ?, status = 'deleted', email = ?, display_name = 'Smazaný účet',
+       bio = NULL, avatar_url = NULL, cover_url = NULL, location = NULL,
+       website = NULL, phone = NULL, password_hash = 'deleted',
+       password_salt = 'deleted', totp_secret = NULL, totp_enabled = 0
      WHERE id = ?`,
   ).bind(now, anonEmail, user.sub).run();
 
   await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE user_id = ?`).bind(user.sub).run();
-  await c.env.DB.prepare(`DELETE FROM follows WHERE follower_id = ? OR (target_type = 'users' AND target_id = ?)`).bind(user.sub, user.sub).run();
+  await c.env.DB.prepare(
+    `DELETE FROM follows WHERE follower_id = ? OR (target_type = 'users' AND target_id = ?)`,
+  ).bind(user.sub, user.sub).run();
+
   return c.json({ ok: true });
 });
 
+// ============================================================
+// EXPORT DATA
+// ============================================================
 profileRoutes.get('/me/export', async (c) => {
   const user = c.get('user');
   const profile = await c.env.DB.prepare(`SELECT * FROM users WHERE id = ?`).bind(user.sub).first();
-  if (profile) { delete profile.password_hash; delete profile.password_salt; delete profile.totp_secret; delete profile.recovery_codes_json; }
+  if (profile) {
+    delete profile.password_hash;
+    delete profile.password_salt;
+    delete profile.totp_secret;
+    delete profile.recovery_codes_json;
+  }
 
   const [contrib, businesses, posts, comments] = await Promise.all([
     c.env.DB.prepare(`SELECT * FROM contributions WHERE user_id = ?`).bind(user.sub).all(),
@@ -376,11 +493,16 @@ profileRoutes.get('/me/export', async (c) => {
        UNION ALL
        SELECT 'gastro', id, name, type, region, district, city, description, is_verified, created_at FROM restaurants WHERE user_id = ?`,
     ).bind(user.sub, user.sub, user.sub).all(),
-    c.env.DB.prepare(`SELECT id, target_feed, business_id, text_content, image_url, created_at FROM posts WHERE user_id = ?`).bind(user.sub).all(),
-    c.env.DB.prepare(`SELECT id, post_id, comment_text, created_at FROM comments WHERE user_id = ?`).bind(user.sub).all(),
+    c.env.DB.prepare(
+      `SELECT id, target_feed, business_id, text_content, image_url, created_at FROM posts WHERE user_id = ?`,
+    ).bind(user.sub).all(),
+    c.env.DB.prepare(
+      `SELECT id, post_id, comment_text, created_at FROM comments WHERE user_id = ?`,
+    ).bind(user.sub).all(),
   ]);
 
   const settings = await c.env.DB.prepare(`SELECT settings_json FROM users WHERE id = ?`).bind(user.sub).first();
+
   return c.json({
     exported_at: new Date().toISOString(),
     profile,
@@ -392,62 +514,91 @@ profileRoutes.get('/me/export', async (c) => {
   });
 });
 
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
 profileRoutes.get('/me/notifications', async (c) => {
   const user = c.get('user');
   const { results } = await c.env.DB.prepare(
     `SELECT notifications.*, users.display_name AS actor_name, users.handle AS actor_handle, users.avatar_url AS actor_avatar
-     FROM notifications LEFT JOIN users ON users.id = notifications.actor_id
-     WHERE notifications.user_id = ?
-     ORDER BY notifications.created_at DESC LIMIT 100`,
+       FROM notifications
+       LEFT JOIN users ON users.id = notifications.actor_id
+      WHERE notifications.user_id = ?
+      ORDER BY notifications.created_at DESC LIMIT 100`,
   ).bind(user.sub).all();
-  const unread = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL`).bind(user.sub).first();
+
+  const unread = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL`,
+  ).bind(user.sub).first();
+
   return c.json({ notifications: results, unread: unread?.n || 0 });
 });
 
 profileRoutes.post('/me/notifications/:id/read', async (c) => {
   const user = c.get('user');
-  await c.env.DB.prepare(`UPDATE notifications SET read_at = datetime('now') WHERE id = ? AND user_id = ?`).bind(c.req.param('id'), user.sub).run();
+  await c.env.DB.prepare(
+    `UPDATE notifications SET read_at = datetime('now') WHERE id = ? AND user_id = ?`,
+  ).bind(c.req.param('id'), user.sub).run();
   return c.json({ ok: true });
 });
 
 profileRoutes.post('/me/notifications/read-all', async (c) => {
   const user = c.get('user');
-  await c.env.DB.prepare(`UPDATE notifications SET read_at = datetime('now') WHERE user_id = ? AND read_at IS NULL`).bind(user.sub).run();
+  await c.env.DB.prepare(
+    `UPDATE notifications SET read_at = datetime('now') WHERE user_id = ? AND read_at IS NULL`,
+  ).bind(user.sub).run();
   return c.json({ ok: true });
 });
 
+// ============================================================
+// REPORT USER
+// ============================================================
 profileRoutes.post('/report/:id', async (c) => {
   const user = c.get('user');
   const targetId = c.req.param('id');
   if (targetId === user.sub) return c.json({ error: 'Nemůžeš nahlásit sám sebe.' }, 400);
+
   const target = await c.env.DB.prepare('SELECT id FROM users WHERE id = ? AND deleted_at IS NULL').bind(targetId).first();
   if (!target) return c.json({ error: 'Uživatel nenalezen.' }, 404);
+
   const body = await c.req.json().catch(() => ({}));
   const id = newId('ureport');
-  await c.env.DB.prepare(`INSERT INTO user_reports (id, reporter_id, target_user_id, reason) VALUES (?, ?, ?, ?)`)
-    .bind(id, user.sub, targetId, (body.reason || '').toString().slice(0, 500) || null).run();
+  await c.env.DB.prepare(
+    `INSERT INTO user_reports (id, reporter_id, target_user_id, reason) VALUES (?, ?, ?, ?)`,
+  ).bind(id, user.sub, targetId, (body.reason || '').toString().slice(0, 500) || null).run();
   return c.json({ ok: true, id }, 201);
 });
 
+// ============================================================
+// CHANGE EMAIL
+// ============================================================
 profileRoutes.post('/me/change-email', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
   const newEmail = (body.email || '').toString().toLowerCase().trim();
   const password = (body.password || '').toString();
+
   if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) return c.json({ error: 'Neplatný e-mail.' }, 400);
   if (!password) return c.json({ error: 'Zadej své aktuální heslo.' }, 400);
+
   const row = await c.env.DB.prepare('SELECT password_hash, password_salt, auth_provider FROM users WHERE id = ?').bind(user.sub).first();
   if (!row) return c.json({ error: 'Uživatel nenalezen.' }, 404);
   if (row.auth_provider === 'google') return c.json({ error: 'E-mail u Google účtu nelze změnit.' }, 400);
+
   const { verifyPassword } = await import('../auth.js');
   const ok = await verifyPassword(password, row.password_hash, row.password_salt);
   if (!ok) return c.json({ error: 'Nesprávné heslo.' }, 401);
+
   const exists = await c.env.DB.prepare('SELECT id FROM users WHERE email = ? AND id != ?').bind(newEmail, user.sub).first();
   if (exists) return c.json({ error: 'Tento e-mail je už použitý.' }, 409);
+
   await c.env.DB.prepare('UPDATE users SET email = ?, email_verified = 1 WHERE id = ?').bind(newEmail, user.sub).run();
   return c.json({ ok: true, email: newEmail });
 });
 
+// ============================================================
+// BADGES
+// ============================================================
 profileRoutes.get('/:type/:id/badges', async (c) => {
   const type = c.req.param('type');
   const id = c.req.param('id');
@@ -456,6 +607,9 @@ profileRoutes.get('/:type/:id/badges', async (c) => {
   return c.json({ badges });
 });
 
+// ============================================================
+// CHECKINS
+// ============================================================
 profileRoutes.get('/:type/:id/checkins', async (c) => {
   const id = c.req.param('id');
   const { results } = await c.env.DB.prepare(
@@ -463,16 +617,19 @@ profileRoutes.get('/:type/:id/checkins', async (c) => {
             COALESCE(o.name, a.name, r.name) AS business_name,
             COALESCE(o.logo_url, a.image_url, r.image_url) AS business_logo,
             COALESCE(o.region, a.region, r.region) AS region
-     FROM checkins
-     LEFT JOIN organizations o ON o.id = checkins.business_id AND checkins.business_kind = 'organizations'
-     LEFT JOIN accommodation a ON a.id = checkins.business_id AND checkins.business_kind = 'accommodation'
-     LEFT JOIN restaurants r ON r.id = checkins.business_id AND checkins.business_kind = 'restaurants'
-     WHERE checkins.user_id = ?
-     ORDER BY checkins.visited_at DESC LIMIT 200`,
+       FROM checkins
+       LEFT JOIN organizations o ON o.id = checkins.business_id AND checkins.business_kind = 'organizations'
+       LEFT JOIN accommodation a ON a.id = checkins.business_id AND checkins.business_kind = 'accommodation'
+       LEFT JOIN restaurants r ON r.id = checkins.business_id AND checkins.business_kind = 'restaurants'
+      WHERE checkins.user_id = ?
+      ORDER BY checkins.visited_at DESC LIMIT 200`,
   ).bind(id).all();
   return c.json({ checkins: results });
 });
 
+// ============================================================
+// STATS
+// ============================================================
 profileRoutes.get('/:type/:id/stats', async (c) => {
   try {
     const type = normalizeType(c.req.param('type'));
@@ -516,7 +673,10 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
 
     try {
       const r = await c.env.DB.prepare(
-        `SELECT DATE(created_at) AS day, COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published' AND created_at >= datetime('now','-30 days') GROUP BY day ORDER BY day ASC`,
+        `SELECT DATE(created_at) AS day, COUNT(*) AS n
+           FROM posts WHERE business_id = ? AND status = 'published'
+            AND created_at >= datetime('now','-30 days')
+          GROUP BY day ORDER BY day ASC`,
       ).bind(id).all();
       recent = r?.results || [];
     } catch {}
@@ -528,6 +688,9 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
   }
 });
 
+// ============================================================
+// PROFILE DETAIL
+// ============================================================
 profileRoutes.get('/:type/:id', async (c) => {
   const type = normalizeType(c.req.param('type'));
   const id = c.req.param('id');
@@ -536,18 +699,25 @@ profileRoutes.get('/:type/:id', async (c) => {
 
   if (table === 'users') {
     const user = await c.env.DB.prepare(
-      `SELECT id, display_name, handle, bio, avatar_url, cover_url, location, website, role, created_at, email_verified, totp_enabled, public_checkins
-       FROM users WHERE id = ? AND deleted_at IS NULL`,
+      `SELECT id, display_name, handle, bio, avatar_url, cover_url, location, website,
+              role, created_at, email_verified, totp_enabled, public_checkins
+         FROM users WHERE id = ? AND deleted_at IS NULL`,
     ).bind(id).first();
     if (!user) return c.json({ error: 'Užívateľ nenájdený.' }, 404);
 
     let businesses = [];
     if (user.role === 'organization') {
-      const { results } = await c.env.DB.prepare('SELECT id, name, type, region, district, city, is_verified FROM organizations WHERE user_id = ?').bind(id).all();
+      const { results } = await c.env.DB.prepare(
+        'SELECT id, name, type, region, district, city, is_verified FROM organizations WHERE user_id = ?',
+      ).bind(id).all();
       businesses = results.map((r) => ({ ...r, kind: 'organizations' }));
     } else if (user.role === 'hotelier') {
-      const acc = await c.env.DB.prepare('SELECT id, name, type, region, district, city, is_verified FROM accommodation WHERE user_id = ?').bind(id).all();
-      const rest = await c.env.DB.prepare('SELECT id, name, type, region, district, city, is_verified FROM restaurants WHERE user_id = ?').bind(id).all();
+      const acc = await c.env.DB.prepare(
+        'SELECT id, name, type, region, district, city, is_verified FROM accommodation WHERE user_id = ?',
+      ).bind(id).all();
+      const rest = await c.env.DB.prepare(
+        'SELECT id, name, type, region, district, city, is_verified FROM restaurants WHERE user_id = ?',
+      ).bind(id).all();
       businesses = [
         ...acc.results.map((r) => ({ ...r, kind: 'accommodation' })),
         ...rest.results.map((r) => ({ ...r, kind: 'restaurants' })),
@@ -556,8 +726,11 @@ profileRoutes.get('/:type/:id', async (c) => {
 
     const contrib = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM contributions WHERE user_id = ?`).bind(id).first();
     const followers = await getFollowCount(c.env, 'users', id);
+
     return c.json({
-      type: 'user', profile: user, businesses,
+      type: 'user',
+      profile: user,
+      businesses,
       stats: { contributions: contrib?.n || 0, followers },
       is_following: false,
     });
@@ -571,7 +744,8 @@ profileRoutes.get('/:type/:id', async (c) => {
 
   const { results: posts } = await c.env.DB.prepare(
     `SELECT id, text_content, content_html, image_url, geo_place, geo_lat, geo_lng, created_at
-     FROM posts WHERE business_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 60`,
+       FROM posts WHERE business_id = ? AND status = 'published'
+       ORDER BY created_at DESC LIMIT 60`,
   ).bind(id).all();
 
   const ids = posts.map((p) => p.id);
@@ -623,7 +797,12 @@ profileRoutes.get('/:type/:id', async (c) => {
   const kind = bizKindFromType(table);
 
   return c.json({
-    type: 'business', kind, feedKey, profile: business, posts: postsWithMedia,
-    stats: { followers, posts: postsWithMedia.length }, is_following: false,
+    type: 'business',
+    kind,
+    feedKey,
+    profile: business,
+    posts: postsWithMedia,
+    stats: { followers, posts: postsWithMedia.length },
+    is_following: false,
   });
 });
