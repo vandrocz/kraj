@@ -567,18 +567,35 @@ async function submitLightboxComment(postId, feedKey, text) {
   if (!isLoggedIn()) { showToast('Pro komentování se musíš přihlásit.'); return; }
   try {
     await apiPost(`/api/feed/${postId}/comment`, { text: text.trim() });
-    if (state.lightbox && state.lightbox.post) {
-      try {
-        const c = await apiGet(`/api/feed/${postId}/comments`);
-        state.lightbox.post.__comments = c.comments || [];
-        state.lightbox.post.comment_count = c.total || (state.lightbox.post.comment_count || 0) + 1;
-      } catch {}
+
+    // Načítaj nové komentáre z API
+    let newComments = [];
+    let newTotal = 0;
+    try {
+      const c = await apiGet(`/api/feed/${postId}/comments`);
+      newComments = c.comments || [];
+      newTotal = c.total || newComments.length;
+    } catch (err) {
+      console.warn('Nepodařilo se načíst komentáře:', err.message);
     }
-    // Aktualizuj aj v cache feedov
+
+    // Aktualizuj lightbox post (rovnaká referencia ako v socialFeeds)
+    if (state.lightbox && state.lightbox.post && state.lightbox.post.id === postId) {
+      state.lightbox.post.__comments = newComments;
+      state.lightbox.post.comment_count = newTotal;
+      state.lightbox.post.__commentsLoading = false;
+    }
+
+    // Aktualizuj feed itemy — count aj comments nastav na nové hodnoty,
+    // NEMAZAŤ ich (predtým bug: p.__comments = null)
     for (const k of Object.keys(state.socialFeeds)) {
       const p = state.socialFeeds[k].items.find((x) => x.id === postId);
-      if (p) { p.comment_count = (p.comment_count || 0) + 1; p.__comments = null; }
+      if (p) {
+        p.comment_count = newTotal;
+        p.__comments = newComments;
+      }
     }
+
     updateLightboxDOM();
     showToast('Komentář přidán.');
   } catch (err) { showToast(err.message); }
