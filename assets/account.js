@@ -203,7 +203,15 @@ function finishLogin(data) {
   showToast(`Vítej zpět, ${data.user.display_name}!`);
   loadNotifications();
   if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(data.user);
-  if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
+
+  // Po 3 sekundách zobraz prompt na push notifikácie (ak ešte neboli povolené)
+  setTimeout(() => {
+    if ('Notification' in window && Notification.permission === 'default' && typeof enablePushNotifications === 'function') {
+      enablePushNotifications().catch(() => {});
+    } else if (typeof maybeSubscribePush === 'function') {
+      maybeSubscribePush();
+    }
+  }, 3000);
 }
 
 async function handleRegisterSubmit(form) {
