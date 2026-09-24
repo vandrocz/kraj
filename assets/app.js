@@ -76,11 +76,40 @@ const state = {
   loading: {},
 };
 
-// Uchováva aktuálnu "routu" (overlay alebo tab), aby sme vedeli,
-// kedy resetovať scroll pri prepnutí — a kedy nie (napr. infinite scroll)
 let _prevRouteKey = '';
 
 function fmt(n) { return Number(n || 0).toLocaleString('cs-CZ'); }
+
+// ============================================================
+// SKLOŇOVANIE PRE "ISKRA" (SK) — používa sa v UI
+// ============================================================
+// 1 iskra, 2-4 iskry, 5+ iskier
+function getLikeCountLabel(n) {
+  const num = Number(n || 0);
+  if (num === 1) return '1 iskra';
+  if (num >= 2 && num <= 4) return `${num} iskry`;
+  return `${num} iskier`;
+}
+
+// ============================================================
+// NORMALIZÁCIA POSTU Z API
+// Backend môže vracať "liked", "is_liked", "user_liked"...
+// Frontend interne používa __liked a __bookmarked.
+// ============================================================
+function normalizePost(p) {
+  if (!p) return p;
+  if (p.__liked === undefined) {
+    if (p.liked !== undefined) p.__liked = !!p.liked;
+    else if (p.is_liked !== undefined) p.__liked = !!p.is_liked;
+    else if (p.user_liked !== undefined) p.__liked = !!p.user_liked;
+  }
+  if (p.__bookmarked === undefined) {
+    if (p.bookmarked !== undefined) p.__bookmarked = !!p.bookmarked;
+    else if (p.is_bookmarked !== undefined) p.__bookmarked = !!p.is_bookmarked;
+    else if (p.user_bookmarked !== undefined) p.__bookmarked = !!p.user_bookmarked;
+  }
+  return p;
+}
 
 function timeAgo(iso) {
   if (!iso) return '';
@@ -371,15 +400,11 @@ function renderApp() {
     </div>
     ${renderModal()}`;
 
-  // Ak sa lightbox práve skryl kvôli overlayu (story-viewer/onboarding/mapa),
-  // musíme vyčistiť stav aj body overflow — inak ostane scroll zablokovaný.
   if (hideLightbox && state.lightbox) {
     state.lightbox = null;
     document.body.style.overflow = '';
   }
 
-  // Reset scroll pozície LEN pri zmene "routy" (overlay alebo tab).
-  // Pri infinite scroll / focus re-renderi scroll zachováme.
   const routeKey = state.overlay
     ? `${state.overlay.type}:${state.overlay.id || state.overlay.tag || state.overlay.groupKey || ''}`
     : `tab:${state.tab}`;
@@ -496,6 +521,9 @@ function switchTab(tab) {
 // LIGHTBOX
 // ============================================================
 function openLightbox(images, index = 0, caption = '', post = null) {
+  // Normalizuj post, ak prišiel z API (mapuje liked → __liked atď.)
+  if (post) normalizePost(post);
+
   state.lightbox = {
     images,
     index: Math.max(0, Math.min(index, images.length - 1)),
@@ -506,7 +534,6 @@ function openLightbox(images, index = 0, caption = '', post = null) {
   document.getElementById('lightbox')?.classList.add('is-open');
   document.body.style.overflow = 'hidden';
 
-  // Načítaj komentáre, ak ide o reálny post (nie fake event post, nie post bez id)
   const isRealPost = post && post.id && !String(post.id).startsWith('event-');
   if (isRealPost && !post.__comments) {
     post.__commentsLoading = true;
@@ -573,7 +600,6 @@ function updateLightboxDOM() {
         ? `<img src="${escapeAttr(logo)}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--c-primary-light);" />`
         : `<span style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:var(--c-primary-light);color:var(--c-primary-dark);font-weight:800;font-size:17px;flex-shrink:0;border:2px solid var(--c-primary-light);">${initial}</span>`;
 
-      // --- Komentáre: 3 stavy (loading / prázdne / so záznamami) ---
       let commentsHtml = '';
       let commentsTitle = 'Komentáře';
       if (post.__commentsLoading) {
@@ -609,7 +635,7 @@ function updateLightboxDOM() {
           <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
             ${icon('spark', { size: 22, filled: !!post.__liked })}
           </button>
-          <span class="lightbox-stat">${fmt(post.likes || 0)} obdivov</span>
+          <span class="lightbox-stat">${getLikeCountLabel(post.likes)}</span>
           <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(getPostText(post))}">
             ${icon('share', { size: 21 })}
           </button>
