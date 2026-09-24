@@ -16,7 +16,7 @@ function renderAccountPage() {
   if (!isLoggedIn()) {
     const html = `
       <div class="page-scroll">
-        ${renderHeader('Můj profil')}
+        ${renderHeader('Přihlásit se')}
         ${renderAuthCard()}
       </div>`;
     setTimeout(() => {
@@ -44,6 +44,22 @@ function renderAccountPage() {
       ${isBiz && accountFormState.showPostForm ? renderBusinessPostForm() : ''}
       ${isAdmin ? renderAdminPanel() : ''}
       ${renderMyProfileActivity()}
+    </div>`;
+}
+
+// ============================================================
+// BANNER PRE NEOVĚŘENÝ E-MAIL
+// ============================================================
+function renderVerifyBanner() {
+  if (!isLoggedIn()) return '';
+  if (state.user.email_verified) return '';
+  return `
+    <div class="verify-banner" data-action="resend-verification">
+      <div class="verify-banner-icon">${icon('mail', { size: 22 })}</div>
+      <div class="verify-banner-body">
+        <p class="verify-banner-title">Ověř svůj e-mail</p>
+        <p class="verify-banner-text">Poslali jsme odkaz na <strong>${escapeHtml(state.user.email)}</strong>. <span style="color:var(--c-primary-dark);font-weight:700">Poslat znovu →</span></p>
+      </div>
     </div>`;
 }
 
@@ -152,7 +168,7 @@ function renderBusinessPostForm() {
 }
 
 // ============================================================
-// LOCATION PICKER — hľadanie reálnych miest a adries
+// LOCATION PICKER
 // ============================================================
 function renderLocationPicker() {
   const current = state._postLocation;
@@ -192,7 +208,7 @@ function renderLocationPicker() {
 }
 
 // ============================================================
-// AUTH CARD (nezmenené z pôvodného account.js)
+// AUTH CARD
 // ============================================================
 function renderAuthCard() {
   return `
@@ -309,6 +325,9 @@ function showFormErrorInPlace(form, message) {
   el.textContent = message;
 }
 
+// ============================================================
+// 🔑 OPRAVENÝ LOGIN — s renderApp()
+// ============================================================
 async function handleLoginSubmit(form) {
   const fd = new FormData(form);
   accountFormState.formError = '';
@@ -341,9 +360,19 @@ function finishLogin(data) {
   state.businesses = data.businesses || [];
   state._twofaStage = null;
   state._twofaToken = null;
+
+  // 🔑 Prejdi na kartu "Můj profil" a okamžite prekresli UI
+  state.tab = 'account';
+  state.overlay = null;
+  state.overlayStack = [];
+  persistTab('account');
+
   showToast(`Vítej zpět, ${data.user.display_name}!`);
+  renderApp();
+
   loadNotifications();
   if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(data.user);
+
   if (typeof maybeSubscribePush === 'function') {
     setTimeout(() => {
       if ('Notification' in window && Notification.permission === 'default' && typeof enablePushNotifications === 'function') {
@@ -386,6 +415,7 @@ function handleLogout() {
   state.adminVerifications = null;
   state.adminPosts = null;
   state.overlay = null;
+  state.overlayStack = [];
   state.unreadNotifications = 0;
   state._pushSubscribed = false;
   showToast('Byl jsi odhlášen.');
@@ -393,7 +423,7 @@ function handleLogout() {
 }
 
 // ============================================================
-// BUSINESS POST SUBMIT — používa state._postLocation
+// BUSINESS POST SUBMIT
 // ============================================================
 async function handleBusinessPostSubmit(form) {
   const businessId = form.dataset.businessId;
@@ -419,7 +449,6 @@ async function handleBusinessPostSubmit(form) {
   fd.set('text_html', html);
   fd.set('text', html.replace(/<[^>]*>/g, ' ').trim());
 
-  // Použi vybrané miesto z location pickeru
   const loc = state._postLocation;
   if (loc) {
     fd.set('geo_lat', String(loc.lat));
@@ -500,7 +529,7 @@ function removePostFile(name) {
 }
 
 // ============================================================
-// FORGOT / RESET / 2FA login (nezmenené)
+// FORGOT / RESET / 2FA
 // ============================================================
 function renderForgotPasswordOverlay() {
   return `
@@ -583,7 +612,7 @@ async function handleTwoFALogin(form) {
 }
 
 // ============================================================
-// ADMIN (nezmenené)
+// ADMIN
 // ============================================================
 async function loadAdminPending() {
   try { state.adminPending = await apiGet('/api/admin/pending'); }
@@ -1036,7 +1065,7 @@ document.addEventListener('input', (e) => {
       renderApp();
       return;
     }
-    state._postLocationResults = null; // loading
+    state._postLocationResults = null;
     renderApp();
     window._locSearchTimer = setTimeout(async () => {
       const results = await searchPlaces(q, 5);
@@ -1047,7 +1076,7 @@ document.addEventListener('input', (e) => {
 });
 
 // ============================================================
-// VERIFICATION REQUEST (nezmenené)
+// VERIFICATION REQUEST
 // ============================================================
 function openVerificationRequest(kind, id, name) {
   state.overlayStack.push(state.overlay);
