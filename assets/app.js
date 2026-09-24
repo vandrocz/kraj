@@ -692,6 +692,11 @@ function renderCookieBanner() {
   try {
     const stored = localStorage.getItem('naskraj_cookies');
     if (stored === '1' || stored === '0') { state._cookieConsent = true; return ''; }
+    // Ak existuje zdieľaná cookie z inej subdomény, rešpektuj ju
+    if (document.cookie.split(';').some((c) => c.trim().startsWith('naskraj_cookies='))) {
+      state._cookieConsent = true;
+      return '';
+    }
   } catch {}
 
   const settings = state._cookieSettings || { necessary: true, analytics: false, marketing: false };
@@ -735,10 +740,22 @@ function renderCookieBanner() {
     </div>`;
 }
 
+// ============================================================
+// ZDIEĽANIE COOKIE SÚHLASU MEDZI SUBDOMÉNAMI
+// ============================================================
+// Nastaví cookie na doméne .vandro.cz, aby ju videli všetky subdomény
+function setSharedCookieConsent(value) {
+  const maxAge = 60 * 60 * 24 * 365; // 1 rok
+  const cookieValue = value ? '1' : '0';
+  // domain=.vandro.cz → dostupné pre všetky *.vandro.cz
+  document.cookie = `naskraj_cookies=${cookieValue}; domain=.vandro.cz; path=/; max-age=${maxAge}; SameSite=Lax`;
+}
+
 function acceptCookies() {
   try {
     localStorage.setItem('naskraj_cookies', '1');
     localStorage.setItem('naskraj_cookie_settings', JSON.stringify({ necessary: true, analytics: true, marketing: true }));
+    setSharedCookieConsent(true);
   } catch {}
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
@@ -749,6 +766,7 @@ function rejectCookies() {
   try {
     localStorage.setItem('naskraj_cookies', '0');
     localStorage.setItem('naskraj_cookie_settings', JSON.stringify({ necessary: true, analytics: false, marketing: false }));
+    setSharedCookieConsent(false);
   } catch {}
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
@@ -773,6 +791,7 @@ function saveCookieSettings() {
   try {
     localStorage.setItem('naskraj_cookies', '1');
     localStorage.setItem('naskraj_cookie_settings', JSON.stringify(state._cookieSettings || { necessary: true }));
+    setSharedCookieConsent(true);
   } catch {}
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
