@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { newId } from '../auth.js';
 import { checkText } from '../moderation.js';
 import { rateLimit } from '../ratelimit.js';
+import { sendPushToUser } from '../push.js';
 
 export const messagesRoutes = new Hono();
 
@@ -38,9 +39,9 @@ messagesRoutes.post('/start', async (c) => {
   const other = (body.user_id || '').toString();
   if (!other || other === user.sub) return c.json({ error: 'Neplatný uživatel.' }, 400);
 
-  // Blok kontrola
-  const blocked = await c.env.DB.prepare(`SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)`)
-    .bind(user.sub, other, other, user.sub).first();
+  const blocked = await c.env.DB.prepare(
+    `SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)`,
+  ).bind(user.sub, other, other, user.sub).first();
   if (blocked) return c.json({ error: 'Nelze zahájit konverzaci.' }, 403);
 
   const [a, b] = threadPairKey(user.sub, other);
@@ -68,7 +69,6 @@ messagesRoutes.get('/thread/:id', async (c) => {
      WHERE thread_id = ? ORDER BY created_at ASC LIMIT 200`,
   ).bind(id).all();
 
-  // Označ ako prečítané (moje prijaté)
   await c.env.DB.prepare(
     `UPDATE dm_messages SET read_at = datetime('now') WHERE thread_id = ? AND sender_id != ? AND read_at IS NULL`,
   ).bind(id, user.sub).run();
@@ -105,12 +105,26 @@ messagesRoutes.post('/thread/:id/send', async (c) => {
     `UPDATE dm_threads SET last_message_at = datetime('now'), last_message_preview = ? WHERE id = ?`,
   ).bind(text.slice(0, 100), id).run();
 
+  // 🔔 Notifikácia do DB + push
   try {
     await c.env.DB.prepare(
       `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
        VALUES (?, ?, 'dm', ?, 'thread', ?, 'ti poslal(a) zprávu')`,
     ).bind(newId('notif'), otherId, user.sub, id).run();
-  } catch {}
+
+    // Načítaj meno odosielateľa pre push body
+    const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
+    const actorName = actor?.display_name || 'Někdo';
+
+    await sendPushToUser(c.env, otherId, {
+      title: actorName,
+      body: text.length > 80 ? text.slice(0, 80) + '…' : text,
+      url: `/?thread=${encodeURIComponent(id)}`,
+      tag: `dm-${id}`,
+    });
+  } catch (err) {
+    console.warn('push on DM failed:', err.message);
+  }
 
   return c.json({ id: msgId, text, created_at: new Date().toISOString() }, 201);
 });
