@@ -5,6 +5,7 @@ import { ensureActiveProjectRotation } from '../cron.js';
 import { checkText, flagContent, sanitizeHtml, htmlToPlain, escapeLike } from '../moderation.js';
 import { rateLimit } from '../ratelimit.js';
 import { extractHashtags } from '../hashtags.js';
+import { sendPushToUser } from '../push.js';
 
 export const feedRoutes = new Hono();
 
@@ -70,7 +71,6 @@ function decodeCursor(cursor) {
   } catch { return null; }
 }
 
-// Uloží hashtags pre post
 async function saveHashtags(env, postId, text) {
   const tags = extractHashtags(text);
   if (tags.length === 0) return [];
@@ -82,7 +82,22 @@ async function saveHashtags(env, postId, text) {
   return tags;
 }
 
-// Kolekcie (neaktívne v UI)
+// ------------------------------------------------------------------
+// F2 + C2: Načíta liked a bookmarked stav pre daný post a viewera
+// ------------------------------------------------------------------
+async function enrichPostState(env, post, viewerId) {
+  if (!viewerId) return { ...post, __liked: false, __bookmarked: false };
+  let liked = false, bookmarked = false;
+  try {
+    liked = !!(await env.NASKRAJ_LAJKY.get(`like:post:${post.id}:${viewerId}`));
+  } catch {}
+  try {
+    const row = await env.DB.prepare(`SELECT 1 FROM bookmarks WHERE user_id = ? AND post_id = ?`).bind(viewerId, post.id).first();
+    bookmarked = !!row;
+  } catch {}
+  return { ...post, __liked: liked, __bookmarked: bookmarked };
+}
+
 feedRoutes.get('/collections', async (c) => {
   await ensureActiveProjectRotation(c.env);
   const active = await c.env.DB.prepare(
@@ -209,10 +224,27 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
     } catch {}
   }
 
+  // F2: pre každý post zisti liked + bookmarked
+  let bookmarkedSet = new Set();
+  if (viewerId && results.length > 0) {
+    try {
+      const ids = results.map((r) => r.id);
+      const ph = ids.map(() => '?').join(',');
+      const { results: bms } = await c.env.DB.prepare(
+        `SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${ph})`,
+      ).bind(viewerId, ...ids).all();
+      bookmarkedSet = new Set(bms.map((r) => r.post_id));
+    } catch {}
+  }
+
   let out = await Promise.all(results.map(async (post) => {
     const cc = await c.env.DB.prepare('SELECT COUNT(*) as n FROM comments WHERE post_id = ?').bind(post.id).first();
     const likesRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${post.id}`);
     const likes = likesRaw ? parseInt(likesRaw, 10) : 0;
+    let liked = false;
+    if (viewerId) {
+      try { liked = !!(await c.env.NASKRAJ_LAJKY.get(`like:post:${post.id}:${viewerId}`)); } catch {}
+    }
     return {
       id: post.id,
       text: post.text_content,
@@ -223,6 +255,8 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
       comment_count: cc?.n || 0,
       likes,
       views: post.view_count || 0,
+      __liked: liked,
+      __bookmarked: bookmarkedSet.has(post.id),
       geo: post.geo_place ? { place: post.geo_place, lat: post.geo_lat, lng: post.geo_lng } : null,
       business: {
         id: post.business_id,
@@ -259,7 +293,6 @@ feedRoutes.get('/organization', (c) => loadSocialFeed(c, { targetFeed: 'organiza
 feedRoutes.get('/accommodation', (c) => loadSocialFeed(c, { targetFeed: 'accommodation', table: 'accommodation' }));
 feedRoutes.get('/gastro', (c) => loadSocialFeed(c, { targetFeed: 'gastro', table: 'restaurants', extraFilterCols: ['cuisine_type'] }));
 
-// Post podľa ID (pre deep-linking)
 feedRoutes.get('/post-by-id/:id', async (c) => {
   const id = c.req.param('id');
   const post = await c.env.DB.prepare(
@@ -280,9 +313,15 @@ feedRoutes.get('/post-by-id/:id', async (c) => {
   ).bind(id).first();
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
 
+  const viewerId = await getViewerId(c, c.env);
   const mediaMap = await fetchMediaForPosts(c.env, [post.id]);
   const likesRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${post.id}`);
   const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(post.id).first();
+  let liked = false, bookmarked = false;
+  if (viewerId) {
+    try { liked = !!(await c.env.NASKRAJ_LAJKY.get(`like:post:${post.id}:${viewerId}`)); } catch {}
+    try { bookmarked = !!(await c.env.DB.prepare(`SELECT 1 FROM bookmarks WHERE user_id = ? AND post_id = ?`).bind(viewerId, post.id).first()); } catch {}
+  }
 
   return c.json({
     post: {
@@ -295,6 +334,8 @@ feedRoutes.get('/post-by-id/:id', async (c) => {
       comment_count: cc?.n || 0,
       likes: likesRaw ? parseInt(likesRaw, 10) : 0,
       views: post.view_count || 0,
+      __liked: liked,
+      __bookmarked: bookmarked,
       geo: post.geo_place ? { place: post.geo_place, lat: post.geo_lat, lng: post.geo_lng } : null,
       business: {
         id: post.business_id,
@@ -319,26 +360,54 @@ feedRoutes.post('/:id/view', async (c) => {
   return c.json({ ok: true });
 });
 
+// ------------------------------------------------------------------
+// C1 + C2: Toggle lajku + push notifikácia autorovi
+// ------------------------------------------------------------------
 feedRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const postId = c.req.param('id');
   const post = await c.env.DB.prepare(`SELECT id, user_id FROM posts WHERE id = ? AND status = 'published'`).bind(postId).first();
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
+
   const likeKey = `like:post:${postId}:${user.sub}`;
-  if (await c.env.NASKRAJ_LAJKY.get(likeKey)) {
-    const r = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${postId}`);
-    return c.json({ liked: true, likes: r ? parseInt(r, 10) : 0 });
+  const existing = await c.env.NASKRAJ_LAJKY.get(likeKey);
+  const curRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${postId}`);
+  let cur = curRaw ? parseInt(curRaw, 10) : 0;
+
+  // C2: toggle — ak už lajknuté, odober
+  if (existing) {
+    await c.env.NASKRAJ_LAJKY.delete(likeKey);
+    cur = Math.max(0, cur - 1);
+    await c.env.NASKRAJ_LAJKY.put(`likecount:post:${postId}`, String(cur));
+    return c.json({ liked: false, likes: cur });
   }
+
+  // Pridaj lajk
   await c.env.NASKRAJ_LAJKY.put(likeKey, '1');
-  const cur = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${postId}`);
-  const n = (cur ? parseInt(cur, 10) : 0) + 1;
-  await c.env.NASKRAJ_LAJKY.put(`likecount:post:${postId}`, String(n));
+  cur = cur + 1;
+  await c.env.NASKRAJ_LAJKY.put(`likecount:post:${postId}`, String(cur));
+
+  // C1: notifikácia + push
   if (post.user_id && post.user_id !== user.sub) {
     try {
-      await c.env.DB.prepare(`INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text) VALUES (?, ?, 'like', ?, 'post', ?, 'dal(a) like tvému příspěvku')`).bind(newId('notif'), post.user_id, user.sub, postId).run();
-    } catch {}
+      const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
+      const actorName = actor?.display_name || 'Někdo';
+
+      await c.env.DB.prepare(
+        `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
+         VALUES (?, ?, 'like', ?, 'post', ?, 'dal(a) iskru tvému příspěvku')`,
+      ).bind(newId('notif'), post.user_id, user.sub, postId).run();
+
+      await sendPushToUser(c.env, post.user_id, {
+        title: 'Nová iskra',
+        body: `${actorName} dal(a) iskru tvému příspěvku`,
+        url: `/?post=${postId}`,
+        tag: `like-${postId}`,
+      });
+    } catch (err) { console.warn('[like] notif/push zlyhal:', err.message); }
   }
-  return c.json({ liked: true, likes: n }, 201);
+
+  return c.json({ liked: true, likes: cur }, 201);
 });
 
 feedRoutes.get('/bookmarks', async (c) => {
@@ -452,6 +521,9 @@ feedRoutes.get('/:id/comments', async (c) => {
   return c.json({ comments: roots, total: filtered.length });
 });
 
+// ------------------------------------------------------------------
+// C1: Komentár + odpoveď → push notifikácia
+// ------------------------------------------------------------------
 feedRoutes.post('/:id/comment', async (c) => {
   const user = c.get('user');
   const postId = c.req.param('id');
@@ -482,22 +554,42 @@ feedRoutes.post('/:id/comment', async (c) => {
   await c.env.DB.prepare('INSERT INTO comments (id, post_id, user_id, comment_text, parent_id) VALUES (?, ?, ?, ?, ?)')
     .bind(id, postId, user.sub, text, parentId).run();
 
+  const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
+  const actorName = actor?.display_name || 'Někdo';
+  const preview = text.length > 80 ? text.slice(0, 77) + '…' : text;
+
+  // C1: notifikácia pre autora postu
   if (post.user_id && post.user_id !== user.sub) {
     try {
       await c.env.DB.prepare(
         `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
          VALUES (?, ?, 'comment', ?, 'post', ?, 'okomentoval(a) tvůj příspěvek')`,
       ).bind(newId('notif'), post.user_id, user.sub, postId).run();
-    } catch {}
+
+      await sendPushToUser(c.env, post.user_id, {
+        title: 'Nový komentář',
+        body: `${actorName}: ${preview}`,
+        url: `/?post=${postId}`,
+        tag: `comment-${postId}`,
+      });
+    } catch (err) { console.warn('[comment] notif/push zlyhal:', err.message); }
   }
 
+  // C1: notifikácia pre autora rodičovského komentára (ak je iný ako autor postu)
   if (parentComment && parentComment.user_id !== user.sub && parentComment.user_id !== post.user_id) {
     try {
       await c.env.DB.prepare(
         `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
          VALUES (?, ?, 'reply', ?, 'comment', ?, 'odpověděl(a) na tvůj komentář')`,
       ).bind(newId('notif'), parentComment.user_id, user.sub, id).run();
-    } catch {}
+
+      await sendPushToUser(c.env, parentComment.user_id, {
+        title: 'Odpověď na komentář',
+        body: `${actorName}: ${preview}`,
+        url: `/?post=${postId}`,
+        tag: `reply-${id}`,
+      });
+    } catch (err) { console.warn('[reply] notif/push zlyhal:', err.message); }
   }
 
   return c.json({ id, post_id: postId, parent_id: parentId, text, created_at: new Date().toISOString() }, 201);
@@ -515,5 +607,4 @@ feedRoutes.post('/:id/report', async (c) => {
   return c.json({ id, ok: true }, 201);
 });
 
-// Uloží hashtags pri vytvorení postu (volané z posts.js)
 export { saveHashtags };
