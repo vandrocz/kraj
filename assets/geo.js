@@ -2,11 +2,42 @@ import { Hono } from 'hono';
 
 export const geoRoutes = new Hono();
 
-// ... (reverse, save — nezmenené)
+// Nominatim reverse
+geoRoutes.get('/reverse', async (c) => {
+  const lat = parseFloat(c.req.query('lat') || '');
+  const lng = parseFloat(c.req.query('lng') || '');
+  if (isNaN(lat) || isNaN(lng)) return c.json({ error: 'Neplatné souřadnice.' }, 400);
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=cs`,
+      { headers: { 'User-Agent': 'Naskraj/1.0 (naskraj.vandro.cz)' } },
+    );
+    if (!res.ok) throw new Error('Nominatim ' + res.status);
+    const data = await res.json();
+    const a = data.address || {};
+    const place = a.city || a.town || a.village || a.municipality || a.county || a.state || '';
+    const region = a.state || '';
+    return c.json({ place, region, lat, lng });
+  } catch (err) {
+    return c.json({ place: '', region: '', lat, lng, error: err.message });
+  }
+});
 
-// ------------------------------------------------------------------
-// OPRAVA: /cities — pridaný fallback na Nominatim
-// ------------------------------------------------------------------
+geoRoutes.post('/save', async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json().catch(() => ({}));
+  const lat = parseFloat(body.lat), lng = parseFloat(body.lng);
+  const place = (body.place || '').toString().slice(0, 120);
+  if (isNaN(lat) || isNaN(lng)) return c.json({ error: 'Neplatné souřadnice.' }, 400);
+  await c.env.DB.prepare(`UPDATE users SET geo_lat = ?, geo_lng = ?, geo_city = ? WHERE id = ?`)
+    .bind(lat, lng, place, user.sub).run();
+  return c.json({ ok: true, place });
+});
+
+// ============================================================
+// OBCE — Overpass + Nominatim kombinácia
+// ============================================================
+
 async function fetchOverpassCz(areaQuery, userAgent) {
   const ovQuery = `[out:json][timeout:30];
 ${areaQuery}
@@ -27,7 +58,9 @@ out tags 500;`;
 }
 
 async function findOverpassAreaForDistrict(district, userAgent) {
+  // 1) Skús priamo známe názvy area
   const areaNames = [`Okres ${district}`, district];
+
   for (const name of areaNames) {
     try {
       const els = await fetchOverpassCz(
@@ -39,6 +72,8 @@ async function findOverpassAreaForDistrict(district, userAgent) {
       console.warn('Overpass area name failed for', name, err.message);
     }
   }
+
+  // 2) Nominatim — nájdi okres, potom použi jeho relation ID
   try {
     const nomRes = await fetch(
       `https://nominatim.openstreetmap.org/search?` + new URLSearchParams({
@@ -51,6 +86,7 @@ async function findOverpassAreaForDistrict(district, userAgent) {
     );
     if (!nomRes.ok) throw new Error('Nominatim ' + nomRes.status);
     const arr = await nomRes.json();
+
     if (arr && arr.length > 0) {
       const rel = arr[0];
       const osmId = rel.osm_id;
@@ -64,7 +100,30 @@ async function findOverpassAreaForDistrict(district, userAgent) {
   } catch (err) {
     console.warn('Nominatim lookup failed:', err.message);
   }
+
   return [];
+}
+
+// Fallback: zoznam najväčších miest v okrese (z Nominatim search s q="<district>")
+async function fetchCitiesFromNominatim(district, userAgent) {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?` + new URLSearchParams({
+        q: district,
+        format: 'json',
+        limit: '20',
+        addressdetails: '1',
+        countrycodes: 'cz,sk',
+      }),
+      { headers: { 'User-Agent': userAgent } },
+    );
+    if (!res.ok) throw new Error('Nominatim ' + res.status);
+    const arr = await res.json();
+    return (arr || []).map((r) => r.display_name?.split(',')[0]).filter(Boolean);
+  } catch (err) {
+    console.warn('Nominatim cities fallback failed:', err.message);
+    return [];
+  }
 }
 
 geoRoutes.get('/cities', async (c) => {
@@ -101,14 +160,17 @@ geoRoutes.get('/cities', async (c) => {
       .filter((name) => name && !seen.has(name) && (seen.add(name), true))
       .sort((a, b) => a.localeCompare(b, 'cs'));
 
-    // OPRAVA: Ak Overpass zlyhal, skús fallback
+    // OPRAVA: Ak Overpass zlyhal, skús fallback cez Nominatim search
     if (cities.length === 0) {
-      console.warn(`[geo] Overpass vrátil 0 obcí pre okres "${district}", skúšam fallback.`);
-      // Fallback: manuálne známe obce (aspoň krajské mestá)
-      cities = [
-        district, // samotný okres ako mesto (napr. "Rakovník")
-        `${district} (jiné)`,
-      ];
+      console.warn(`[geo] Overpass vrátil 0 obcí pre okres "${district}", skúšam Nominatim fallback.`);
+      const fb = await fetchCitiesFromNominatim(district, userAgent);
+      const seenFb = new Set();
+      cities = fb.filter((n) => n && !seenFb.has(n) && (seenFb.add(n), true));
+    }
+
+    // Posledný fallback: aspoň okresné mesto (zvyčajne rovnaké ako okres)
+    if (cities.length === 0) {
+      cities = [district];
     }
 
     if (cities.length > 0) {
@@ -125,7 +187,7 @@ geoRoutes.get('/cities', async (c) => {
       _debug: {
         district,
         total: cities.length,
-        source: cities.length > 0 ? 'overpass' : 'empty',
+        source: cities.length > 0 ? 'overpass/nominatim' : 'empty',
       },
     });
   }
