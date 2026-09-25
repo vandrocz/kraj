@@ -35,6 +35,9 @@ document.addEventListener('click', (e) => {
 
     case 'open-notification': openNotification(el.dataset.notifId); break;
     case 'open-add-business': openAddBusinessModal(); break;
+    case 'open-story-author':
+    openStoryAuthor(el.dataset.authorId, el.dataset.authorKind);
+    break;
 
     // ---------------------------------------------------------
     // STORIES
