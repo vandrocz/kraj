@@ -1,21 +1,39 @@
 // ============================================================
-// STORIES — 24h príbehy s add button
+// STORIES — 24h príbehy pre userov AJ podniky
 // ============================================================
+// Pravidlá:
+// - Osobný používateľ: story sa priradí k user_id (business_id = null)
+// - Organizácia/podnik: story sa priradí k business_id (user_id ostáva pre autorstvo)
 
 const STORY_MAX_DURATION = 10000;
 const STORY_PHOTO_DURATION = 3333;
 
-// Tlačidlo pre pridanie story — použiteľné v profile
-function renderAddStoryButton() {
+// ============================================================
+// Tlačidlo na pridanie story
+// - businessId (voliteľný): ak je zadaný, story patrí podniku
+// ============================================================
+function renderAddStoryButton(businessId = null, businessName = null) {
   if (!isLoggedIn()) return '';
+
   const groups = state.stories?.groups || [];
   const meGroup = groups.find((g) => g.is_me);
+
+  const dataAttrs = [
+    `data-action="${meGroup ? 'open-story-viewer' : 'open-create-story'}"`,
+    meGroup ? `data-group-key="me"` : '',
+    businessId ? `data-business-id="${escapeAttr(businessId)}"` : '',
+    businessName ? `data-business-name="${escapeAttr(businessName)}"` : '',
+  ].filter(Boolean).join(' ');
+
   return `
-    <button class="profile-action-btn" data-action="${meGroup ? 'open-story-viewer' : 'open-create-story'}" data-group-key="me" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
+    <button class="profile-action-btn" ${dataAttrs} style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
       ${icon('camera', { size: 15 })} ${escapeHtml(t('stories.add'))}
     </button>`;
 }
 
+// ============================================================
+// Stories bar na feede
+// ============================================================
 async function loadStoriesFeed() {
   if (!isLoggedIn()) { state.stories = { groups: [] }; return; }
   try {
@@ -33,7 +51,9 @@ function renderStoriesBar() {
   const meGroup = groups.find((g) => g.is_me);
   const others = groups.filter((g) => !g.is_me);
 
-  const meCircle = `
+  // Osobný "Já" krúžok (pre turistov)
+  const isTourist = state.user.role === 'user';
+  const meCircle = isTourist ? `
     <button class="story-circle story-circle--me" data-action="${meGroup ? 'open-story-viewer' : 'open-create-story'}" data-group-key="me">
       <div class="story-ring ${meGroup ? 'has-story' : ''}">
         ${state.user.avatar_url
@@ -42,7 +62,7 @@ function renderStoriesBar() {
         ${!meGroup ? `<span class="story-plus">${icon('plus', { size: 12 })}</span>` : ''}
       </div>
       <span class="story-name">${escapeHtml(t('stories.me'))}</span>
-    </button>`;
+    </button>` : '';
 
   const othersHtml = others.map((g) => `
     <button class="story-circle" data-action="open-story-viewer" data-group-key="${g.key}">
@@ -54,7 +74,7 @@ function renderStoriesBar() {
       <span class="story-name">${escapeHtml(g.author_name)}</span>
     </button>`).join('');
 
-  if (others.length === 0 && !meGroup) return '';
+  if (!isTourist && others.length === 0) return '';
 
   return `
     <div class="stories-bar">
@@ -158,8 +178,19 @@ function storyPrev() {
 
 function closeStoryViewer() { closeOverlay(); }
 
-function openCreateStory() {
-  state.overlay = { type: 'create-story', files: [], previews: [], uploading: false, storyType: 'photos' };
+// ============================================================
+// Vytvorenie story — s business_id (ak je z business dashboardu)
+// ============================================================
+function openCreateStory(businessId = null, businessName = null) {
+  state.overlay = {
+    type: 'create-story',
+    files: [],
+    previews: [],
+    uploading: false,
+    storyType: 'photos',
+    businessId: businessId || null,
+    businessName: businessName || null,
+  };
   pushHistoryState('create-story');
   renderApp();
 }
@@ -168,11 +199,19 @@ function renderCreateStoryOverlay() {
   const o = state.overlay;
   const files = o.files || [];
   const previews = o.previews || [];
+  const isBusiness = !!o.businessId;
 
   return `
     <div class="page-scroll">
       ${renderBackHeader(t('stories.title'))}
       <div class="profile-section">
+        ${isBusiness ? `
+          <div class="story-context-chip">
+            ${icon('camera', { size: 14 })}
+            <span>${escapeHtml(t('stories.publishingAs'))}: <strong>${escapeHtml(o.businessName || '')}</strong></span>
+          </div>
+        ` : ''}
+
         <div class="story-type-toggle">
           <button class="story-type-btn ${o.storyType === 'photos' ? 'is-active' : ''}" data-action="story-type" data-type="photos">
             ${icon('image', { size: 16 })} ${escapeHtml(t('stories.photosType'))}
@@ -254,12 +293,19 @@ async function handleCreateStorySubmit(form) {
     }
 
     const caption = form.querySelector('input[name="caption"]')?.value || '';
-    await apiPost('/api/stories', {
+    const payload = {
       image_url: uploadedUrls[0],
       caption,
       media_urls: uploadedUrls,
       media_type: o.storyType === 'video' ? 'video' : 'photo',
-    });
+    };
+
+    // Ak ide o business story, priradíme ju podniku
+    if (o.businessId) {
+      payload.business_id = o.businessId;
+    }
+
+    await apiPost('/api/stories', payload);
 
     showToast(t('stories.published'));
     state.stories = null;
