@@ -3,6 +3,7 @@ import { newId } from '../auth.js';
 import { checkText, flagContent, sanitizeHtml, htmlToPlain } from '../moderation.js';
 import { processMentions } from './mentions.js';
 import { rateLimit } from '../ratelimit.js';
+import { validateUpload } from '../moderation.js';
 
 export const postsRoutes = new Hono();
 
@@ -56,6 +57,19 @@ postsRoutes.post('/', async (c) => {
     const key = `posts/${newId()}.${ext}`;
     await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type || 'image/jpeg' } });
     mediaUrls.push(`${publicBase}/${key}`);
+  }
+    // MIME + size + magic bytes validácia
+  for (const file of fileList) {
+    const v = await validateUpload(file, 'image');
+    if (!v.ok) {
+      const msgs = {
+        bad_type: 'Povolené sú len JPG, PNG, WebP alebo GIF.',
+        too_large: 'Fotka je príliš veľká (max 10 MB).',
+        bad_magic: 'Súbor nie je platná fotka.',
+        empty: 'Súbor je prázdny.',
+      };
+      return c.json({ error: msgs[v.reason] || 'Neplatný súbor.' }, 400);
+    }
   }
 
   const id = newId('post');
