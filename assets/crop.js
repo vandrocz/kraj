@@ -1,15 +1,9 @@
 // ============================================================
 // CROP EDITOR + UPLOAD S PROGRESSOM
 // ============================================================
-// - openCropEditor(file, opts) → Promise<File|null>
-//   Otvorí modal s crop rámom, užívateľ posúva/zoomuje, potvrdí.
-// - uploadWithProgress(path, formData, onProgress)
-//   XHR upload s progress callbackom (fetch nepodporuje upload progress).
-// - showUploadOverlay(label) / updateUploadOverlay(pct) / hideUploadOverlay()
-//   Globálny overlay s progress barom počas nahrávania.
 
 // ------------------------------------------------------------------
-// Upload overlay (globálny, blokuje interakciu)
+// Upload overlay
 // ------------------------------------------------------------------
 function ensureUploadOverlay() {
   let el = document.getElementById('upload-overlay');
@@ -37,6 +31,7 @@ function showUploadOverlay(label = 'Nahrávám…') {
   if (lbl) lbl.textContent = label;
   if (pct) pct.textContent = '0 %';
   if (fill) fill.style.width = '0%';
+  el.style.pointerEvents = 'auto';
   el.classList.add('is-visible');
   document.body.style.overflow = 'hidden';
 }
@@ -53,10 +48,21 @@ function updateUploadOverlay(pct, label) {
   if (label && lbl) lbl.textContent = label;
 }
 
+// OPRAVA: Dôrazné čistenie — zruší pointer-events okamžite, z DOM odstráni po animácii.
 function hideUploadOverlay() {
   const el = document.getElementById('upload-overlay');
-  if (el) el.classList.remove('is-visible');
+  if (el) {
+    el.classList.remove('is-visible');
+    el.style.pointerEvents = 'none';
+    // Po animácii odstrániť z DOM úplne (aby nič neblokovalo klik)
+    setTimeout(() => {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }, 260);
+  }
+  // Vždy vyčisti body
   document.body.style.overflow = '';
+  document.body.style.pointerEvents = '';
+  document.documentElement.style.pointerEvents = '';
 }
 
 // ------------------------------------------------------------------
@@ -72,17 +78,15 @@ function uploadWithProgress(path, formData, onProgress) {
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {
-        const pct = (e.loaded / e.total) * 100;
-        onProgress(pct);
+        onProgress((e.loaded / e.total) * 100);
       }
     };
 
     xhr.onload = () => {
       let data = null;
       try { data = JSON.parse(xhr.responseText); } catch {}
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(data);
-      } else {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else {
         const msg = (data && data.error) || `Chyba ${xhr.status}`;
         const err = new Error(msg);
         err.status = xhr.status;
@@ -102,14 +106,6 @@ function uploadWithProgress(path, formData, onProgress) {
 // ------------------------------------------------------------------
 // Crop Editor
 // ------------------------------------------------------------------
-// opts:
-//   aspect: number (width/height, napr. 9/16 = 0.5625)
-//   maxWidth: number (cieľová šírka výstupu v px)
-//   quality: number (0–1, jpeg kvalita)
-//   label: string (napr. "Story 9:16")
-//
-// Vracia: Promise<File|null>
-// ------------------------------------------------------------------
 function openCropEditor(file, opts = {}) {
   return new Promise(async (resolve) => {
     const aspect = opts.aspect || 9 / 16;
@@ -118,17 +114,14 @@ function openCropEditor(file, opts = {}) {
     const label = opts.label || '';
     const outputType = opts.outputType || 'image/jpeg';
 
-    // Načítaj obrázok do memory
     let img;
-    try {
-      img = await loadImageFromFile(file);
-    } catch (err) {
+    try { img = await loadImageFromFile(file); }
+    catch (err) {
       showToast('Nepodařilo se načíst obrázek.');
       resolve(null);
       return;
     }
 
-    // Vytvor modal
     const modal = document.createElement('div');
     modal.className = 'crop-modal';
     modal.innerHTML = `
@@ -159,22 +152,17 @@ function openCropEditor(file, opts = {}) {
     modal.classList.add('is-open');
     document.body.style.overflow = 'hidden';
 
-    // Stage setup
     const stage = modal.querySelector('[data-crop-stage]');
     const canvas = modal.querySelector('[data-crop-canvas]');
     const ctx = canvas.getContext('2d');
 
-    // Vypočítaj rozmery crop rámu podľa aspect a veľkosti stage
     function computeFrame() {
       const rect = stage.getBoundingClientRect();
       const maxW = rect.width - 24;
       const maxH = rect.height - 24;
       let w = maxW;
       let h = w / aspect;
-      if (h > maxH) {
-        h = maxH;
-        w = h * aspect;
-      }
+      if (h > maxH) { h = maxH; w = h * aspect; }
       return { w: Math.floor(w), h: Math.floor(h) };
     }
 
@@ -182,32 +170,24 @@ function openCropEditor(file, opts = {}) {
     canvas.style.width = frame.w + 'px';
     canvas.style.height = frame.h + 'px';
 
-    // DPR canvas
     const dpr = window.devicePixelRatio || 1;
     canvas.width = frame.w * dpr;
     canvas.height = frame.h * dpr;
     ctx.scale(dpr, dpr);
 
-    // State
-    const st = {
-      scale: 1,
-      offsetX: 0,
-      offsetY: 0,
-      rotation: 0, // 0, 90, 180, 270
-    };
+    const st = { scale: 1, offsetX: 0, offsetY: 0, rotation: 0 };
 
-    // Reset offset na stred
-    function resetView() {
-      st.scale = 1;
-      st.offsetX = 0;
-      st.offsetY = 0;
-      // Nájsť minimálny scale aby obrázok pokryl celý frame
+    function getBaseScale() {
       const rotated = (st.rotation % 180 !== 0);
       const imgW = rotated ? img.height : img.width;
       const imgH = rotated ? img.width : img.height;
-      const scaleX = frame.w / imgW;
-      const scaleY = frame.h / imgH;
-      st.scale = Math.max(scaleX, scaleY);
+      return Math.max(frame.w / imgW, frame.h / imgH);
+    }
+
+    function resetView() {
+      st.scale = getBaseScale();
+      st.offsetX = 0;
+      st.offsetY = 0;
       draw();
       syncZoomSlider();
     }
@@ -218,13 +198,6 @@ function openCropEditor(file, opts = {}) {
       const baseScale = getBaseScale();
       const rel = st.scale / baseScale;
       slider.value = Math.min(4, Math.max(1, rel)).toString();
-    }
-
-    function getBaseScale() {
-      const rotated = (st.rotation % 180 !== 0);
-      const imgW = rotated ? img.height : img.width;
-      const imgH = rotated ? img.width : img.height;
-      return Math.max(frame.w / imgW, frame.h / imgH);
     }
 
     function clampOffsets() {
@@ -248,7 +221,6 @@ function openCropEditor(file, opts = {}) {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, frame.w, frame.h);
 
-      // Stred canvusu
       const cx = frame.w / 2 + st.offsetX;
       const cy = frame.h / 2 + st.offsetY;
 
@@ -262,20 +234,26 @@ function openCropEditor(file, opts = {}) {
       ctx.restore();
     }
 
-    // Drag na canvase (mouse + touch)
     let isDragging = false;
     let dragStart = null;
     let pinchStart = null;
 
+    function getPoint(e) {
+      const rect = canvas.getBoundingClientRect();
+      const src = e.touches ? e.touches[0] : e;
+      return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+    }
+    function touchDist(touches) {
+      const [a, b] = touches;
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    }
+
     function pointerDown(e) {
-      const p = getPoint(e);
       if (e.touches && e.touches.length === 2) {
-        pinchStart = {
-          dist: touchDist(e.touches),
-          scale: st.scale,
-        };
+        pinchStart = { dist: touchDist(e.touches), scale: st.scale };
         return;
       }
+      const p = getPoint(e);
       isDragging = true;
       dragStart = { x: p.x, y: p.y, ox: st.offsetX, oy: st.offsetY };
     }
@@ -299,23 +277,7 @@ function openCropEditor(file, opts = {}) {
       if (e.touches) e.preventDefault();
     }
 
-    function pointerUp() {
-      isDragging = false;
-      pinchStart = null;
-    }
-
-    function getPoint(e) {
-      const rect = canvas.getBoundingClientRect();
-      const src = e.touches ? e.touches[0] : e;
-      return { x: src.clientX - rect.left, y: src.clientY - rect.top };
-    }
-
-    function touchDist(touches) {
-      const [a, b] = touches;
-      const dx = a.clientX - b.clientX;
-      const dy = a.clientY - b.clientY;
-      return Math.hypot(dx, dy);
-    }
+    function pointerUp() { isDragging = false; pinchStart = null; }
 
     canvas.addEventListener('mousedown', pointerDown);
     window.addEventListener('mousemove', pointerMove);
@@ -325,16 +287,12 @@ function openCropEditor(file, opts = {}) {
     canvas.addEventListener('touchend', pointerUp);
     canvas.addEventListener('touchcancel', pointerUp);
 
-    // Zoom slider
-    const zoomSlider = modal.querySelector('[data-crop-zoom]');
-    zoomSlider.addEventListener('input', () => {
-      const v = parseFloat(zoomSlider.value);
+    modal.querySelector('[data-crop-zoom]').addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
       const base = getBaseScale();
       st.scale = base * v;
       draw();
     });
-
-    // Zoom buttons
     modal.querySelector('[data-crop-zoom-in]').addEventListener('click', () => {
       const base = getBaseScale();
       st.scale = Math.min(base * 4, st.scale * 1.15);
@@ -347,20 +305,15 @@ function openCropEditor(file, opts = {}) {
       draw();
       syncZoomSlider();
     });
-
-    // Rotate
     modal.querySelector('[data-crop-rotate]').addEventListener('click', () => {
       st.rotation = (st.rotation + 90) % 360;
       resetView();
     });
-
-    // Cancel
     modal.querySelector('[data-crop-cancel]').addEventListener('click', () => {
       cleanup();
       resolve(null);
     });
 
-    // Confirm
     modal.querySelector('[data-crop-confirm]').addEventListener('click', async () => {
       const outW = Math.round(maxWidth);
       const outH = Math.round(maxWidth / aspect);
@@ -371,9 +324,7 @@ function openCropEditor(file, opts = {}) {
       octx.fillStyle = '#000';
       octx.fillRect(0, 0, outW, outH);
 
-      // Scale z frame na out
       const scaleFactor = outW / frame.w;
-
       const cx = outW / 2 + st.offsetX * scaleFactor;
       const cy = outH / 2 + st.offsetY * scaleFactor;
 
@@ -395,7 +346,6 @@ function openCropEditor(file, opts = {}) {
       }, outputType, quality);
     });
 
-    // Resize
     const onResize = () => {
       frame = computeFrame();
       canvas.style.width = frame.w + 'px';
@@ -408,16 +358,18 @@ function openCropEditor(file, opts = {}) {
     };
     window.addEventListener('resize', onResize);
 
+    // OPRAVA: Silný cleanup — okamžité odstránenie z DOM, žiadny pointer-events leak
     function cleanup() {
       window.removeEventListener('mousemove', pointerMove);
       window.removeEventListener('mouseup', pointerUp);
       window.removeEventListener('resize', onResize);
       modal.classList.remove('is-open');
-      setTimeout(() => modal.remove(), 200);
+      modal.style.pointerEvents = 'none';
+      if (modal.parentNode) modal.parentNode.removeChild(modal);
       document.body.style.overflow = '';
+      document.body.style.pointerEvents = '';
     }
 
-    // Spusti
     resetView();
   });
 }
@@ -426,31 +378,8 @@ function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(img);
-    };
-    img.onerror = (err) => {
-      URL.revokeObjectURL(url);
-      reject(err);
-    };
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
     img.src = url;
   });
-}
-
-// ------------------------------------------------------------------
-// Pomocná funkcia: dávkovo orezať viac súborov
-// ------------------------------------------------------------------
-async function cropMultipleFiles(files, opts, onProgress) {
-  const out = [];
-  for (let i = 0; i < files.length; i++) {
-    if (onProgress) onProgress(i, files.length);
-    const cropped = await openCropEditor(files[i], {
-      ...opts,
-      label: opts.label ? `${opts.label} (${i + 1}/${files.length})` : `(${i + 1}/${files.length})`,
-    });
-    if (cropped === null) return null; // user zrušil
-    out.push(cropped);
-  }
-  return out;
 }
