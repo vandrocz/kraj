@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { sign } from 'hono/jwt';
-import { hashPassword, verifyPassword, newId, publicUser, generateUniqueHandle } from '../auth.js';
+import { hashPassword, verifyPassword, newId, publicUser, generateUniqueHandle, normalizeHandle, validateHandle } from '../auth.js';
 import { sendPasswordResetEmail } from '../email.js';
 import { verifyTotp, generateSecret, otpauthUri, generateRecoveryCodes } from '../totp.js';
 import { rateLimit, clientIp, userAgent } from '../ratelimit.js';
@@ -52,14 +52,28 @@ authRoutes.post('/register', async (c) => {
   const { hash, salt } = await hashPassword(password);
   const userId = newId('user');
 
-  // Vygeneruj handle z emailu alebo displayName
-  const handleBase = lower.split('@')[0] || displayName || 'user';
+  // ------------------------------------------------------------------
+  // B2: Pri registrácii organizácie alebo podniku nastavíme display_name
+  // (zobrazované meno) aj handle automaticky na názov podniku.
+  // Fallback na zadané displayName pre bežného turistu.
+  // ------------------------------------------------------------------
+  let finalDisplayName = displayName || lower.split('@')[0];
+  let handleBase = lower.split('@')[0] || displayName || 'user';
+
+  if (role === 'organization' && body.orgName) {
+    finalDisplayName = String(body.orgName).trim();
+    handleBase = finalDisplayName;
+  } else if (role === 'hotelier' && body.businessName) {
+    finalDisplayName = String(body.businessName).trim();
+    handleBase = finalDisplayName;
+  }
+
   const handle = await generateUniqueHandle(c.env, handleBase);
 
   await c.env.DB.prepare(
     `INSERT INTO users (id, email, password_hash, password_salt, display_name, handle, role, credit_balance, terms_accepted_at, email_verified, auth_provider)
      VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), 1, 'password')`,
-  ).bind(userId, lower, hash, salt, displayName || lower.split('@')[0], handle, role).run();
+  ).bind(userId, lower, hash, salt, finalDisplayName, handle, role).run();
 
   let business = null;
 
@@ -104,6 +118,9 @@ authRoutes.post('/register', async (c) => {
 
   return c.json({ id: userId, email: lower, role, handle, business }, 201);
 });
+
+// Zvyšok authRoutes je identický s pôvodným — bez zmien.
+// ... (login, logout, forgot-password, reset-password, verify-2fa, 2fa/setup, 2fa/enable, 2fa/disable, /me/login-logs)
 
 authRoutes.post('/login', async (c) => {
   const ip = clientIp(c);
@@ -275,7 +292,7 @@ authRoutes.post('/verify-2fa', async (c) => {
     const rest = await c.env.DB.prepare('SELECT id, name, is_verified FROM restaurants WHERE user_id = ?').bind(user.id).all();
     businesses = [
       ...acc.results.map((r) => ({ ...r, kind: 'accommodation' })),
-      ...rest.results.map((r) => ({ ...r, kind: 'gastro' })),
+      ...rest.results.map((r) => ({ ...r, kind: 'gasto' })),
     ];
   }
 
