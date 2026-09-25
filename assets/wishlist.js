@@ -1,5 +1,5 @@
 // ============================================================
-// WISHLIST (Chci navštívit)
+// WISHLIST — i18n verzia
 // ============================================================
 
 async function loadWishlist() {
@@ -12,15 +12,15 @@ async function loadWishlist() {
 }
 
 async function toggleWishlist(kind, id, btnEl) {
-  if (!isLoggedIn()) { showToast('Pro přidání do seznamu se musíš přihlásit.'); switchTab('account'); return; }
+  if (!isLoggedIn()) { showToast(t('wishlist.loginRequired')); switchTab('account'); return; }
   try {
     const res = await apiPost('/api/wishlist', { business_id: id, business_kind: kind });
     if (btnEl) {
       btnEl.classList.toggle('is-in-wishlist', res.in_wishlist);
       const label = btnEl.querySelector('[data-wishlist-label]');
-      if (label) label.textContent = res.in_wishlist ? 'V seznamu' : 'Chci navštívit';
+      if (label) label.textContent = res.in_wishlist ? t('profile.inWishlist') : t('profile.addToWishlist');
     }
-    showToast(res.in_wishlist ? 'Přidáno do seznamu.' : 'Odebráno ze seznamu.');
+    showToast(res.in_wishlist ? t('toasts.addedToWishlist') : t('toasts.removedFromWishlist'));
     state._wishlist = null;
   } catch (err) { showToast(err.message); }
 }
@@ -30,7 +30,7 @@ function renderWishlistOverlay() {
   const grouped = {};
   if (list) {
     for (const w of list) {
-      const region = w.region || 'Jinde';
+      const region = w.region || t('wishlist.elsewhere');
       if (!grouped[region]) grouped[region] = [];
       grouped[region].push(w);
     }
@@ -38,10 +38,10 @@ function renderWishlistOverlay() {
 
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Chci navštívit')}
+      ${renderBackHeader(t('wishlist.title'))}
       <div class="profile-section">
-        ${list == null ? '<p class="empty-state">Načítám…</p>'
-          : list.length === 0 ? '<p class="empty-state">Zatím nic v seznamu. Klikni na „Chci navštívit" na profilu podniku.</p>'
+        ${list == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
+          : list.length === 0 ? `<p class="empty-state">${escapeHtml(t('wishlist.empty'))}</p>`
           : Object.entries(grouped).map(([region, items]) => `
             <h3 class="profile-section-title" style="margin-top:20px">${escapeHtml(region)}</h3>
             ${items.map((w) => `
@@ -50,7 +50,7 @@ function renderWishlistOverlay() {
                   : `<span class="user-list-avatar user-list-avatar-init">${(w.business_name || '?').charAt(0).toUpperCase()}</span>`}
                 <div style="flex:1;min-width:0">
                   <p class="user-list-name">${escapeHtml(w.business_name || '')}</p>
-                  <p class="user-list-meta">${w.city ? `${escapeHtml(w.city)} · ` : ''}${w.business_kind === 'organizations' ? 'Organizace' : w.business_kind === 'accommodation' ? 'Ubytování' : 'Gastro'}</p>
+                  <p class="user-list-meta">${w.city ? `${escapeHtml(w.city)} · ` : ''}${w.business_kind === 'organizations' ? t('search.typeOrg') : w.business_kind === 'accommodation' ? t('search.typeAcc') : t('search.typeGastro')}</p>
                 </div>
                 ${icon('chevronRight', { size: 16 })}
               </button>`).join('')}
