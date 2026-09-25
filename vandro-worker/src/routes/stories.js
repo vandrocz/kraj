@@ -3,6 +3,7 @@ import { newId } from '../auth.js';
 import { rateLimit } from '../ratelimit.js';
 import { checkText } from '../moderation.js';
 import { sendPushToUser } from '../push.js';
+import { validateUpload } from '../moderation.js';
 
 export const storiesRoutes = new Hono();
 
@@ -100,12 +101,26 @@ storiesRoutes.post('/', async (c) => {
   return c.json({ id, expires_at: exp }, 201);
 });
 
+// Upload fotky — s MIME validáciou
 storiesRoutes.post('/upload', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
   const file = form.file;
   if (!file || typeof file === 'string') return c.json({ error: 'Chýba soubor.' }, 400);
   if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
+
+  // MIME + size + magic bytes validácia
+  const v = await validateUpload(file, 'image');
+  if (!v.ok) {
+    const msgs = {
+      bad_type: 'Povolené sú len JPG, PNG, WebP alebo GIF.',
+      too_large: 'Fotka je príliš veľká (max 10 MB).',
+      bad_magic: 'Súbor nie je platná fotka.',
+      empty: 'Súbor je prázdny.',
+      no_file: 'Chýba súbor.',
+    };
+    return c.json({ error: msgs[v.reason] || 'Neplatný súbor.' }, 400);
+  }
 
   const publicBase = c.env.R2_PUBLIC_BASE || '';
   const ext = ((file.name || 'x.jpg').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -115,17 +130,26 @@ storiesRoutes.post('/upload', async (c) => {
   return c.json({ url }, 201);
 });
 
-// NOVÉ: Video upload (max 30 MB)
+// Upload videa — s MIME validáciou
 storiesRoutes.post('/upload-video', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
   const file = form.file;
   if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
   if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
-  if (file.size > 30 * 1024 * 1024) return c.json({ error: 'Video je příliš velké (max 30 MB).' }, 400);
 
-  const allowedTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
-  if (!allowedTypes.includes(file.type)) return c.json({ error: 'Povolené formáty: MP4, WebM, MOV.' }, 400);
+  // MIME + size + magic bytes validácia
+  const v = await validateUpload(file, 'video');
+  if (!v.ok) {
+    const msgs = {
+      bad_type: 'Povolené formáty: MP4, WebM, MOV.',
+      too_large: 'Video je príliš veľké (max 30 MB).',
+      bad_magic: 'Súbor nie je platné video.',
+      empty: 'Súbor je prázdny.',
+      no_file: 'Chýba súbor.',
+    };
+    return c.json({ error: msgs[v.reason] || 'Neplatný súbor.' }, 400);
+  }
 
   const publicBase = c.env.R2_PUBLIC_BASE || '';
   const ext = ((file.name || 'video.mp4').split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -142,7 +166,7 @@ storiesRoutes.post('/:id/view', async (c) => {
   return c.json({ ok: true });
 });
 
-// NOVÉ: Lajk stories
+// Lajk stories
 storiesRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
