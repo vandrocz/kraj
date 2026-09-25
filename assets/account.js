@@ -448,6 +448,53 @@ function renderBusinessDashboard() {
   const postFormOpen = accountFormState._postFormOpen || false;
   const canAddMore = state.user.role === 'organization' || state.user.role === 'hotelier' || state.user.role === 'admin';
 
+  // Story button s business kontextom
+  const storyBtn = isLoggedIn() ? `
+    <button class="profile-action-btn" data-action="open-create-story" data-business-id="${escapeAttr(selected.id)}" data-business-name="${escapeAttr(selected.name)}" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
+      ${icon('camera', { size: 15 })} ${escapeHtml(t('stories.add'))}
+    </button>` : '';
+
+  return `
+    <div class="profile-section">
+      <h3 class="profile-section-title">${escapeHtml(t('profile.yourBusiness'))}</h3>
+
+      ${businesses.length > 1 ? `
+        <div class="business-picker">
+          ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${Number(b.is_verified) ? '✓' : ''}</button>`).join('')}
+        </div>
+      ` : ''}
+
+      <div style="padding:0 16px 10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="profile-action-btn" data-action="open-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('user', { size: 15 })} ${escapeHtml(t('profile.profileBtn'))}</button>
+        <button class="profile-action-btn" data-action="edit-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('edit', { size: 15 })} ${escapeHtml(t('profile.editBtn'))}</button>
+        <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">${icon('chart', { size: 15 })} ${escapeHtml(t('profile.statsBtn'))}</button>
+        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} ${escapeHtml(t('profile.addEventBtn'))}</button>
+        <button class="profile-action-btn" data-action="toggle-post-form" data-id="${selected.id}">${icon('image', { size: 15 })} ${escapeHtml(t('profile.addPostBtn'))}</button>
+        ${storyBtn}
+        ${!isVerified && !isPending ? `
+          <button class="profile-action-btn" data-action="open-verification-request" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
+            ${icon('shield', { size: 15 })} ${escapeHtml(t('profile.verifyBtn'))}
+          </button>
+        ` : ''}
+        ${canAddMore ? `
+          <button class="profile-action-btn" data-action="open-add-business" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
+            ${icon('plus', { size: 15 })} ${escapeHtml(t('profile.addBusiness'))}
+          </button>
+        ` : ''}
+      </div>
+
+      ${!isVerified && isPending ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">⏳ ${escapeHtml(t('profile.verificationPending'))}</p>` : ''}
+      ${isVerified ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">✓ ${escapeHtml(t('profile.verified'))}</p>` : ''}
+    </div>
+
+    ${postFormOpen ? renderInlineBusinessPostForm(selected, targetFeed) : ''}`;
+}
+  const vreq = state._verificationStatus?.request;
+  const isPending = vreq?.status === 'pending';
+  const isVerified = Number(selected.is_verified);
+  const postFormOpen = accountFormState._postFormOpen || false;
+  const canAddMore = state.user.role === 'organization' || state.user.role === 'hotelier' || state.user.role === 'admin';
+
   return `
     <div class="profile-section">
       <h3 class="profile-section-title">${escapeHtml(t('profile.yourBusiness'))}</h3>
