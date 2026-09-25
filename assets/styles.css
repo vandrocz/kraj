@@ -2887,3 +2887,90 @@ body.no-scroll { overflow: hidden; }
 .place-search-item:hover { background: var(--c-bg); }
 .place-search-item-name { font-weight: 700; }
 .place-search-item-meta { font-size: 11.5px; color: var(--c-text-muted); margin-top: 2px; }
+
+/* ============================================================
+   OPRAVY VÁRKA 9 — komentáre s avatarmi, notifikácie klikateľné
+   ============================================================ */
+
+/* --- Avatary v komentároch lightboxu --- */
+.lightbox-comment {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 10px !important;
+  align-items: flex-start !important;
+  padding: 4px 0;
+}
+.lightbox-comment-avatar-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  line-height: 0;
+}
+.lightbox-comment-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid var(--c-primary-light);
+  display: block;
+}
+.lightbox-comment-avatar-init {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(155deg, var(--c-primary-dark), var(--c-primary));
+  color: white;
+  font-weight: 800;
+  font-size: 12px;
+  border: none;
+}
+.lightbox-comment-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.lightbox-comment-body strong {
+  font-weight: 700;
+  color: var(--c-text);
+  font-size: 12.5px;
+  cursor: pointer;
+  display: inline-block;
+}
+.lightbox-comment-body strong:hover { color: var(--c-primary-dark); }
+.lightbox-comment-body > span {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--c-text);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.lightbox-comment-time {
+  font-size: 11px !important;
+  color: var(--c-text-muted) !important;
+  margin-top: 1px;
+}
+
+/* --- Notifikácie klikateľné --- */
+.notif-item[data-action="open-notification"] {
+  cursor: pointer;
+  transition: background .15s, transform .1s, box-shadow .15s;
+  user-select: none;
+}
+.notif-item[data-action="open-notification"]:hover {
+  background: var(--c-bg);
+  box-shadow: 0 2px 8px rgba(16,32,26,0.06);
+}
+.notif-item[data-action="open-notification"]:active {
+  transform: scale(0.99);
+}
+.notif-item.is-unread[data-action="open-notification"]:hover {
+  background: linear-gradient(180deg, var(--c-primary-light), #DDF3E6);
+}
+.notif-item[data-action="open-notification"]:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
