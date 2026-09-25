@@ -30,6 +30,31 @@ function renderAccountPage() {
   const isBiz = u.role === 'organization' || u.role === 'hotelier';
   const isAdmin = u.role === 'admin';
 
+  // Notifikácie + nastavenia vždy vpravo hore. Žiadne edit/stats/plus.
+  const headerBtns = `
+    <button class="header-icon-btn" data-action="open-notifications" aria-label="Notifikace" style="position:relative">
+      ${icon('bell', { size: 19 })}
+      ${state.unreadNotifications > 0 ? `<span class="nav-badge">${state.unreadNotifications > 9 ? '9+' : state.unreadNotifications}</span>` : ''}
+    </button>
+    <button class="header-icon-btn" data-action="open-settings" aria-label="Nastavení">${icon('settings', { size: 19 })}</button>
+  `;
+
+  return `
+    <div class="page-scroll">
+      ${renderHeader('Můj profil', headerBtns)}
+      ${renderVerifyBanner()}
+      ${renderMyProfileHero()}
+      ${isBiz ? renderBusinessPickerSection() : ''}
+      ${isBiz && accountFormState.showPostForm ? renderBusinessPostForm() : ''}
+      ${isAdmin ? renderAdminPanel() : ''}
+      ${renderMyProfileActivity()}
+    </div>`;
+}
+
+  const u = state.user;
+  const isBiz = u.role === 'organization' || u.role === 'hotelier';
+  const isAdmin = u.role === 'admin';
+
   return `
     <div class="page-scroll">
       ${renderHeader('Můj profil', `
@@ -88,9 +113,15 @@ function renderMyProfileHero() {
 
 function renderMyProfileActivity() {
   const u = state.user;
+  const isBiz = u.role === 'organization' || u.role === 'hotelier';
   return `
     <div class="profile-section">
       <h3 class="profile-section-title">Moje aktivita</h3>
+      ${!isBiz ? `
+        <button class="profile-action-btn" data-action="edit-profile" data-kind="user" data-id="${u.id}" style="margin-bottom:12px;width:100%;justify-content:center">
+          ${icon('edit', { size: 15 })} Upravit profil
+        </button>
+      ` : ''}
       <div class="stat-cards">
         <button class="stat-card" data-action="open-badges" style="cursor:pointer;text-align:left">
           <div class="stat-card-value">${icon('chart', { size: 20 })}</div>
@@ -131,8 +162,10 @@ function renderBusinessPickerSection() {
       ` : ''}
       <div class="biz-quick-actions">
         <button class="profile-action-btn" data-action="open-profile" data-kind="${bizKind}" data-id="${selected.id}">${icon('user', { size: 15 })} Profil</button>
+        <button class="profile-action-btn" data-action="edit-profile" data-kind="${bizKind}" data-id="${selected.id}">${icon('edit', { size: 15 })} Upravit</button>
         <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${bizKind}" data-id="${selected.id}">${icon('chart', { size: 15 })} Statistiky</button>
-        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Akce</button>
+        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Přidat akci</button>
+        <button class="profile-action-btn" data-action="toggle-post-form">${icon('plus', { size: 15 })} Přidat příspěvek</button>
         ${!isVerified ? `<button class="profile-action-btn" data-action="open-verification-request" data-kind="${bizKind}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">${icon('shield', { size: 15 })} Ověřit</button>` : ''}
       </div>
     </div>`;
