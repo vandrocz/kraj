@@ -1,19 +1,21 @@
 // ============================================================
 // STORIES — 24h príbehy (fotky 9:16 / video max 10s)
 // ============================================================
-// Pravidlá:
-// - Osobný používateľ: story sa priradí k user_id (business_id = null)
-// - Organizácia/podnik: story sa priradí k business_id (user_id ostáva pre autorstvo)
-// - Fotky: max 3, orezané na 9:16 (1080x1920)
-// - Video: max 1, max 30 MB, bez ořezu (video editor nerobíme)
+// - Osobný používateľ → story user_id, business_id = null
+// - Organizácia/podnik → story user_id (autor), business_id (podnik)
+// - Fotky: max 3, orezané na 9:16 (1080×1920)
+// - Video: max 1, max 30 MB
 
 const STORY_MAX_DURATION = 10000;
 const STORY_PHOTO_DURATION = 3333;
-const STORY_ASPECT = 9 / 16;   // 0.5625
-const STORY_OUT_WIDTH = 1080;  // → 1920 výška
+const STORY_ASPECT = 9 / 16;
+const STORY_OUT_WIDTH = 1080;
 
 // ============================================================
-// Stories bar
+// OPRAVA: stories bar
+// - Turista: osobný "me" circle
+// - Business user: pre KAŽDÝ svoj podnik circle (vlastné business stories)
+// - Ostatní: sledovaní useri + podniky
 // ============================================================
 async function loadStoriesFeed() {
   if (!isLoggedIn()) { state.stories = { groups: [] }; return; }
@@ -23,48 +25,83 @@ async function loadStoriesFeed() {
   } catch (err) {
     state.stories = { groups: [] };
   }
+  // Vždy re-renderuj, ak sme na feed tabe
   if (['organizations', 'accommodation', 'gastro'].includes(state.tab)) renderApp();
 }
 
 function renderStoriesBar() {
   if (!isLoggedIn()) return '';
+
   const groups = state.stories?.groups || [];
   const meGroup = groups.find((g) => g.is_me);
-  const others = groups.filter((g) => !g.is_me);
+  const myBizGroups = groups.filter((g) => g.is_my_business);
+  const others = groups.filter((g) => !g.is_me && !g.is_my_business);
 
-  const isTourist = state.user.role === 'user';
-  const meCircle = isTourist ? `
-    <button class="story-circle story-circle--me" data-action="${meGroup ? 'open-story-viewer' : 'open-create-story'}" data-group-key="me">
-      <div class="story-ring ${meGroup ? 'has-story' : ''}">
-        ${state.user.avatar_url
-          ? `<img src="${state.user.avatar_url}" alt="" />`
-          : `<span class="story-initial">${(state.user.display_name || '?').charAt(0).toUpperCase()}</span>`}
-        ${!meGroup ? `<span class="story-plus">${icon('plus', { size: 12 })}</span>` : ''}
-      </div>
-      <span class="story-name">${escapeHtml(t('stories.me'))}</span>
-    </button>` : '';
+  const circles = [];
 
+  // 1) Osobný "me" circle (len pre turistov)
+  if (state.user.role === 'user') {
+    circles.push(`
+      <button class="story-circle story-circle--me"
+              data-action="${meGroup ? 'open-story-viewer' : 'open-create-story'}"
+              ${meGroup ? `data-group-key="me"` : ''}>
+        <div class="story-ring ${meGroup ? 'has-story' : ''}">
+          ${state.user.avatar_url
+            ? `<img src="${state.user.avatar_url}" alt="" />`
+            : `<span class="story-initial">${(state.user.display_name || '?').charAt(0).toUpperCase()}</span>`}
+          ${!meGroup ? `<span class="story-plus">${icon('plus', { size: 12 })}</span>` : ''}
+        </div>
+        <span class="story-name">${escapeHtml(t('stories.me'))}</span>
+      </button>
+    `);
+  }
+
+  // 2) Business circles pre každý podnik aktuálneho usera
+  const myBusinesses = state.businesses || [];
+  for (const biz of myBusinesses) {
+    const bizGroup = myBizGroups.find((g) => g.business_id === biz.id);
+    const hasStory = !!bizGroup;
+
+    circles.push(`
+      <button class="story-circle story-circle--me"
+              data-action="${hasStory ? 'open-story-viewer' : 'open-create-story'}"
+              ${hasStory ? `data-group-key="${escapeAttr(bizGroup.key)}"` : ''}
+              data-business-id="${escapeAttr(biz.id)}"
+              data-business-name="${escapeAttr(biz.name)}">
+        <div class="story-ring ${hasStory ? 'has-story' : ''}">
+          ${biz.logo_url
+            ? `<img src="${escapeAttr(biz.logo_url)}" alt="" />`
+            : `<span class="story-initial">${(biz.name || '?').charAt(0).toUpperCase()}</span>`}
+          ${!hasStory ? `<span class="story-plus">${icon('plus', { size: 12 })}</span>` : ''}
+        </div>
+        <span class="story-name">${escapeHtml((biz.name || '').slice(0, 14))}</span>
+      </button>
+    `);
+  }
+
+  // 3) Ostatní (sledovaní)
   const othersHtml = others.map((g) => `
-    <button class="story-circle" data-action="open-story-viewer" data-group-key="${g.key}">
+    <button class="story-circle" data-action="open-story-viewer" data-group-key="${escapeAttr(g.key)}">
       <div class="story-ring has-story">
         ${g.author_avatar
-          ? `<img src="${g.author_avatar}" alt="" />`
+          ? `<img src="${escapeAttr(g.author_avatar)}" alt="" />`
           : `<span class="story-initial">${(g.author_name || '?').charAt(0).toUpperCase()}</span>`}
       </div>
       <span class="story-name">${escapeHtml(g.author_name)}</span>
-    </button>`).join('');
+    </button>
+  `).join('');
 
-  if (!isTourist && others.length === 0) return '';
+  if (circles.length === 0 && others.length === 0) return '';
 
   return `
     <div class="stories-bar">
-      ${meCircle}
+      ${circles.join('')}
       ${othersHtml}
     </div>`;
 }
 
 // ============================================================
-// Story Viewer — podporuje viac médií (carousel v rámci jednej story)
+// Story viewer — s auto-advance pre fotky
 // ============================================================
 function openStoryViewer(groupKey) {
   const groups = state.stories?.groups || [];
@@ -75,15 +112,13 @@ function openStoryViewer(groupKey) {
     type: 'story-viewer',
     groupKey,
     index: 0,
-    mediaIndex: 0, // index fotky v rámci story (pre multi-photo stories)
+    mediaIndex: 0,
     likes: {},
     slideStartAt: Date.now(),
   };
   pushHistoryState('story-viewer');
   renderApp();
   markStoryViewed(group);
-
-  // Automatický posun progress baru (pre fotky)
   startStoryAutoAdvance();
 }
 
@@ -97,15 +132,10 @@ function startStoryAutoAdvance() {
     if (!group) return;
     const story = group.stories[state.overlay.index];
     if (!story) return;
+    if (story.media_type === 'video') return;
 
-    // Ak má story viac médií, najprv prejdi cez ne
     const storyMediaList = getStoryMediaList(story);
-    const isVideo = story.media_type === 'video';
-
-    if (isVideo) return; // video si riadi vlastný čas (onended/loop)
-
-    const now = Date.now();
-    const elapsed = now - (state.overlay.slideStartAt || now);
+    const elapsed = Date.now() - (state.overlay.slideStartAt || Date.now());
 
     if (elapsed >= STORY_PHOTO_DURATION) {
       if (state.overlay.mediaIndex + 1 < storyMediaList.length) {
@@ -124,7 +154,6 @@ function stopStoryAutoAdvance() {
   _storyTimer = null;
 }
 
-// Vráti pole médií (obrázkov/videí) pre jednu story (1 alebo viac)
 function getStoryMediaList(story) {
   if (story.media_urls && Array.isArray(story.media_urls) && story.media_urls.length > 0) {
     return story.media_urls;
@@ -145,32 +174,23 @@ function renderStoryViewerOverlay() {
   const group = groups.find((g) => g.key === groupKey);
   if (!group || !group.stories[index]) { setTimeout(() => closeOverlay(), 0); return ''; }
   const story = group.stories[index];
-  const isMe = group.is_me;
+  const isMe = group.is_me || group.is_my_business;
 
   const storyMediaList = getStoryMediaList(story);
   const currentMedia = storyMediaList[mediaIndex] || storyMediaList[0];
   const isVideo = story.media_type === 'video' || (currentMedia || '').match(/\.(mp4|webm|mov)$/i);
 
-  let mediaHtml = '';
-  if (isVideo) {
-    mediaHtml = `<video src="${currentMedia}" class="story-viewer-media" autoplay muted playsinline
-                  onended="storyNext()"></video>`;
-  } else {
-    mediaHtml = `<img src="${escapeAttr(currentMedia)}" alt="" class="story-viewer-media" />`;
-  }
+  const mediaHtml = isVideo
+    ? `<video src="${currentMedia}" class="story-viewer-media" autoplay muted playsinline onended="storyNext()"></video>`
+    : `<img src="${escapeAttr(currentMedia)}" alt="" class="story-viewer-media" />`;
 
-  // Progress bars — jedna pre každú story v skupine
   const bars = group.stories.map((_, i) => {
     const isDone = i < index;
     const isActive = i === index;
-    // Pre multi-photo story, čiastkový progress
     let progressStyle = '';
     if (isActive && storyMediaList.length > 1) {
-      // Čiastočný progress na základe mediaIndex
-      // (detailný real-time progress sa updatuje cez JS nižšie, ale stačí hrubý)
       const totalSegments = storyMediaList.length;
-      const currentSeg = mediaIndex;
-      const pct = ((currentSeg + 0.5) / totalSegments) * 100;
+      const pct = ((mediaIndex + 0.5) / totalSegments) * 100;
       progressStyle = `style="--progress: ${pct}%"`;
     }
     return `<span class="story-progress-bar ${isDone ? 'is-done' : isActive ? 'is-active' : ''}" ${progressStyle}></span>`;
@@ -178,7 +198,6 @@ function renderStoryViewerOverlay() {
 
   const liked = state.overlay.likes?.[story.id] || false;
 
-  // Indikátor stránok v rámci story (bodky) — len ak > 1 médium
   const dotsHtml = storyMediaList.length > 1 ? `
     <div class="story-viewer-dots">
       ${storyMediaList.map((_, i) => `<span class="story-viewer-dot ${i === mediaIndex ? 'is-active' : ''}"></span>`).join('')}
@@ -190,7 +209,9 @@ function renderStoryViewerOverlay() {
       <div class="story-progress">${bars}</div>
       <div class="story-viewer-head">
         <span class="story-viewer-author">
-          ${group.author_avatar ? `<img class="story-viewer-avatar" src="${group.author_avatar}" alt="" />` : `<span class="story-viewer-avatar story-viewer-avatar-init">${(group.author_name || '?').charAt(0).toUpperCase()}</span>`}
+          ${group.author_avatar
+            ? `<img class="story-viewer-avatar" src="${escapeAttr(group.author_avatar)}" alt="" />`
+            : `<span class="story-viewer-avatar story-viewer-avatar-init">${(group.author_name || '?').charAt(0).toUpperCase()}</span>`}
           <span>${escapeHtml(group.author_name)}</span>
           <span class="story-viewer-time">${timeAgo(story.created_at)}</span>
         </span>
@@ -234,7 +255,6 @@ function storyNext() {
   const story = group.stories[index];
   const storyMediaList = story ? getStoryMediaList(story) : [];
 
-  // Ak má story viac médií a nie sme na poslednom, choď na ďalšie médium
   if (storyMediaList.length > 1 && mediaIndex + 1 < storyMediaList.length) {
     state.overlay.mediaIndex = mediaIndex + 1;
     state.overlay.slideStartAt = Date.now();
@@ -243,7 +263,6 @@ function storyNext() {
     return;
   }
 
-  // Posun na ďalšiu story
   if (index + 1 < group.stories.length) {
     state.overlay = { ...state.overlay, index: index + 1, mediaIndex: 0, slideStartAt: Date.now() };
     renderApp();
@@ -258,7 +277,6 @@ function storyPrev() {
   if (state.overlay?.type !== 'story-viewer') return;
   const { index, mediaIndex } = state.overlay;
 
-  // Ak sme v rámci story na neskoršom médiu, choď na predošlé médium
   if (mediaIndex > 0) {
     state.overlay.mediaIndex = mediaIndex - 1;
     state.overlay.slideStartAt = Date.now();
@@ -267,7 +285,6 @@ function storyPrev() {
     return;
   }
 
-  // Posun na predošlú story
   if (index > 0) {
     state.overlay = { ...state.overlay, index: index - 1, mediaIndex: 0, slideStartAt: Date.now() };
     renderApp();
@@ -371,18 +388,15 @@ async function onStoryFileSelected(inputEl) {
     return;
   }
 
-  // Fotky — vyber max 3, orežeme ich na 9:16
   const photos = files.filter((f) => f.type.startsWith('image/')).slice(0, 3);
   if (photos.length === 0) { showToast(t('stories.photosType')); return; }
 
-  // Najprv kompresia (zmenšíme pred ořezom, aby bol editor rýchlejší)
   const compressed = [];
   for (const f of photos) {
     try { compressed.push(await compressImage(f, { maxDim: 2400, quality: 0.92 })); }
     catch { compressed.push(f); }
   }
 
-  // Spusti crop editor pre každú fotku
   o.cropBusy = true;
   renderApp();
 
@@ -390,16 +404,16 @@ async function onStoryFileSelected(inputEl) {
   const croppedPreviews = [];
   try {
     for (let i = 0; i < compressed.length; i++) {
-      const file = compressed[i];
-      const cropped = await openCropEditor(file, {
+      const cropped = await openCropEditor(compressed[i], {
         aspect: STORY_ASPECT,
         maxWidth: STORY_OUT_WIDTH,
         quality: 0.88,
         label: `Story 9:16 (${i + 1}/${compressed.length})`,
       });
       if (cropped === null) {
-        // User zrušil crop — zrušíme celý výber
         o.cropBusy = false;
+        o.files = [];
+        o.previews = [];
         renderApp();
         return;
       }
@@ -426,6 +440,9 @@ function removeStoryFile(index) {
   renderApp();
 }
 
+// ============================================================
+// OPRAVA: Submit s robustným vyčistením (žiadny history.back race)
+// ============================================================
 async function handleCreateStorySubmit(form) {
   const o = state.overlay;
   if (!o.files || o.files.length === 0) return;
@@ -448,7 +465,6 @@ async function handleCreateStorySubmit(form) {
       const endpoint = o.storyType === 'video' ? '/api/stories/upload-video' : '/api/stories/upload';
 
       const up = await uploadWithProgress(endpoint, fd, (pct) => {
-        // Celkový progress = dokončené súbory + čiastočný aktuálny
         const overall = ((i + pct / 100) / total) * 100;
         updateUploadOverlay(overall, `${t('common.uploading')} ${i + 1}/${total}`);
       });
@@ -470,10 +486,21 @@ async function handleCreateStorySubmit(form) {
     updateUploadOverlay(100, t('common.processing'));
     await apiPost('/api/stories', payload);
 
+    // KRITICKÉ: Skryť overlay PRED renderom
     hideUploadOverlay();
+
     showToast(t('stories.published'));
+
+    // Robustné vyčistenie overlay stavu BEZ history.back
     state.stories = null;
-    closeOverlay();
+    state._historyPushed = false;
+    state.overlay = null;
+    state.overlayStack = [];
+    document.body.style.overflow = '';
+    document.body.style.pointerEvents = '';
+    document.documentElement.style.pointerEvents = '';
+
+    renderApp();
     loadStoriesFeed();
   } catch (err) {
     hideUploadOverlay();
