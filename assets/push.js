@@ -27,18 +27,47 @@ async function maybeSubscribePush() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
   if (Notification.permission === 'denied') return;
 
-  // Skontroluj, či už nie je subscribed
   try {
     const reg = await navigator.serviceWorker.getRegistration('/');
     if (!reg) return;
     const sub = await reg.pushManager.getSubscription();
     if (sub) {
-      // Zaregistruj na serveri (refresh)
       await apiPost('/api/push/subscribe', sub.toJSON()).catch(() => {});
       state._pushSubscribed = true;
       return;
     }
   } catch {}
+}
+
+// ------------------------------------------------------------------
+// C3: S krátkym oneskorením po prihlásení vyžiadaj povolenie
+// ------------------------------------------------------------------
+async function maybeRequestPushPermission() {
+  if (!isLoggedIn()) return;
+  if (state._pushPrompted) return;
+  if (!('Notification' in window)) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  if (Notification.permission === 'granted') {
+    // Už má povolenie — len tichý subscribe
+    maybeSubscribePush();
+    return;
+  }
+  if (Notification.permission === 'denied') return;
+
+  state._pushPrompted = true;
+
+  // Krátke oneskorenie, aby výzva nebola rušivá (8 sekúnd)
+  setTimeout(async () => {
+    if (!isLoggedIn()) return;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        await enablePushNotifications();
+      }
+    } catch (err) {
+      console.warn('[push-prompt] zlyhalo:', err);
+    }
+  }, 8000);
 }
 
 async function enablePushNotifications() {
