@@ -10,13 +10,19 @@ document.addEventListener('click', (e) => {
   switch (action) {
     case 'set-tab': switchTab(el.dataset.tab); break;
 
-    // D7
-    case 'toggle-map-nav':
-      state._mapNavCollapsed = !state._mapNavCollapsed;
-      renderApp();
+    // Mapa na mobile — šípka späť na predchádzajúcu kartu
+    case 'toggle-map-nav': {
+      const isMobile = window.innerWidth < 720;
+      if (isMobile) {
+        const prev = localStorage.getItem('naskraj_prev_tab') || 'organizations';
+        switchTab(prev);
+      } else {
+        state._mapNavCollapsed = !state._mapNavCollapsed;
+        renderApp();
+      }
       break;
+    }
 
-    // B3
     case 'toggle-post-form': {
       accountFormState._postFormOpen = !accountFormState._postFormOpen;
       accountFormState.postFiles = [];
@@ -27,11 +33,14 @@ document.addEventListener('click', (e) => {
       break;
     }
 
-    // NOVÉ: Otvorenie notifikácie — routovanie podľa typu
     case 'open-notification': openNotification(el.dataset.notifId); break;
-
-    // NOVÉ: Pridať ďalší podnik
     case 'open-add-business': openAddBusinessModal(); break;
+
+    // Stories
+    case 'story-type': state.overlay.storyType = el.dataset.type; state.overlay.files = []; state.overlay.previews = []; renderApp(); break;
+    case 'remove-story-file': removeStoryFile(parseInt(el.dataset.index, 10)); break;
+    case 'story-like': storyLike(el.dataset.id); break;
+    case 'toggle-lightbox-expand': toggleLightboxExpand(); break;
 
     case 'share-event': shareEvent(el.dataset.id); break;
     case 'add-to-calendar': addEventToCalendar(el.dataset.id); break;
@@ -151,6 +160,7 @@ document.addEventListener('click', (e) => {
 
     case 'edit-profile':
       state.overlay = { type: 'profile', kind: el.dataset.kind, id: el.dataset.id, edit: true, editKind: el.dataset.kind, editId: el.dataset.id };
+      pushHistoryState('overlay');
       renderApp();
       break;
     case 'upload-avatar': uploadProfileImage(el.dataset.target, el.dataset.targetId, el.dataset.field); break;
@@ -181,9 +191,6 @@ document.addEventListener('click', (e) => {
     case 'close-story-viewer': closeStoryViewer(); break;
     case 'story-next': storyNext(); break;
     case 'story-prev': storyPrev(); break;
-    case 'story-reply-open': storyReplyOpen(); break;
-    case 'story-reply-cancel': storyReplyCancel(); break;
-    case 'story-reply-send': storyReplySend(); break;
     case 'trigger-story-file': document.getElementById('story-file-input')?.click(); break;
     case 'rich-cmd': richCmd(el.dataset.cmd); break;
     case 'rich-link': richLink(); break;
@@ -295,7 +302,6 @@ document.addEventListener('change', (e) => {
   else if (a === 'onboarding-avatar-change') onboardingAvatarChange(el);
   else if (a === 'verif-doc-selected') onVerifDocSelected(el);
   else if (a === 'push-toggle') handlePushToggle(el.checked);
-  // NOVÉ: zmena typu podniku v add-business modáli → aktualizuj typ select
   else if (a === 'add-business-kind-change') updateAddBusinessTypeOptions(el.value);
   else if (a === 'district-change') {
     const form = el.closest('form');
@@ -334,10 +340,6 @@ document.addEventListener('input', (e) => {
     state.overlay.bio = el.value;
     return;
   }
-  if (el.dataset.action === 'story-reply-input') {
-    state.overlay.replyText = el.value;
-    return;
-  }
   if (el.dataset.action === 'admin-user-search') {
     state._adminUserQuery = el.value;
     clearTimeout(window._adminUserSearchTimer);
@@ -365,7 +367,7 @@ document.addEventListener('submit', (e) => {
     const feed = form.dataset.feed;
     const input = form.querySelector('[data-lightbox-comment-input]');
     const text = input.value;
-    input.value = '';  // vyčisti hneď, aby sa nezobrazoval starý text
+    input.value = '';
     submitLightboxComment(id, feed, text);
     return;
   }
@@ -381,6 +383,7 @@ document.addEventListener('submit', (e) => {
   else if (a === 'submit-thread-message') handleSendThreadMessage(form);
   else if (a === 'submit-group-post') handleGroupPostSubmit(form);
   else if (a === 'submit-create-story') handleCreateStorySubmit(form);
+  else if (a === 'submit-checkin-modal') { /* handled in modal onSubmit */ }
   else if (a === 'submit-checkin') handleCheckinSubmit(form);
   else if (a === 'submit-review') handleReviewSubmit(form);
   else if (a === 'submit-edit-post') handleEditPostSubmit(form);
@@ -390,18 +393,10 @@ document.addEventListener('submit', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (state.lightbox) { closeLightbox(); return; }
-    if (state.overlay?.type === 'story-viewer' && state.overlay.replyOpen) { storyReplyCancel(); return; }
     if (state._modal) { closeModal(); return; }
     document.getElementById('detail-modal')?.classList.remove('is-open');
     document.body.style.overflow = '';
     if (state.overlay) closeOverlay();
-  }
-  if (e.key === 'Enter' && state.overlay?.type === 'story-viewer' && state.overlay.replyOpen) {
-    const input = document.querySelector('[data-story-reply-input]');
-    if (document.activeElement === input) {
-      e.preventDefault();
-      storyReplySend();
-    }
   }
 });
 
