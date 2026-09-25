@@ -1,22 +1,12 @@
 // ============================================================
-// STORIES — 24h príbehy (fotky 9:16 / video max 10s)
+// STORIES — 24h príbehy
 // ============================================================
-// - Osobný používateľ → story user_id, business_id = null
-// - Organizácia/podnik → story user_id (autor), business_id (podnik)
-// - Fotky: max 3, orezané na 9:16 (1080×1920)
-// - Video: max 1, max 30 MB
 
 const STORY_MAX_DURATION = 10000;
 const STORY_PHOTO_DURATION = 3333;
 const STORY_ASPECT = 9 / 16;
 const STORY_OUT_WIDTH = 1080;
 
-// ============================================================
-// OPRAVA: stories bar
-// - Turista: osobný "me" circle
-// - Business user: pre KAŽDÝ svoj podnik circle (vlastné business stories)
-// - Ostatní: sledovaní useri + podniky
-// ============================================================
 async function loadStoriesFeed() {
   if (!isLoggedIn()) { state.stories = { groups: [] }; return; }
   try {
@@ -25,10 +15,12 @@ async function loadStoriesFeed() {
   } catch (err) {
     state.stories = { groups: [] };
   }
-  // Vždy re-renderuj, ak sme na feed tabe
   if (['organizations', 'accommodation', 'gastro'].includes(state.tab)) renderApp();
 }
 
+// ============================================================
+// Stories bar — jedna flexibilná horizontálna lišta
+// ============================================================
 function renderStoriesBar() {
   if (!isLoggedIn()) return '';
 
@@ -39,15 +31,15 @@ function renderStoriesBar() {
 
   const circles = [];
 
-  // 1) Osobný "me" circle (len pre turistov)
-  if (state.user.role === 'user') {
+  // 1) Osobný "me" circle (pre všetkých, okrem admina)
+  if (state.user.role !== 'admin') {
     circles.push(`
       <button class="story-circle story-circle--me"
               data-action="${meGroup ? 'open-story-viewer' : 'open-create-story'}"
               ${meGroup ? `data-group-key="me"` : ''}>
         <div class="story-ring ${meGroup ? 'has-story' : ''}">
           ${state.user.avatar_url
-            ? `<img src="${state.user.avatar_url}" alt="" />`
+            ? `<img src="${escapeAttr(state.user.avatar_url)}" alt="" />`
             : `<span class="story-initial">${(state.user.display_name || '?').charAt(0).toUpperCase()}</span>`}
           ${!meGroup ? `<span class="story-plus">${icon('plus', { size: 12 })}</span>` : ''}
         </div>
@@ -56,7 +48,7 @@ function renderStoriesBar() {
     `);
   }
 
-  // 2) Business circles pre každý podnik aktuálneho usera
+  // 2) Business circles (pre každý podnik aktuálneho usera)
   const myBusinesses = state.businesses || [];
   for (const biz of myBusinesses) {
     const bizGroup = myBizGroups.find((g) => g.business_id === biz.id);
@@ -79,29 +71,40 @@ function renderStoriesBar() {
     `);
   }
 
-  // 3) Ostatní (sledovaní)
-  const othersHtml = others.map((g) => `
-    <button class="story-circle" data-action="open-story-viewer" data-group-key="${escapeAttr(g.key)}">
-      <div class="story-ring has-story">
-        ${g.author_avatar
-          ? `<img src="${escapeAttr(g.author_avatar)}" alt="" />`
-          : `<span class="story-initial">${(g.author_name || '?').charAt(0).toUpperCase()}</span>`}
-      </div>
-      <span class="story-name">${escapeHtml(g.author_name)}</span>
-    </button>
-  `).join('');
+  // 3) Sledovaní (users + businesses)
+  for (const g of others) {
+    const storyThumb = getFirstStoryThumb(g);
+    circles.push(`
+      <button class="story-circle" data-action="open-story-viewer" data-group-key="${escapeAttr(g.key)}">
+        <div class="story-ring has-story">
+          ${storyThumb
+            ? `<img src="${escapeAttr(storyThumb)}" alt="" />`
+            : (g.author_avatar
+              ? `<img src="${escapeAttr(g.author_avatar)}" alt="" />`
+              : `<span class="story-initial">${(g.author_name || '?').charAt(0).toUpperCase()}</span>`)}
+        </div>
+        <span class="story-name">${escapeHtml(g.author_name || '')}</span>
+      </button>
+    `);
+  }
 
-  if (circles.length === 0 && others.length === 0) return '';
+  if (circles.length === 0) return '';
 
   return `
-    <div class="stories-bar">
+    <div class="stories-bar" role="list">
       ${circles.join('')}
-      ${othersHtml}
     </div>`;
 }
 
+function getFirstStoryThumb(group) {
+  if (!group?.stories?.length) return null;
+  const s = group.stories[0];
+  if (s.media_urls && Array.isArray(s.media_urls) && s.media_urls.length > 0) return s.media_urls[0];
+  return s.image_url || null;
+}
+
 // ============================================================
-// Story viewer — s auto-advance pre fotky
+// Story Viewer
 // ============================================================
 function openStoryViewer(groupKey) {
   const groups = state.stories?.groups || [];
@@ -181,19 +184,13 @@ function renderStoryViewerOverlay() {
   const isVideo = story.media_type === 'video' || (currentMedia || '').match(/\.(mp4|webm|mov)$/i);
 
   const mediaHtml = isVideo
-    ? `<video src="${currentMedia}" class="story-viewer-media" autoplay muted playsinline onended="storyNext()"></video>`
+    ? `<video src="${escapeAttr(currentMedia)}" class="story-viewer-media" autoplay muted playsinline onended="storyNext()"></video>`
     : `<img src="${escapeAttr(currentMedia)}" alt="" class="story-viewer-media" />`;
 
   const bars = group.stories.map((_, i) => {
     const isDone = i < index;
     const isActive = i === index;
-    let progressStyle = '';
-    if (isActive && storyMediaList.length > 1) {
-      const totalSegments = storyMediaList.length;
-      const pct = ((mediaIndex + 0.5) / totalSegments) * 100;
-      progressStyle = `style="--progress: ${pct}%"`;
-    }
-    return `<span class="story-progress-bar ${isDone ? 'is-done' : isActive ? 'is-active' : ''}" ${progressStyle}></span>`;
+    return `<span class="story-progress-bar ${isDone ? 'is-done' : isActive ? 'is-active' : ''}"></span>`;
   }).join('');
 
   const liked = state.overlay.likes?.[story.id] || false;
@@ -205,25 +202,32 @@ function renderStoryViewerOverlay() {
   ` : '';
 
   return `
-    <div class="story-viewer" data-action="story-tap">
+    <div class="story-viewer" id="story-viewer-root">
       <div class="story-progress">${bars}</div>
+
       <div class="story-viewer-head">
-        <span class="story-viewer-author">
+        <button type="button" class="story-viewer-author-btn"
+                data-action="open-story-author"
+                data-author-id="${escapeAttr(group.author_id || '')}"
+                data-author-kind="${escapeAttr(group.author_kind || 'user')}">
           ${group.author_avatar
             ? `<img class="story-viewer-avatar" src="${escapeAttr(group.author_avatar)}" alt="" />`
             : `<span class="story-viewer-avatar story-viewer-avatar-init">${(group.author_name || '?').charAt(0).toUpperCase()}</span>`}
           <span>${escapeHtml(group.author_name)}</span>
           <span class="story-viewer-time">${timeAgo(story.created_at)}</span>
-        </span>
+        </button>
         <button class="story-viewer-close" data-action="close-story-viewer" aria-label="${escapeAttr(t('common.close'))}">${icon('close', { size: 22 })}</button>
       </div>
+
       <div class="story-viewer-body">
         ${mediaHtml}
         ${story.caption ? `<p class="story-viewer-caption">${escapeHtml(story.caption)}</p>` : ''}
         ${dotsHtml}
       </div>
-      <div class="story-viewer-nav story-viewer-prev" data-action="story-prev"></div>
-      <div class="story-viewer-nav story-viewer-next" data-action="story-next"></div>
+
+      <div class="story-viewer-nav story-viewer-prev" data-action="story-prev" aria-label="${escapeAttr(t('common.prev'))}"></div>
+      <div class="story-viewer-nav story-viewer-next" data-action="story-next" aria-label="${escapeAttr(t('common.next'))}"></div>
+
       ${!isMe ? `
         <button class="story-like-btn ${liked ? 'is-liked' : ''}" data-action="story-like" data-id="${story.id}">
           ${icon('spark', { size: 22, filled: liked })}
@@ -232,6 +236,67 @@ function renderStoryViewerOverlay() {
       ` : ''}
     </div>`;
 }
+
+// ============================================================
+// Story swipe handling
+// ============================================================
+let _storySwipeSetup = false;
+
+function setupStorySwipe() {
+  if (_storySwipeSetup) return;
+  _storySwipeSetup = true;
+
+  let startX = 0, startY = 0, startTime = 0;
+  let tracking = false;
+
+  document.addEventListener('touchstart', (e) => {
+    if (!document.getElementById('story-viewer-root')) return;
+    // Ignoruj ak klikol na tlačidlo (like, close, author)
+    if (e.target.closest('button')) return;
+    const t = e.touches[0];
+    startX = t.clientX;
+    startY = t.clientY;
+    startTime = Date.now();
+    tracking = true;
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!tracking) return;
+    tracking = false;
+    if (!document.getElementById('story-viewer-root')) return;
+
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    const dt = Date.now() - startTime;
+
+    // Swipe dole = zavrieť (rýchly alebo veľký pohyb)
+    if (dy > 80 && Math.abs(dy) > Math.abs(dx)) {
+      stopStoryAutoAdvance();
+      closeStoryViewer();
+      return;
+    }
+
+    // Swipe vľavo/vpravo = navigácia
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      stopStoryAutoAdvance();
+      if (dx < 0) storyNext();
+      else storyPrev();
+      return;
+    }
+
+    // Krátky tap (do 250 ms, malý pohyb) = zónová navigácia
+    if (dt < 250 && Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+      const w = window.innerWidth;
+      stopStoryAutoAdvance();
+      if (t.clientX < w * 0.3) storyPrev();
+      else if (t.clientX > w * 0.7) storyNext();
+      // Stred nič nerobí (nechceme pauzovať, keďže auto-advance ide sám)
+    }
+  }, { passive: true });
+}
+
+setupStorySwipe();
 
 async function storyLike(storyId) {
   try {
@@ -295,6 +360,25 @@ function storyPrev() {
 function closeStoryViewer() {
   stopStoryAutoAdvance();
   closeOverlay();
+}
+
+// Autor z story viewera → otvor profil
+function openStoryAuthor(authorId, authorKind) {
+  if (!authorId) return;
+  // Zavri story viewer
+  stopStoryAutoAdvance();
+  state.overlay = null;
+  state.overlayStack = [];
+  state._historyPushed = false;
+
+  // Otvor profil
+  let kind = authorKind || 'user';
+  if (kind === 'organizations') kind = 'organizations';
+  else if (kind === 'accommodation') kind = 'accommodation';
+  else if (kind === 'restaurants') kind = 'restaurants';
+  else kind = 'user';
+
+  openProfile(kind, authorId);
 }
 
 // ============================================================
@@ -440,9 +524,6 @@ function removeStoryFile(index) {
   renderApp();
 }
 
-// ============================================================
-// OPRAVA: Submit s robustným vyčistením (žiadny history.back race)
-// ============================================================
 async function handleCreateStorySubmit(form) {
   const o = state.overlay;
   if (!o.files || o.files.length === 0) return;
@@ -486,19 +567,15 @@ async function handleCreateStorySubmit(form) {
     updateUploadOverlay(100, t('common.processing'));
     await apiPost('/api/stories', payload);
 
-    // KRITICKÉ: Skryť overlay PRED renderom
     hideUploadOverlay();
-
     showToast(t('stories.published'));
 
-    // Robustné vyčistenie overlay stavu BEZ history.back
     state.stories = null;
     state._historyPushed = false;
     state.overlay = null;
     state.overlayStack = [];
     document.body.style.overflow = '';
     document.body.style.pointerEvents = '';
-    document.documentElement.style.pointerEvents = '';
 
     renderApp();
     loadStoriesFeed();
