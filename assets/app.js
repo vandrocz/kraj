@@ -174,7 +174,7 @@ function setupInfiniteScroll(loadMoreFn) {
 function renderHeader(title, rightHtml) {
   return `
     <header class="app-header">
-      <img src="https://cdn.vandro.cz/Untitled18_20260523111243.png" alt="" class="app-header-logo" />
+      <img src="https://cdn.vandro.cz/Untitled15_20260522160351.png" alt="" class="app-header-logo" />
       <h1 class="app-header-title">${title}</h1>
       <div class="app-header-right">${rightHtml || ''}</div>
     </header>`;
