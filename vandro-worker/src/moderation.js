@@ -118,3 +118,71 @@ export function htmlToPlain(html) {
 export function escapeLike(str) {
   return String(str || '').replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
+
+// ============================================================
+// MIME + SIZE + MAGIC BYTES validácia nahrávaných súborov
+// ============================================================
+
+export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+export const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
+export const ALLOWED_DOC_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+
+export const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+export const MAX_VIDEO_SIZE = 30 * 1024 * 1024;
+export const MAX_DOC_SIZE = 10 * 1024 * 1024;
+
+function _bytes(buf) { return new Uint8Array(buf); }
+
+export function checkImageMagicBytes(buf) {
+  if (!buf || buf.byteLength < 12) return false;
+  const b = _bytes(buf);
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return true;
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return true;
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return true;
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return true;
+  return false;
+}
+
+export function checkVideoMagicBytes(buf) {
+  if (!buf || buf.byteLength < 12) return false;
+  const b = _bytes(buf);
+  if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) return true;
+  if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) return true;
+  return false;
+}
+
+export function checkPdfMagicBytes(buf) {
+  if (!buf || buf.byteLength < 5) return false;
+  const b = _bytes(buf);
+  return b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46 && b[4] === 0x2D;
+}
+
+export async function validateUpload(file, kind) {
+  if (!file || typeof file === 'string') return { ok: false, reason: 'no_file' };
+  if (!file.size) return { ok: false, reason: 'empty' };
+  const type = file.type || '';
+  const size = file.size;
+
+  if (kind === 'image') {
+    if (!ALLOWED_IMAGE_TYPES.includes(type)) return { ok: false, reason: 'bad_type' };
+    if (size > MAX_IMAGE_SIZE) return { ok: false, reason: 'too_large' };
+    const buf = await file.slice(0, 12).arrayBuffer();
+    if (!checkImageMagicBytes(buf)) return { ok: false, reason: 'bad_magic' };
+  } else if (kind === 'video') {
+    if (!ALLOWED_VIDEO_TYPES.includes(type)) return { ok: false, reason: 'bad_type' };
+    if (size > MAX_VIDEO_SIZE) return { ok: false, reason: 'too_large' };
+    const buf = await file.slice(0, 12).arrayBuffer();
+    if (!checkVideoMagicBytes(buf)) return { ok: false, reason: 'bad_magic' };
+  } else if (kind === 'document') {
+    if (!ALLOWED_DOC_TYPES.includes(type)) return { ok: false, reason: 'bad_type' };
+    if (size > MAX_DOC_SIZE) return { ok: false, reason: 'too_large' };
+    if (type === 'application/pdf') {
+      const buf = await file.slice(0, 5).arrayBuffer();
+      if (!checkPdfMagicBytes(buf)) return { ok: false, reason: 'bad_magic' };
+    } else {
+      const buf = await file.slice(0, 12).arrayBuffer();
+      if (!checkImageMagicBytes(buf)) return { ok: false, reason: 'bad_magic' };
+    }
+  }
+  return { ok: true };
+}
