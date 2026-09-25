@@ -781,26 +781,35 @@ async function handleBusinessPostSubmit(form) {
   if (geoLng) fd.set('geo_lng', geoLng);
   if (geoPlace) fd.set('geo_place', geoPlace);
 
-  // Progress overlay
   accountFormState._postUploading = true;
   const btn = form.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = t('common.uploading'); }
+
   showUploadOverlay(t('common.uploading'));
 
   try {
     const res = await uploadWithProgress('/api/posts', fd, (pct) => {
-      updateUploadOverlay(pct, `${t('common.uploading')} ${files.length} ${files.length > 1 ? 'fotek' : 'fotky'}`);
+      updateUploadOverlay(pct, `${t('common.uploading')} — ${pct.toFixed(0)} %`);
     });
 
     updateUploadOverlay(100, t('common.processing'));
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 200));
 
+    // KRITICKÉ: Skryť overlay PRED renderom
     hideUploadOverlay();
+
     showToast(t('toasts.postPublished'));
     if (state.socialFeeds[targetFeed]) state.socialFeeds[targetFeed].items = [];
+
     accountFormState.postFiles = [];
     accountFormState._postFormOpen = false;
     accountFormState._postUploading = false;
+    accountFormState._postCropping = false;
+
+    document.body.style.overflow = '';
+    document.body.style.pointerEvents = '';
+    document.documentElement.style.pointerEvents = '';
+
     renderApp();
   } catch (err) {
     hideUploadOverlay();
