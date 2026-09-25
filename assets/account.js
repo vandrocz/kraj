@@ -101,6 +101,47 @@ function renderAuthCard() {
     </div>`;
 }
 
+function openCheckinCreate(kind, id, name) {
+  if (!isLoggedIn()) { showToast('Pro přidání návštěvy se musíš přihlásit.'); switchTab('account'); return; }
+  openModal({
+    title: 'Byl jsem tady',
+    body: `
+      <p style="font-size:14px;margin-bottom:16px;color:var(--c-text-muted)">Přidat návštěvu: <strong style="color:var(--c-text)">${escapeHtml(name || '')}</strong></p>
+      <div class="form-field">
+        <label class="form-label">Poznámka (nepovinné)</label>
+        <textarea class="form-textarea" name="note" maxlength="500" rows="4" placeholder="Co tě zaujalo?"></textarea>
+      </div>`,
+    submitLabel: 'Zaznamenat návštěvu',
+    onSubmit: async (data) => {
+      state._modalLoading = true; renderApp();
+      try {
+        const res = await apiPost('/api/checkins', {
+          business_id: id,
+          business_kind: kind,
+          note: data.note || null,
+        });
+        closeModal();
+        if (res.new_badges && res.new_badges.length > 0) {
+          const list = res.new_badges.map((b) => `${b.name} L${b.level}`).join(', ');
+          showToast(`Získáno: ${list}! 🎉`);
+        } else if (res.already) {
+          showToast(res.message || 'Už jsi tu byl(a).');
+        } else {
+          showToast('Návštěva zaznamenána!');
+        }
+        if (state.overlay?.type === 'profile') {
+          delete state.profiles[`${state.overlay.kind}:${state.overlay.id}`];
+          loadProfile(state.overlay.kind, state.overlay.id);
+        }
+      } catch (err) {
+        showToast(err.message);
+        state._modalLoading = false;
+        renderApp();
+      }
+    },
+  });
+}
+
 function renderLoginForm() {
   return `
     <form data-action="submit-login">
