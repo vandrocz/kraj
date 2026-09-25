@@ -10,7 +10,6 @@ export const storiesRoutes = new Hono();
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
-// Pomocná — normalizuj riadok zo stories tabuľky na API formát
 function normalizeStory(s) {
   return {
     id: s.id,
@@ -22,23 +21,14 @@ function normalizeStory(s) {
   };
 }
 
-// ============================================================
-// GET /feed
-// Vracia groups:
-//   - { key: 'me', is_me: true }                 → osobné stories usera (business_id NULL)
-//   - { key: 'mybiz_xxx', is_my_business: true } → business stories usera (business_id NOT NULL)
-//   - { key: 'user_yyy' }                        → stories od sledovaných userov
-//   - { key: 'biz_zzz' }                         → stories od sledovaných podnikov
-// ============================================================
 storiesRoutes.get('/feed', async (c) => {
   const user = c.get('user');
 
-  // Priebežne čisti expirované stories (DB + R2)
   try { await deleteExpiredStories(c.env); } catch (err) {
     console.warn('[stories] cleanup on feed failed:', err.message);
   }
 
-  // 1) Moje osobné stories (business_id NULL)
+  // 1) Osobné stories
   const myPersonal = await c.env.DB.prepare(
     `SELECT id, user_id, business_id, image_url, caption, media_type, media_urls_json, created_at, expires_at
      FROM stories
@@ -46,11 +36,17 @@ storiesRoutes.get('/feed', async (c) => {
      ORDER BY created_at ASC`,
   ).bind(user.sub).all();
 
-  // 2) Moje business stories (business_id NOT NULL) — groupované podľa business_id
+  // 2) Moje business stories
   const { results: myBiz } = await c.env.DB.prepare(
     `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
             COALESCE(o.name, a.name, r.name) AS business_name,
-            COALESCE(o.logo_url, a.image_url, r.image_url) AS business_logo
+            COALESCE(o.logo_url, a.image_url, r.image_url) AS business_logo,
+            CASE
+              WHEN o.id IS NOT NULL THEN 'organizations'
+              WHEN a.id IS NOT NULL THEN 'accommodation'
+              WHEN r.id IS NOT NULL THEN 'restaurants'
+              ELSE NULL
+            END AS business_kind
      FROM stories s
      LEFT JOIN organizations o ON o.id = s.business_id
      LEFT JOIN accommodation a ON a.id = s.business_id
@@ -59,7 +55,7 @@ storiesRoutes.get('/feed', async (c) => {
      ORDER BY s.created_at ASC`,
   ).bind(user.sub).all();
 
-  // 3) Stories od userov, ktorých sledujem (business_id NULL, iní)
+  // 3) Stories od sledovaných userov
   const { results: followedUser } = await c.env.DB.prepare(
     `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
             u.display_name AS author_name, u.avatar_url AS author_avatar
@@ -72,11 +68,17 @@ storiesRoutes.get('/feed', async (c) => {
      ORDER BY s.created_at ASC`,
   ).bind(user.sub, user.sub).all();
 
-  // 4) Stories od podnikov, ktoré sledujem (business_id NOT NULL)
+  // 4) Stories od sledovaných podnikov
   const { results: followedBiz } = await c.env.DB.prepare(
     `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
             COALESCE(o.name, a.name, r.name) AS business_name,
-            COALESCE(o.logo_url, a.image_url, r.image_url) AS business_logo
+            COALESCE(o.logo_url, a.image_url, r.image_url) AS business_logo,
+            CASE
+              WHEN o.id IS NOT NULL THEN 'organizations'
+              WHEN a.id IS NOT NULL THEN 'accommodation'
+              WHEN r.id IS NOT NULL THEN 'restaurants'
+              ELSE NULL
+            END AS business_kind
      FROM stories s
      LEFT JOIN organizations o ON o.id = s.business_id
      LEFT JOIN accommodation a ON a.id = s.business_id
@@ -91,7 +93,6 @@ storiesRoutes.get('/feed', async (c) => {
 
   const groups = [];
 
-  // Osobné "me" — len ak má osobné stories
   if (myPersonal.results.length > 0) {
     const me = await c.env.DB.prepare(
       `SELECT display_name, avatar_url FROM users WHERE id = ?`,
@@ -99,13 +100,14 @@ storiesRoutes.get('/feed', async (c) => {
     groups.push({
       key: 'me',
       is_me: true,
+      author_id: user.sub,
+      author_kind: 'user',
       author_name: me?.display_name || 'Já',
       author_avatar: me?.avatar_url || null,
       stories: myPersonal.results.map(normalizeStory),
     });
   }
 
-  // Moje business stories — groupované podľa business_id
   const myBizMap = new Map();
   for (const s of myBiz) {
     if (!myBizMap.has(s.business_id)) {
@@ -113,6 +115,9 @@ storiesRoutes.get('/feed', async (c) => {
         key: `mybiz_${s.business_id}`,
         is_my_business: true,
         business_id: s.business_id,
+        business_kind: s.business_kind,
+        author_id: s.business_id,
+        author_kind: s.business_kind,
         author_name: s.business_name || 'Podnik',
         author_avatar: s.business_logo || null,
         stories: [],
@@ -122,12 +127,13 @@ storiesRoutes.get('/feed', async (c) => {
   }
   groups.push(...myBizMap.values());
 
-  // Sledovaní useri
   const userMap = new Map();
   for (const s of followedUser) {
     if (!userMap.has(s.user_id)) {
       userMap.set(s.user_id, {
         key: `user_${s.user_id}`,
+        author_id: s.user_id,
+        author_kind: 'user',
         author_name: s.author_name || 'Profil',
         author_avatar: s.author_avatar || null,
         stories: [],
@@ -137,13 +143,15 @@ storiesRoutes.get('/feed', async (c) => {
   }
   groups.push(...userMap.values());
 
-  // Sledované podniky
   const fBizMap = new Map();
   for (const s of followedBiz) {
     if (!fBizMap.has(s.business_id)) {
       fBizMap.set(s.business_id, {
         key: `biz_${s.business_id}`,
         business_id: s.business_id,
+        business_kind: s.business_kind,
+        author_id: s.business_id,
+        author_kind: s.business_kind,
         author_name: s.business_name || 'Podnik',
         author_avatar: s.business_logo || null,
         stories: [],
@@ -156,9 +164,7 @@ storiesRoutes.get('/feed', async (c) => {
   return c.json({ groups });
 });
 
-// ============================================================
-// POST / — vytvorenie story
-// ============================================================
+// Vytvorenie story
 storiesRoutes.post('/', async (c) => {
   const user = c.get('user');
   const rl = await rateLimit(c.env, 'story', user.sub, 10, 86400);
@@ -182,9 +188,7 @@ storiesRoutes.post('/', async (c) => {
   return c.json({ id, expires_at: exp }, 201);
 });
 
-// ============================================================
 // Upload fotky
-// ============================================================
 storiesRoutes.post('/upload', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -212,9 +216,7 @@ storiesRoutes.post('/upload', async (c) => {
   return c.json({ url }, 201);
 });
 
-// ============================================================
 // Upload videa
-// ============================================================
 storiesRoutes.post('/upload-video', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -242,9 +244,6 @@ storiesRoutes.post('/upload-video', async (c) => {
   return c.json({ url, media_type: 'video' }, 201);
 });
 
-// ============================================================
-// View
-// ============================================================
 storiesRoutes.post('/:id/view', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -252,9 +251,6 @@ storiesRoutes.post('/:id/view', async (c) => {
   return c.json({ ok: true });
 });
 
-// ============================================================
-// Like
-// ============================================================
 storiesRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -295,9 +291,6 @@ storiesRoutes.post('/:id/like', async (c) => {
   return c.json({ liked: true, likes: cur }, 201);
 });
 
-// ============================================================
-// Reply na story
-// ============================================================
 storiesRoutes.post('/:id/reply', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -355,9 +348,6 @@ storiesRoutes.post('/:id/reply', async (c) => {
   return c.json({ id: replyId, ok: true }, 201);
 });
 
-// ============================================================
-// Replies
-// ============================================================
 storiesRoutes.get('/:id/replies', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -375,9 +365,6 @@ storiesRoutes.get('/:id/replies', async (c) => {
   return c.json({ replies: results });
 });
 
-// ============================================================
-// Manuálny cleanup (admin)
-// ============================================================
 storiesRoutes.post('/admin/cleanup-expired', async (c) => {
   const user = c.get('user');
   if (user.role !== 'admin') return c.json({ error: 'Len pre administrátorov.' }, 403);
