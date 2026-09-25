@@ -1,3 +1,7 @@
+// ============================================================
+// DM — i18n verzia
+// ============================================================
+
 async function loadThreads() {
   if (!isLoggedIn()) return;
   try {
@@ -16,11 +20,21 @@ async function openThreadWith(otherUserId) {
   } catch (err) { showToast(err.message); }
 }
 
+function openThreads() {
+  state.overlayStack.push(state.overlay);
+  state.overlay = { type: 'threads' };
+  state.threads = null;
+  pushHistoryState('overlay');
+  renderApp();
+  loadThreads();
+}
+
 function openThreadById(id) {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'thread', id };
   state.threadCurrent = null;
   state.threadMessages = null;
+  pushHistoryState('overlay');
   renderApp();
   loadThread(id);
   startThreadPolling(id);
@@ -62,17 +76,17 @@ function renderThreadsOverlay() {
   const list = state.threads;
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Zprávy')}
+      ${renderBackHeader(t('messages.title'))}
       <div class="profile-section">
-        ${list == null ? '<p class="empty-state">Načítám…</p>'
-          : list.length === 0 ? '<p class="empty-state">Zatím žádné konverzace. Otevři profil někoho a klikni „Napsat".</p>'
+        ${list == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
+          : list.length === 0 ? `<p class="empty-state">${escapeHtml(t('messages.noThreads'))}</p>`
           : list.map((t) => `
             <button class="user-list-item" data-action="open-thread" data-id="${t.id}">
               ${t.other?.avatar_url
                 ? `<img src="${t.other.avatar_url}" class="user-list-avatar" alt="" />`
                 : `<span class="user-list-avatar user-list-avatar-init">${(t.other?.display_name || '?').charAt(0).toUpperCase()}</span>`}
               <div style="flex:1;min-width:0">
-                <p class="user-list-name">${escapeHtml(t.other?.display_name || 'Neznámý')}</p>
+                <p class="user-list-name">${escapeHtml(t.other?.display_name || t('common.unknown'))}</p>
                 <p class="user-list-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;">${escapeHtml(t.last_message_preview || '—')}</p>
               </div>
               ${t.unread > 0 ? `<span class="nav-badge">${t.unread}</span>` : ''}
@@ -88,10 +102,10 @@ function renderThreadOverlay() {
   const msgs = state.threadMessages;
   return `
     <div class="page-scroll thread-scroll" id="thread-scroller">
-      ${renderBackHeader(tc?.other?.display_name || 'Konverzace')}
+      ${renderBackHeader(tc?.other?.display_name || t('messages.conversation'))}
       <div class="thread-messages">
-        ${msgs == null ? '<p class="empty-state">Načítám…</p>'
-          : msgs.length === 0 ? '<p class="empty-state">Zatím žádné zprávy. Napiš první.</p>'
+        ${msgs == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
+          : msgs.length === 0 ? `<p class="empty-state">${escapeHtml(t('messages.noMessages'))}</p>`
           : msgs.map((m) => {
             const mine = m.sender_id === state.user.id;
             return `<div class="dm-bubble ${mine ? 'dm-mine' : 'dm-theirs'}">
@@ -101,8 +115,8 @@ function renderThreadOverlay() {
           }).join('')}
       </div>
       <form class="thread-input" data-action="submit-thread-message" data-id="${state.overlay.id}">
-        <input type="text" class="thread-input-field" placeholder="Napiš zprávu…" data-thread-input autocomplete="off" />
-        <button type="submit" class="thread-input-send" aria-label="Odeslat">${icon('send', { size: 20 })}</button>
+        <input type="text" class="thread-input-field" placeholder="${escapeAttr(t('messages.writeMessage'))}" data-thread-input autocomplete="off" />
+        <button type="submit" class="thread-input-send" aria-label="${escapeAttr(t('messages.send'))}">${icon('send', { size: 20 })}</button>
       </form>
     </div>
   `;
