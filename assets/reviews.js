@@ -1,5 +1,5 @@
 // ============================================================
-// RECENZIE S HODNOTENÍM
+// RECENZIE — i18n verzia
 // ============================================================
 
 async function loadReviews(kind, id) {
@@ -28,7 +28,7 @@ function renderStars(rating, size = 16) {
 function renderReviewsTab() {
   const d = state._reviews;
   if (!d) {
-    return '<p class="empty-state">Načítám recenze…</p>';
+    return `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`;
   }
   const s = d.summary || { total: 0, average: 0, distribution: {} };
   const mine = state._myReview;
@@ -40,7 +40,7 @@ function renderReviewsTab() {
           <div class="reviews-avg">
             <div class="reviews-avg-num">${s.average.toFixed(1)}</div>
             ${renderStars(s.average, 18)}
-            <p class="reviews-avg-count">${s.total} hodnocení</p>
+            <p class="reviews-avg-count">${s.total} ${escapeHtml(t('reviews.ratings'))}</p>
           </div>
           <div class="reviews-dist">
             ${[5, 4, 3, 2, 1].map((r) => {
@@ -54,17 +54,17 @@ function renderReviewsTab() {
             }).join('')}
           </div>
         </div>
-      ` : '<p class="empty-state">Zatím žádné hodnocení.</p>'}
+      ` : `<p class="empty-state">${escapeHtml(t('reviews.noReviews'))}</p>`}
 
       ${isLoggedIn() ? `
         <button class="profile-action-btn" data-action="open-create-review" data-kind="${state.overlay.kind}" data-id="${state.overlay.id}" style="margin-top:16px;width:100%;justify-content:center">
-          ${icon('comment', { size: 15 })} ${mine ? 'Upravit moje hodnocení' : 'Napsat hodnocení'}
+          ${icon('comment', { size: 15 })} ${escapeHtml(mine ? t('reviews.editReview') : t('reviews.writeReview'))}
         </button>
       ` : ''}
 
       ${mine ? `
         <div class="my-review-box">
-          <p style="font-size:12px;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px">Moje hodnocení</p>
+          <p style="font-size:12px;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px">${escapeHtml(t('reviews.myReview'))}</p>
           ${renderStars(mine.rating)}
           ${mine.title ? `<p style="font-weight:700;margin-top:6px">${escapeHtml(mine.title)}</p>` : ''}
           ${mine.text ? `<p style="font-size:13.5px;line-height:1.55;margin-top:4px">${escapeHtml(mine.text)}</p>` : ''}
@@ -72,7 +72,7 @@ function renderReviewsTab() {
       ` : ''}
 
       ${d.reviews.length > 0 ? `
-        <h3 class="profile-section-title" style="margin-top:20px">Všechny recenze (${d.reviews.length})</h3>
+        <h3 class="profile-section-title" style="margin-top:20px">${escapeHtml(t('reviews.allReviews'))} (${d.reviews.length})</h3>
         ${d.reviews.map((r) => `
           <div class="review-item">
             <div class="review-head">
@@ -95,9 +95,10 @@ function renderReviewsTab() {
 }
 
 function openCreateReview(kind, id) {
-  if (!isLoggedIn()) { showToast('Pro hodnocení se musíš přihlásit.'); switchTab('account'); return; }
+  if (!isLoggedIn()) { showToast(t('reviews.loginRequired')); switchTab('account'); return; }
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'create-review', kind, id, rating: state._myReview?.rating || 5 };
+  pushHistoryState('overlay');
   renderApp();
 }
 
@@ -106,11 +107,11 @@ function renderCreateReviewOverlay() {
   const mine = state._myReview;
   return `
     <div class="page-scroll">
-      ${renderBackHeader(mine ? 'Upravit hodnocení' : 'Napsat hodnocení')}
+      ${renderBackHeader(mine ? t('reviews.editReview') : t('reviews.writeReview'))}
       <div class="profile-section">
         <form data-action="submit-review" data-kind="${kind}" data-id="${id}">
           <div class="form-field">
-            <label class="form-label">Hodnocení</label>
+            <label class="form-label">${escapeHtml(t('reviews.rating'))}</label>
             <div class="rating-picker" data-rating="${rating}">
               ${[1, 2, 3, 4, 5].map((n) => `
                 <button type="button" class="rating-star ${n <= rating ? 'is-active' : ''}" data-action="set-review-rating" data-value="${n}">★</button>
@@ -119,14 +120,14 @@ function renderCreateReviewOverlay() {
             <input type="hidden" name="rating" value="${rating}" data-review-rating />
           </div>
           <div class="form-field">
-            <label class="form-label">Nadpis (nepovinné)</label>
+            <label class="form-label">${escapeHtml(t('reviews.reviewTitle'))}</label>
             <input class="form-input" name="title" maxlength="200" value="${escapeAttr(mine?.title || '')}" />
           </div>
           <div class="form-field">
-            <label class="form-label">Recenze</label>
-            <textarea class="form-textarea" name="text" rows="6" maxlength="3000" placeholder="Poděl se o svoje zkušenosti…">${escapeHtml(mine?.text || '')}</textarea>
+            <label class="form-label">${escapeHtml(t('reviews.reviewText'))}</label>
+            <textarea class="form-textarea" name="text" rows="6" maxlength="3000" placeholder="${escapeAttr(t('reviews.reviewTextPh'))}">${escapeHtml(mine?.text || '')}</textarea>
           </div>
-          <button class="form-submit-btn" type="submit">${mine ? 'Uložit' : 'Zveřejnit'}</button>
+          <button class="form-submit-btn" type="submit">${escapeHtml(mine ? t('reviews.save') : t('reviews.publish'))}</button>
         </form>
       </div>
     </div>`;
@@ -137,9 +138,10 @@ async function handleReviewSubmit(form) {
   const id = form.dataset.id;
   const fd = new FormData(form);
   const rating = parseInt(fd.get('rating'), 10);
-  if (!rating || rating < 1 || rating > 5) { showToast('Vyber hodnocení.'); return; }
+  if (!rating || rating < 1 || rating > 5) { showToast(t('reviews.selectRating')); return; }
   const btn = form.querySelector('button[type="submit"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Ukládám…'; }
+  const mine = state._myReview;
+  if (btn) { btn.disabled = true; btn.textContent = t('common.saving'); }
 
   try {
     const res = await apiPost('/api/reviews', {
@@ -150,12 +152,11 @@ async function handleReviewSubmit(form) {
       text: fd.get('text') || null,
     });
     if (res.new_badges && res.new_badges.length > 0) {
-      const list = res.new_badges.map((b) => `${b.name} L${b.level}`).join(', ');
-      showToast(`Získáno: ${list}! 🎉`);
+      const list = res.new_badges.map((b) => `${tBadge(b.key, b.name)} L${b.level}`).join(', ');
+      showToast(t('checkins.newBadge', { list }));
     } else {
-      showToast(res.updated ? 'Hodnocení upraveno.' : 'Děkujeme za hodnocení!');
+      showToast(res.updated ? t('reviews.saved') : t('reviews.thanks'));
     }
-    // Vráť sa na profil a reloadni reviews
     state.overlayStack.pop();
     state.overlay = state.overlayStack[state.overlayStack.length - 1] || null;
     state._reviews = null;
@@ -166,7 +167,7 @@ async function handleReviewSubmit(form) {
     renderApp();
   } catch (err) {
     showToast(err.message);
-    if (btn) { btn.disabled = false; btn.textContent = mine ? 'Uložit' : 'Zveřejnit'; }
+    if (btn) { btn.disabled = false; btn.textContent = mine ? t('reviews.save') : t('reviews.publish'); }
   }
 }
 
