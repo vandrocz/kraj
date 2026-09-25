@@ -57,7 +57,6 @@ function renderProfileOverlay() {
   return renderBusinessProfile(data, id, kind);
 }
 
-// USER PROFIL — bez zmien
 function renderUserProfile(data, id) {
   const p = data.profile;
   const isOwn = isLoggedIn() && state.user.id === id;
@@ -184,12 +183,6 @@ function renderUserProfile(data, id) {
     </div>`;
 }
 
-// ------------------------------------------------------------------
-// BUSINESS PROFIL
-// B4: Owner nevidí v overlayi tlačidlá Upravit/Statistiky/Přidat akci —
-// tie sú už v karte "Můj profil".
-// B6: Zobrazujeme nové polia v O nás: Otevírací hodiny, Vstupné, Cenová hladina.
-// ------------------------------------------------------------------
 function renderBusinessProfile(data, id, kind) {
   const b = data.profile;
   const isOwn = isLoggedIn() && state.businesses.some((x) => x.id === id);
@@ -232,7 +225,6 @@ function renderBusinessProfile(data, id, kind) {
   } else if (activeTab === 'reviews') {
     tabContent = renderReviewsTab();
   } else if (activeTab === 'about') {
-    // B6: nové polia
     const infoRows = [
       b.city || b.region ? { icon: 'location', label: 'Adresa', value: [b.city, b.district, b.region].filter(Boolean).join(', ') } : null,
       b.phone ? { icon: 'phone', label: 'Telefon', value: b.phone, href: `tel:${b.phone}` } : null,
@@ -240,7 +232,6 @@ function renderBusinessProfile(data, id, kind) {
       b.type ? { icon: 'bookmark', label: 'Typ', value: b.type } : null,
       b.capacity ? { icon: 'users', label: 'Kapacita', value: `${b.capacity} osob` } : null,
       b.cuisine_type ? { icon: 'coffee', label: 'Kuchyně', value: b.cuisine_type } : null,
-      // NOVÉ (B6):
       b.opening_hours ? { icon: 'clock', label: 'Otevírací hodiny', value: b.opening_hours } : null,
       b.admission ? { icon: 'piggy', label: 'Vstupné', value: b.admission } : null,
       b.price_level ? { icon: 'piggy', label: 'Cenová hladina', value: '€'.repeat(parseInt(b.price_level, 10) || 1) } : null,
@@ -248,12 +239,7 @@ function renderBusinessProfile(data, id, kind) {
 
     tabContent = `
       <div class="profile-section about-tab">
-        ${b.description ? `
-          <div class="about-intro">
-            <p>${escapeHtml(b.description)}</p>
-          </div>
-        ` : ''}
-
+        ${b.description ? `<div class="about-intro"><p>${escapeHtml(b.description)}</p></div>` : ''}
         ${infoRows.length > 0 ? `
           <div class="about-info-card">
             ${infoRows.map((r) => `
@@ -276,52 +262,6 @@ function renderBusinessProfile(data, id, kind) {
             `).join('')}
           </div>
         ` : ''}
-
-        ${state._reviews?.summary?.total > 0 ? `
-          <div class="about-reviews-preview">
-            <h3 class="about-section-title">${icon('comment', { size: 16 })} Recenze</h3>
-            <div class="about-review-mini">
-              <span class="about-review-avg">${state._reviews.summary.average.toFixed(1)}</span>
-              <div>
-                ${renderStars(state._reviews.summary.average, 16)}
-                <p class="about-review-count">${state._reviews.summary.total} hodnocení</p>
-              </div>
-            </div>
-            ${(state._reviews.reviews || []).slice(0, 2).map((r) => `
-              <div class="about-review-item">
-                <div class="about-review-head">
-                  <strong>${escapeHtml(r.display_name || 'Uživatel')}</strong>
-                  ${renderStars(r.rating, 12)}
-                </div>
-                ${r.text ? `<p class="about-review-text">${escapeHtml(r.text.slice(0, 140))}${r.text.length > 140 ? '…' : ''}</p>` : ''}
-              </div>
-            `).join('')}
-            <button class="about-see-all" data-action="biz-profile-tab" data-tab="reviews">
-              Zobrazit všechny recenze ${icon('chevronRight', { size: 15 })}
-            </button>
-          </div>
-        ` : ''}
-
-        ${(state._bizEvents || []).length > 0 ? `
-          <div class="about-events-preview">
-            <h3 class="about-section-title">${icon('calendar', { size: 16 })} Nadcházející akce</h3>
-            ${state._bizEvents.slice(0, 2).map((ev) => `
-              <button class="about-event-mini" data-action="open-event" data-id="${ev.id}">
-                <div class="about-event-date">
-                  <span class="about-event-day">${new Date((ev.start_at || '').replace(' ', 'T') + 'Z').getDate()}</span>
-                  <span class="about-event-month">${new Date((ev.start_at || '').replace(' ', 'T') + 'Z').toLocaleDateString('cs-CZ', { month: 'short' })}</span>
-                </div>
-                <div class="about-event-info">
-                  <p class="about-event-title">${escapeHtml(ev.title)}</p>
-                  <p class="about-event-loc">${escapeHtml(ev.location_name || ev.city || '')}</p>
-                </div>
-              </button>
-            `).join('')}
-            <button class="about-see-all" data-action="biz-profile-tab" data-tab="events">
-              Zobrazit všechny akce ${icon('chevronRight', { size: 15 })}
-            </button>
-          </div>
-        ` : ''}
       </div>`;
   }
 
@@ -332,10 +272,6 @@ function renderBusinessProfile(data, id, kind) {
   const checkinStatus = state._checkinStatus;
   const wishStatus = state._wishlistStatus;
 
-  // B4: Owner v overlayi nevidí akcie — tie sú v "Můj profil"
-  // Neprihlásený: žiadne akcie (okrem webu)
-  // Prihlásený non-owner: Sledovat, Byl jsem tady, Chci navštívit
-  const ownerActions = '';
   const nonOwnerActions = isLoggedIn() ? `
     <button class="profile-action-btn ${data.is_following ? 'is-following' : ''}" data-action="toggle-follow" data-kind="${kind}" data-id="${id}">
       ${data.is_following ? icon('check', { size: 15 }) + ' Sleduji' : icon('plus', { size: 15 }) + ' Sledovat'}
@@ -416,10 +352,6 @@ async function switchBizProfileTab(tab) {
   }
 }
 
-// ------------------------------------------------------------------
-// EDIT PROFILE — B5: centrovaný formulár s obmedzenou šírkou, sekcie
-// B6: nové polia (opening_hours, admission, price_level)
-// ------------------------------------------------------------------
 function renderEditProfileForm() {
   const kind = state.overlay.editKind;
   const id = state.overlay.editId;
@@ -592,7 +524,6 @@ async function uploadProfileImage(targetType, targetId, field) {
   input.click();
 }
 
-// SETTINGS
 async function loadSettings() {
   if (!isLoggedIn()) return;
   try { const res = await apiGet('/api/profile/me/settings'); state._settings = res.settings; if (state.overlay?.type === 'settings') renderApp(); } catch {}
@@ -649,7 +580,6 @@ async function toggleSetting(key, value) {
   catch (err) { showToast(err.message); }
 }
 
-// SECURITY 2FA
 function renderSecurityOverlay() {
   if (!state._totpSetup) state._totpSetup = { stage: 'idle' };
   const has2fa = state.user?.totp_enabled;
@@ -747,7 +677,6 @@ function renderLoginLogsOverlay() {
     </div>`;
 }
 
-// FOLLOWERS / FOLLOWING / BLOCKS
 async function loadFollowers(kind, id) {
   try { const data = await apiGet(`/api/profile/${kind}/${id}/followers`); state._followers = data.users || []; }
   catch { state._followers = []; }
@@ -864,6 +793,10 @@ async function loadNotifications() {
   } catch {}
 }
 
+// ------------------------------------------------------------------
+// OPRAVA: Každá notifikácia je klikateľná (data-action="open-notification").
+// Handler openNotification() je v app.js a rozhodne, čo otvoriť.
+// ------------------------------------------------------------------
 function renderNotificationsOverlay() {
   const list = state.notifications;
   return `
@@ -874,10 +807,10 @@ function renderNotificationsOverlay() {
         ${list == null ? '<p class="empty-state">Načítám…</p>'
           : list.length === 0 ? '<p class="empty-state">Žádné notifikace.</p>'
           : list.map((n) => `
-            <div class="notif-item ${n.read_at ? '' : 'is-unread'}">
+            <div class="notif-item ${n.read_at ? '' : 'is-unread'}" data-action="open-notification" data-notif-id="${n.id}" role="button" tabindex="0" style="cursor:pointer">
               ${n.actor_avatar ? `<img class="user-list-avatar" src="${n.actor_avatar}" alt="" />`
                 : `<span class="user-list-avatar user-list-avatar-init">${(n.actor_name || '?').charAt(0).toUpperCase()}</span>`}
-              <div style="flex:1">
+              <div style="flex:1;min-width:0">
                 <p class="notif-text"><strong>${escapeHtml(n.actor_name || 'Někdo')}</strong> ${escapeHtml(n.text || '')}</p>
                 <p class="notif-time">${timeAgo(n.created_at)}</p>
               </div>
@@ -936,7 +869,6 @@ function onGlobalSearchInput(value) {
   }, 350);
 }
 
-// GDPR
 async function exportMyData() {
   try {
     const data = await apiGet('/api/profile/me/export');
