@@ -1,17 +1,16 @@
 // ============================================================
-// ONBOARDING — prvé kroky nového užívateľa
+// ONBOARDING — i18n verzia
 // ============================================================
 
 function maybeStartOnboarding(user) {
   if (!user) return;
-  // Ak už onboarding absolvoval, nerob nič
   if (user.onboarding_done) return;
-  // Ak je business, nerob onboarding (rovno dashboard)
   if (user.role === 'organization' || user.role === 'hotelier' || user.role === 'admin') {
     apiPatch('/api/profile/me/user', { onboarding_done: true }).catch(() => {});
     return;
   }
   state.overlay = { type: 'onboarding', step: 1, selectedBusinesses: [], bio: '', avatarFile: null, avatarPreview: null };
+  pushHistoryState('overlay');
   renderApp();
 }
 
@@ -25,52 +24,52 @@ function renderOnboardingOverlay() {
     content = `
       <div class="onboarding-hero">
         <div class="onboarding-icon">👋</div>
-        <h1 class="onboarding-title">Vítej v Náš kraj!</h1>
-        <p class="onboarding-lead">Pomůžeme ti nastavit si profil a najít super místa, která tě budou bavit.</p>
+        <h1 class="onboarding-title">${escapeHtml(t('onboarding.welcomeTitle'))}</h1>
+        <p class="onboarding-lead">${escapeHtml(t('onboarding.welcomeLead'))}</p>
       </div>
       <div class="onboarding-actions">
-        <button class="form-submit-btn" data-action="onboarding-next">Pokračovat</button>
-        <button class="onboarding-skip" data-action="onboarding-skip">Přeskočit</button>
+        <button class="form-submit-btn" data-action="onboarding-next">${escapeHtml(t('onboarding.continueBtn'))}</button>
+        <button class="onboarding-skip" data-action="onboarding-skip">${escapeHtml(t('onboarding.skip'))}</button>
       </div>`;
   } else if (step === 2) {
     content = `
       <div class="onboarding-hero">
         <div class="onboarding-icon">🔍</div>
-        <h1 class="onboarding-title">Vyber si místa</h1>
-        <p class="onboarding-lead">Vyber si alespoň 3 podniky, které chceš sledovat. Uvidíš jejich příspěvky a akce.</p>
+        <h1 class="onboarding-title">${escapeHtml(t('onboarding.pickTitle'))}</h1>
+        <p class="onboarding-lead">${escapeHtml(t('onboarding.pickLead'))}</p>
       </div>
       <div id="onboarding-businesses" class="onboarding-businesses">
-        <p class="empty-state">Načítám…</p>
+        <p class="empty-state">${escapeHtml(t('onboarding.loadingBusinesses'))}</p>
       </div>
       <div class="onboarding-actions">
-        <p class="onboarding-counter">Vybráno: <strong>${o.selectedBusinesses.length}</strong> / 3</p>
-        <button class="form-submit-btn" data-action="onboarding-next" ${o.selectedBusinesses.length < 3 ? 'disabled' : ''}>Pokračovat</button>
-        <button class="onboarding-skip" data-action="onboarding-skip">Přeskočit</button>
+        <p class="onboarding-counter">${escapeHtml(t('onboarding.pickCounter'))} <strong>${o.selectedBusinesses.length}</strong> ${escapeHtml(t('onboarding.pickOf'))}</p>
+        <button class="form-submit-btn" data-action="onboarding-next" ${o.selectedBusinesses.length < 3 ? 'disabled' : ''}>${escapeHtml(t('onboarding.continueBtn'))}</button>
+        <button class="onboarding-skip" data-action="onboarding-skip">${escapeHtml(t('onboarding.skip'))}</button>
       </div>`;
     setTimeout(() => loadOnboardingBusinesses(), 50);
   } else if (step === 3) {
     content = `
       <div class="onboarding-hero">
         <div class="onboarding-icon">📸</div>
-        <h1 class="onboarding-title">Doplň si profil</h1>
-        <p class="onboarding-lead">Přidej si profilovku a napiš o sobě pár slov.</p>
+        <h1 class="onboarding-title">${escapeHtml(t('onboarding.profileTitle'))}</h1>
+        <p class="onboarding-lead">${escapeHtml(t('onboarding.profileLead'))}</p>
       </div>
       <div class="onboarding-form">
         <div class="onboarding-avatar">
           ${o.avatarPreview
             ? `<img src="${o.avatarPreview}" alt="" class="onboarding-avatar-img" />`
             : `<div class="onboarding-avatar-placeholder">${(state.user.display_name || '?').charAt(0).toUpperCase()}</div>`}
-          <button type="button" class="profile-action-btn" data-action="onboarding-avatar-pick">${icon('camera', { size: 15 })} Nahrát fotku</button>
+          <button type="button" class="profile-action-btn" data-action="onboarding-avatar-pick">${icon('camera', { size: 15 })} ${escapeHtml(t('onboarding.uploadPhoto'))}</button>
           <input type="file" accept="image/*" id="onboarding-avatar-input" style="display:none" data-action="onboarding-avatar-change" />
         </div>
         <div class="form-field">
-          <label class="form-label">O mně</label>
-          <textarea class="form-textarea" data-action="onboarding-bio" maxlength="280" rows="3" placeholder="Něco o sobě…">${escapeHtml(o.bio || '')}</textarea>
+          <label class="form-label">${escapeHtml(t('onboarding.aboutMe'))}</label>
+          <textarea class="form-textarea" data-action="onboarding-bio" maxlength="280" rows="3" placeholder="${escapeAttr(t('onboarding.aboutPh'))}">${escapeHtml(o.bio || '')}</textarea>
         </div>
       </div>
       <div class="onboarding-actions">
-        <button class="form-submit-btn" data-action="onboarding-finish">Dokončit</button>
-        <button class="onboarding-skip" data-action="onboarding-skip">Přeskočit</button>
+        <button class="form-submit-btn" data-action="onboarding-finish">${escapeHtml(t('onboarding.finish'))}</button>
+        <button class="onboarding-skip" data-action="onboarding-skip">${escapeHtml(t('onboarding.skip'))}</button>
       </div>`;
   }
 
@@ -99,7 +98,6 @@ async function loadOnboardingBusinesses() {
       ...(rest.feed || []).map((p) => ({ ...p.business, kind: 'restaurants' })),
     ];
 
-    // Unique
     const seen = new Set();
     const uniq = all.filter((b) => {
       const key = `${b.kind}:${b.id}`;
@@ -109,7 +107,7 @@ async function loadOnboardingBusinesses() {
     }).slice(0, 20);
 
     if (uniq.length === 0) {
-      el.innerHTML = '<p class="empty-state">Zatím žádné podniky. Můžeš přeskočit.</p>';
+      el.innerHTML = `<p class="empty-state">${escapeHtml(t('onboarding.noBusinesses'))}</p>`;
       return;
     }
 
@@ -118,19 +116,19 @@ async function loadOnboardingBusinesses() {
     el.innerHTML = uniq.map((b) => {
       const key = `${b.kind}:${b.id}`;
       const isSel = selected.has(key);
-      const kindLabel = { organizations: 'Organizace', accommodation: 'Ubytování', restaurants: 'Gastro' }[b.kind] || '';
+      const kindLabel = { organizations: t('search.typeOrg'), accommodation: t('search.typeAcc'), restaurants: t('search.typeGastro') }[b.kind] || '';
       return `
         <button type="button" class="onboarding-biz ${isSel ? 'is-selected' : ''}" data-action="onboarding-toggle-biz" data-kind="${b.kind}" data-id="${b.id}" data-name="${escapeAttr(b.name)}">
           <span class="onboarding-biz-initial">${(b.name || '?').charAt(0).toUpperCase()}</span>
           <span class="onboarding-biz-info">
             <span class="onboarding-biz-name">${escapeHtml(b.name || '')}</span>
-            <span class="onboarding-biz-meta">${kindLabel}${b.city ? ` · ${escapeHtml(b.city)}` : ''}</span>
+            <span class="onboarding-biz-meta">${escapeHtml(kindLabel)}${b.city ? ` · ${escapeHtml(b.city)}` : ''}</span>
           </span>
           ${isSel ? `<span class="onboarding-biz-check">${icon('check', { size: 18 })}</span>` : ''}
         </button>`;
     }).join('');
   } catch (err) {
-    el.innerHTML = `<p class="empty-state">Chyba: ${err.message}</p>`;
+    el.innerHTML = `<p class="empty-state">${escapeHtml(t('common.error'))}: ${err.message}</p>`;
   }
 }
 
@@ -172,16 +170,12 @@ function onboardingBioChange(value) {
 async function finishOnboarding(skipped = false) {
   const o = state.overlay;
 
-  // 1) Sleduj vybrané podniky
   if (o.selectedBusinesses && o.selectedBusinesses.length > 0) {
     for (const b of o.selectedBusinesses) {
-      try {
-        await apiPost('/api/profile/follow', { type: b.kind, id: b.id });
-      } catch {}
+      try { await apiPost('/api/profile/follow', { type: b.kind, id: b.id }); } catch {}
     }
   }
 
-  // 2) Nahraj avatar
   if (o.avatarFile) {
     try {
       const fd = new FormData();
@@ -194,7 +188,6 @@ async function finishOnboarding(skipped = false) {
     } catch {}
   }
 
-  // 3) Ulož bio
   if (o.bio && o.bio.trim()) {
     try {
       const res = await apiPatch('/api/profile/me/user', { bio: o.bio.trim() });
@@ -202,7 +195,6 @@ async function finishOnboarding(skipped = false) {
     } catch {}
   }
 
-  // 4) Označ onboarding_done
   try {
     await apiPatch('/api/profile/me/user', { onboarding_done: true });
     state.user.onboarding_done = true;
@@ -211,6 +203,6 @@ async function finishOnboarding(skipped = false) {
 
   state.overlay = null;
   state.overlayStack = [];
-  if (!skipped) showToast('Vítej! 🎉');
+  if (!skipped) showToast(t('onboarding.welcomeDone'));
   renderApp();
 }
