@@ -12,6 +12,9 @@ const accountFormState = {
   _postFormOpen: false,
 };
 
+const POST_ASPECT = 4 / 3;   // 1.3333
+const POST_OUT_WIDTH = 1400; // → 1050 výška
+
 function renderAccountPage() {
   if (!isLoggedIn()) {
     const html = `
@@ -430,6 +433,9 @@ function renderUserAboutSection() {
     </div>`;
 }
 
+// ------------------------------------------------------------------
+// Business dashboard — tlačidlá v stat-card štýle
+// ------------------------------------------------------------------
 function renderBusinessDashboard() {
   const businesses = state.businesses || [];
   if (businesses.length === 0) return `<p class="empty-state">${escapeHtml(t('profile.noBusiness'))}</p>`;
@@ -450,43 +456,65 @@ function renderBusinessDashboard() {
   const postFormOpen = accountFormState._postFormOpen || false;
   const canAddMore = state.user.role === 'organization' || state.user.role === 'hotelier' || state.user.role === 'admin';
 
-  const storyBtn = isLoggedIn()
-    ? `<button class="profile-action-btn" data-action="open-create-story" data-business-id="${escapeAttr(selected.id)}" data-business-name="${escapeAttr(selected.name)}" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
-        ${icon('camera', { size: 15 })} ${escapeHtml(t('stories.add'))}
-      </button>`
-    : '';
+  // Prepínač podnikov (business-chip) — jediná vec, ktorá ostáva "chip"
+  const switcherHtml = businesses.length > 1 ? `
+    <div class="business-picker" style="padding:0 16px 14px">
+      ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${Number(b.is_verified) ? '✓' : ''}</button>`).join('')}
+    </div>
+  ` : '';
 
+  // Grid tlačidiel v štýle stat-cards (2-3 stĺpce)
   return `
     <div class="profile-section">
       <h3 class="profile-section-title">${escapeHtml(t('profile.yourBusiness'))}</h3>
 
-      ${businesses.length > 1 ? `
-        <div class="business-picker">
-          ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${Number(b.is_verified) ? '✓' : ''}</button>`).join('')}
-        </div>
-      ` : ''}
+      ${switcherHtml}
 
-      <div style="padding:0 16px 10px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="profile-action-btn" data-action="open-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('user', { size: 15 })} ${escapeHtml(t('profile.profileBtn'))}</button>
-        <button class="profile-action-btn" data-action="edit-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('edit', { size: 15 })} ${escapeHtml(t('profile.editBtn'))}</button>
-        <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">${icon('chart', { size: 15 })} ${escapeHtml(t('profile.statsBtn'))}</button>
-        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} ${escapeHtml(t('profile.addEventBtn'))}</button>
-        <button class="profile-action-btn" data-action="toggle-post-form" data-id="${selected.id}">${icon('image', { size: 15 })} ${escapeHtml(t('profile.addPostBtn'))}</button>
-        ${storyBtn}
+      <div class="biz-current-label">
+        ${icon('landmark', { size: 14 })} <strong>${escapeHtml(selected.name)}</strong>
+        ${isVerified ? `<span class="biz-verified-badge">✓ ${escapeHtml(t('profile.verifiedShort'))}</span>` : ''}
+      </div>
+
+      <div class="biz-action-grid">
+        <button class="biz-action-card" data-action="open-profile" data-kind="${targetFeed}" data-id="${selected.id}">
+          <div class="biz-action-icon">${icon('user', { size: 22 })}</div>
+          <div class="biz-action-label">${escapeHtml(t('profile.profileBtn'))}</div>
+        </button>
+        <button class="biz-action-card" data-action="edit-profile" data-kind="${targetFeed}" data-id="${selected.id}">
+          <div class="biz-action-icon">${icon('edit', { size: 22 })}</div>
+          <div class="biz-action-label">${escapeHtml(t('profile.editBtn'))}</div>
+        </button>
+        <button class="biz-action-card" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">
+          <div class="biz-action-icon">${icon('chart', { size: 22 })}</div>
+          <div class="biz-action-label">${escapeHtml(t('profile.statsBtn'))}</div>
+        </button>
+        <button class="biz-action-card" data-action="open-event-create">
+          <div class="biz-action-icon">${icon('calendar', { size: 22 })}</div>
+          <div class="biz-action-label">${escapeHtml(t('profile.addEventBtn'))}</div>
+        </button>
+        <button class="biz-action-card" data-action="toggle-post-form" data-id="${selected.id}">
+          <div class="biz-action-icon">${icon('image', { size: 22 })}</div>
+          <div class="biz-action-label">${escapeHtml(t('profile.addPostBtn'))}</div>
+        </button>
+        <button class="biz-action-card" data-action="open-create-story" data-business-id="${escapeAttr(selected.id)}" data-business-name="${escapeAttr(selected.name)}">
+          <div class="biz-action-icon">${icon('camera', { size: 22 })}</div>
+          <div class="biz-action-label">${escapeHtml(t('stories.add'))}</div>
+        </button>
         ${!isVerified && !isPending ? `
-          <button class="profile-action-btn" data-action="open-verification-request" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
-            ${icon('shield', { size: 15 })} ${escapeHtml(t('profile.verifyBtn'))}
+          <button class="biz-action-card" data-action="open-verification-request" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
+            <div class="biz-action-icon">${icon('shield', { size: 22 })}</div>
+            <div class="biz-action-label">${escapeHtml(t('profile.verifyBtn'))}</div>
           </button>
         ` : ''}
         ${canAddMore ? `
-          <button class="profile-action-btn" data-action="open-add-business" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
-            ${icon('plus', { size: 15 })} ${escapeHtml(t('profile.addBusiness'))}
+          <button class="biz-action-card biz-action-card--accent" data-action="open-add-business">
+            <div class="biz-action-icon">${icon('plus', { size: 22 })}</div>
+            <div class="biz-action-label">${escapeHtml(t('profile.addBusinessShort'))}</div>
           </button>
         ` : ''}
       </div>
 
-      ${!isVerified && isPending ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">⏳ ${escapeHtml(t('profile.verificationPending'))}</p>` : ''}
-      ${isVerified ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">✓ ${escapeHtml(t('profile.verified'))}</p>` : ''}
+      ${!isVerified && isPending ? `<p class="form-hint" style="padding:12px 16px 0;color:var(--c-gold);text-align:center">⏳ ${escapeHtml(t('profile.verificationPending'))}</p>` : ''}
     </div>
 
     ${postFormOpen ? renderInlineBusinessPostForm(selected, targetFeed) : ''}`;
@@ -592,11 +620,13 @@ function updateAddBusinessTypeOptions(kind) {
 }
 
 function renderInlineBusinessPostForm(selected, targetFeed) {
+  const busy = accountFormState._postUploading || accountFormState._postCropping;
   return `
     <div class="profile-section" id="inline-post-form">
       <h3 class="profile-section-title">${escapeHtml(t('post.newPost'))}</h3>
       <form data-action="submit-business-post" data-business-id="${selected.id}" data-target-feed="${targetFeed}">
-        <div class="file-drop" data-action="trigger-file-input">
+        <div class="post-format-hint">🖼️ ${escapeHtml(t('post.landscapeHint'))} · 4:3</div>
+        <div class="file-drop" data-action="${busy ? '' : 'trigger-file-input'}">
           <input type="file" name="file" accept="image/*" multiple style="display:none" id="post-file-input" data-action="files-selected" />
           <span id="file-drop-label">${icon('image', { size: 22 })}<br/>${escapeHtml(t('post.addPhoto'))}</span>
         </div>
@@ -614,7 +644,9 @@ function renderInlineBusinessPostForm(selected, targetFeed) {
         <div style="display:flex;gap:8px;margin-bottom:14px;">
           <button type="button" class="profile-action-btn" data-action="attach-geo" data-geo-label>${icon('location', { size: 15 })} ${escapeHtml(t('post.addLocation'))}</button>
         </div>
-        <button class="form-submit-btn" type="submit">${escapeHtml(t('post.publish'))}</button>
+        <button class="form-submit-btn" type="submit" ${busy ? 'disabled' : ''}>
+          ${accountFormState._postUploading ? escapeHtml(t('common.uploading')) : accountFormState._postCropping ? escapeHtml(t('post.cropping')) : escapeHtml(t('post.publish'))}
+        </button>
         <p class="form-hint">${escapeHtml(t('post.photoHint'))}</p>
       </form>
     </div>`;
@@ -630,28 +662,75 @@ function selectBusiness(id) {
 async function onFilesSelected(inputEl) {
   const files = Array.from(inputEl.files || []).slice(0, 4);
   if (files.length === 0) return;
+
   const label = document.getElementById('file-drop-label');
   const drop = inputEl.closest('.file-drop');
   const grid = document.getElementById('file-preview-grid');
   if (!label || !drop || !grid) return;
+
   drop.classList.add('has-file');
   label.textContent = `${t('post.photoProcessing')} ${files.length}…`;
+
+  // 1) Kompresia
   const compressed = [];
   for (const f of files) {
     try {
-      const c = await compressImage(f, { maxDim: 1600, quality: 0.82 });
+      const c = await compressImage(f, { maxDim: 2400, quality: 0.92 });
       compressed.push(c);
     } catch (err) {
       console.error('Kompresia zlyhala:', err);
       compressed.push(f);
     }
   }
-  accountFormState.postFiles = compressed;
-  label.textContent = `✓ ${t('post.photoReady')} ${compressed.length}`;
-  grid.innerHTML = compressed.map((f) => {
-    const url = URL.createObjectURL(f);
-    return `<div class="file-preview-item"><img src="${url}" /><button type="button" class="file-preview-remove" data-action="remove-post-file" data-name="${escapeAttr(f.name)}">${icon('close', { size: 14 })}</button></div>`;
-  }).join('');
+
+  // 2) Crop editor pre každú fotku (4:3)
+  accountFormState._postCropping = true;
+  renderApp();
+
+  const croppedFiles = [];
+  try {
+    for (let i = 0; i < compressed.length; i++) {
+      const cropped = await openCropEditor(compressed[i], {
+        aspect: POST_ASPECT,
+        maxWidth: POST_OUT_WIDTH,
+        quality: 0.88,
+        label: `Post 4:3 (${i + 1}/${compressed.length})`,
+      });
+      if (cropped === null) {
+        // User zrušil
+        accountFormState._postCropping = false;
+        accountFormState.postFiles = [];
+        renderApp();
+        return;
+      }
+      croppedFiles.push(cropped);
+    }
+  } catch (err) {
+    console.error('Crop error:', err);
+    accountFormState._postCropping = false;
+    renderApp();
+    showToast('Nepodařilo se ořezat fotky.');
+    return;
+  }
+
+  accountFormState._postCropping = false;
+  accountFormState.postFiles = croppedFiles;
+
+  // Re-render — preview grid sa vytvorí v renderInlineBusinessPostForm
+  renderApp();
+
+  // Update label
+  setTimeout(() => {
+    const lbl = document.getElementById('file-drop-label');
+    const gr = document.getElementById('file-preview-grid');
+    if (lbl) lbl.textContent = `✓ ${t('post.photoReady')} ${croppedFiles.length}`;
+    if (gr) {
+      gr.innerHTML = croppedFiles.map((f) => {
+        const url = URL.createObjectURL(f);
+        return `<div class="file-preview-item"><img src="${url}" /><button type="button" class="file-preview-remove" data-action="remove-post-file" data-name="${escapeAttr(f.name)}">${icon('close', { size: 14 })}</button></div>`;
+      }).join('');
+    }
+  }, 30);
 }
 
 function removePostFile(name) {
@@ -675,6 +754,7 @@ async function handleBusinessPostSubmit(form) {
   const targetFeed = form.dataset.targetFeed;
   const files = accountFormState.postFiles;
   if (!files || files.length === 0) { showToast(t('post.addPhoto')); return; }
+  if (accountFormState._postUploading) return;
 
   const fd = new FormData();
   files.forEach((f) => fd.append('file', f, f.name));
@@ -701,19 +781,33 @@ async function handleBusinessPostSubmit(form) {
   if (geoLng) fd.set('geo_lng', geoLng);
   if (geoPlace) fd.set('geo_place', geoPlace);
 
+  // Progress overlay
+  accountFormState._postUploading = true;
   const btn = form.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = t('common.uploading'); }
+  showUploadOverlay(t('common.uploading'));
 
   try {
-    await apiPost('/api/posts', fd);
+    const res = await uploadWithProgress('/api/posts', fd, (pct) => {
+      updateUploadOverlay(pct, `${t('common.uploading')} ${files.length} ${files.length > 1 ? 'fotek' : 'fotky'}`);
+    });
+
+    updateUploadOverlay(100, t('common.processing'));
+    await new Promise((r) => setTimeout(r, 250));
+
+    hideUploadOverlay();
     showToast(t('toasts.postPublished'));
     if (state.socialFeeds[targetFeed]) state.socialFeeds[targetFeed].items = [];
     accountFormState.postFiles = [];
     accountFormState._postFormOpen = false;
+    accountFormState._postUploading = false;
     renderApp();
   } catch (err) {
+    hideUploadOverlay();
     showToast(err.message);
+    accountFormState._postUploading = false;
     if (btn) { btn.disabled = false; btn.textContent = t('post.publish'); }
+    renderApp();
   }
 }
 
@@ -1466,10 +1560,14 @@ async function handleVerificationSubmit(form) {
   state.overlay.uploading = true;
   renderApp();
 
+  showUploadOverlay(t('common.uploading'));
+
   try {
     const fd = new FormData();
     fd.append('file', docFile);
-    const up = await apiPost('/api/profile/me/upload-verification-doc', fd);
+    const up = await uploadWithProgress('/api/profile/me/upload-verification-doc', fd, (pct) => {
+      updateUploadOverlay(pct);
+    });
 
     const fd2 = new FormData(form);
     await apiPost('/api/profile/me/request-verification', {
@@ -1479,11 +1577,13 @@ async function handleVerificationSubmit(form) {
       note: (fd2.get('note') || '').toString(),
     });
 
+    hideUploadOverlay();
     showToast(t('toasts.verificationSent'));
     state.overlay = null;
     state._verificationStatus = undefined;
     renderApp();
   } catch (err) {
+    hideUploadOverlay();
     showToast(err.message);
     state.overlay.uploading = false;
     renderApp();
