@@ -9,6 +9,25 @@ document.addEventListener('click', (e) => {
 
   switch (action) {
     case 'set-tab': switchTab(el.dataset.tab); break;
+
+    // D7: prepínanie zbalenia spodnej lišty na mape
+    case 'toggle-map-nav':
+      state._mapNavCollapsed = !state._mapNavCollapsed;
+      renderApp();
+      break;
+
+    // B3: toggle inline formulára pre pridanie príspevku
+    case 'toggle-post-form': {
+      accountFormState._postFormOpen = !accountFormState._postFormOpen;
+      accountFormState.postFiles = [];
+      renderApp();
+      // Skroluj k formuláru
+      setTimeout(() => {
+        document.getElementById('inline-post-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
+      break;
+    }
+
     case 'share-event': shareEvent(el.dataset.id); break;
     case 'add-to-calendar': addEventToCalendar(el.dataset.id); break;
     case 'reject-cookies': rejectCookies(); break;
@@ -17,7 +36,6 @@ document.addEventListener('click', (e) => {
     case 'open-event-gallery': openEventGallery(el.dataset.eventId, parseInt(el.dataset.index || '0', 10)); break;
     case 'trigger-event-file': document.getElementById('event-file-input')?.click(); break;
     case 'remove-event-file': removeEventFile(el.dataset.name); break;
-    case 'submit-lightbox-comment': /* handled in submit event */ break;
     case 'save-cookie-settings': saveCookieSettings(); break;
     case 'admin-tab': state._adminTab = el.dataset.tab; if (el.dataset.tab === 'users' && state.adminUsers === null) loadAdminUsers(); renderApp(); break;
     case 'admin-suspend-user': suspendUser(el.dataset.id); break;
@@ -47,12 +65,10 @@ document.addEventListener('click', (e) => {
       let post = null;
 
       if (postId) {
-        // 1) Skús socialFeeds
         for (const key of Object.keys(state.socialFeeds)) {
           const p = state.socialFeeds[key].items.find((x) => x.id === postId);
           if (p) { post = p; post.__feedKey = key === 'organization' ? 'organization' : key; break; }
         }
-        // 2) Skús profiles
         if (!post) {
           for (const k of Object.keys(state.profiles)) {
             const d = state.profiles[k];
@@ -74,12 +90,10 @@ document.addEventListener('click', (e) => {
     case 'lightbox-prev': lightboxPrev(); break;
     case 'lightbox-next': lightboxNext(); break;
 
-    case 'toggle-comments': toggleSocialComments(el.dataset.id, el.dataset.feed); break;
     case 'toggle-post-like': togglePostLike(el.dataset.id, el.dataset.feed, el); break;
     case 'toggle-bookmark': toggleBookmark(el.dataset.id, el); break;
     case 'share-post': sharePost(el.dataset.id, el.dataset.text); break;
     case 'report-post': reportPost(el.dataset.id); break;
-    case 'reply-comment': toggleReplyForm(el.dataset.id); break;
     case 'edit-post': openEditPost(el.dataset.id, el.dataset.feed); break;
 
     case 'open-profile': if (el.dataset.id) openProfile(el.dataset.kind, el.dataset.id); break;
@@ -140,7 +154,6 @@ document.addEventListener('click', (e) => {
     case 'set-register-role': accountFormState.registerRole = el.dataset.role; renderApp(); break;
     case 'set-business-kind': accountFormState.registerBusinessKind = el.dataset.kind; renderApp(); break;
     case 'logout': handleLogout(); break;
-    case 'topup': handleTopup(parseInt(el.dataset.amount, 10)); break;
     case 'select-business': selectBusiness(el.dataset.id); break;
     case 'trigger-file-input': document.getElementById('post-file-input')?.click(); break;
     case 'remove-post-file': removePostFile(el.dataset.name); break;
@@ -188,54 +201,62 @@ document.addEventListener('click', (e) => {
     case 'open-event': openEventDetail(el.dataset.id); break;
     case 'open-event-create': openCreateEvent(); break;
     case 'delete-event': deleteEvent(el.dataset.id); break;
-    case 'trigger-event-file': document.getElementById('event-file-input')?.click(); break;
     case 'event-file-selected': onEventFileSelected(el); break;
 
     case 'biz-profile-tab': switchBizProfileTab(el.dataset.tab); break;
     case 'open-profile-stats': openProfileStats(el.dataset.kind, el.dataset.id); break;
 
-    // Nearby
     case 'open-nearby': openNearby(); break;
     case 'nearby-refresh': loadNearby(); break;
 
-    // Wishlist
     case 'open-wishlist': openWishlist(); break;
     case 'toggle-wishlist': toggleWishlist(el.dataset.kind, el.dataset.id, el); break;
 
-    // Badges
     case 'open-badges': openBadges(); break;
     case 'open-user-checkins': openUserCheckins(el.dataset.id); break;
     case 'open-business-checkins': openBusinessCheckins(el.dataset.kind, el.dataset.id); break;
 
-    // Checkin
     case 'open-create-checkin': openCheckinCreate(el.dataset.kind, el.dataset.id, el.dataset.name); break;
 
-    // Reviews
     case 'open-create-review': openCreateReview(el.dataset.kind, el.dataset.id); break;
     case 'set-review-rating': setReviewRating(parseInt(el.dataset.value, 10)); break;
 
-    // Onboarding
     case 'onboarding-next': onboardingNext(); break;
     case 'onboarding-skip': onboardingSkip(); break;
     case 'onboarding-toggle-biz': onboardingToggleBiz(el.dataset.kind, el.dataset.id, el.dataset.name); break;
     case 'onboarding-avatar-pick': onboardingAvatarPick(); break;
 
-    // Verification (business)
     case 'open-verification-request': openVerificationRequest(el.dataset.kind, el.dataset.id, el.dataset.name); break;
     case 'trigger-verif-doc': document.getElementById('verif-doc-input')?.click(); break;
 
-    // Admin — verifications
     case 'approve-verification': approveVerification(el.dataset.id); break;
     case 'reject-verification': rejectVerification(el.dataset.id); break;
     case 'admin-backfill-handles': adminBackfillHandles(); break;
     case 'admin-seed-test': adminSeedTest(); break;
     case 'admin-cleanup-test': adminCleanupTest(); break;
 
-    // Push
     case 'push-test': testPush(); break;
 
-    // Cookies
     case 'accept-cookies': acceptCookies(); break;
+
+    // D6: zatvorenie modálu klikom na scrim
+    case 'close-modal-scrim':
+      // Iba ak klikol priamo na scrim, nie na sheet
+      if (e.target.classList.contains('modal-scrim') || e.target.closest('.modal-scrim') === e.target) {
+        closeModal();
+      }
+      break;
+    case 'close-modal': closeModal(); break;
+  }
+});
+
+// D1: Hash v URL — oprava skrolovania
+// Ak sa v URL objaví `#`, zabránime defaultnému skoku a po zatvorení overlaya obnovíme skrolovanie
+window.addEventListener('hashchange', () => {
+  // Ak je hash prítomný ale je to len prázdny anchor, zrušíme ho
+  if (location.hash && !location.hash.startsWith('#!')) {
+    // Nerobíme nič — necháme prehliadač, ale po zavretí overlaya
+    // app.js obnoví scrollovanie cez document.body.style.overflow = ''
   }
 });
 
@@ -281,9 +302,8 @@ document.addEventListener('change', (e) => {
   else if (a === 'nearby-kind') { state.nearby.kind = el.value; loadNearby(); }
   else if (a === 'onboarding-avatar-change') onboardingAvatarChange(el);
   else if (a === 'verif-doc-selected') onVerifDocSelected(el);
-  else if (a === 'cookie-setting') toggleCookieSetting(el.dataset.key, el.checked);
   else if (a === 'push-toggle') handlePushToggle(el.checked);
-    else if (a === 'district-change') {
+  else if (a === 'district-change') {
     const form = el.closest('form');
     const citySelect = form.querySelector('select[name="city"]');
     const district = el.value;
@@ -338,7 +358,16 @@ document.addEventListener('submit', (e) => {
   e.preventDefault();
   const a = form.dataset.action;
   if (a === 'submit-login') handleLoginSubmit(form);
-  if (a === 'submit-lightbox-comment') {
+  else if (a === 'submit-modal') {
+    // D6: potvrdenie modálneho formulára
+    const m = state._modal;
+    if (!m || !m.onSubmit) return;
+    const fd = new FormData(form);
+    const data = Object.fromEntries(fd.entries());
+    m.onSubmit(data);
+    return;
+  }
+  else if (a === 'submit-lightbox-comment') {
     const id = form.dataset.id;
     const feed = form.dataset.feed;
     const input = form.querySelector('[data-lightbox-comment-input]');
@@ -349,18 +378,6 @@ document.addEventListener('submit', (e) => {
   else if (a === 'submit-business-post') handleBusinessPostSubmit(form);
   else if (a === 'submit-edit-profile') handleEditProfileSubmit(form);
   else if (a === 'submit-create-event') handleCreateEventSubmit(form);
-  else if (a === 'submit-social-comment') {
-    const id = form.dataset.id, feed = form.dataset.feed;
-    const input = form.querySelector(`[data-comment-input="${id}"]`);
-    submitSocialComment(id, feed, input.value, input);
-  }
-  else if (a === 'submit-reply') {
-    const parentId = form.dataset.id;
-    const postId = form.dataset.postId;
-    const feed = form.dataset.feed;
-    const input = form.querySelector(`[data-reply-input="${parentId}"]`);
-    submitReply(parentId, postId, feed, input.value, input);
-  }
   else if (a === 'submit-forgot') handleForgotSubmit(form);
   else if (a === 'submit-reset') handleResetSubmit(form);
   else if (a === 'submit-2fa-login') handleTwoFALogin(form);
@@ -379,6 +396,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (state.lightbox) { closeLightbox(); return; }
     if (state.overlay?.type === 'story-viewer' && state.overlay.replyOpen) { storyReplyCancel(); return; }
+    if (state._modal) { closeModal(); return; }
     document.getElementById('detail-modal')?.classList.remove('is-open');
     document.body.style.overflow = '';
     if (state.overlay) closeOverlay();
@@ -401,13 +419,17 @@ async function bootstrap() {
 
   renderApp();
   await loadMetaFromApi();
-  // ============================================================
-  // DEEP LINKING — ?event=, ?post=, ?profile=, ?hashtag=
-  // ============================================================
+
+  // D1: hash v URL — vyčisti ho pri štarte, aby nerušil skrolovanie
+  if (location.hash && !location.hash.startsWith('#!')) {
+    // Nechaj hash, ale skrolovanie sa obnoví po zatvorení overlaya
+  }
+
   const urlEvent = getUrlParam('event');
   const urlPost = getUrlParam('post');
   const urlProfile = getUrlParam('profile');
   const urlHashtag = getUrlParam('hashtag');
+  const urlThread = getUrlParam('thread');
 
   if (urlEvent) {
     clearUrlParams();
@@ -419,7 +441,6 @@ async function bootstrap() {
         const data = await apiGet(`/api/feed/post-by-id/${encodeURIComponent(urlPost)}`);
         if (data.post) {
           const post = data.post;
-          // Načítaj komentáre
           try {
             const c = await apiGet(`/api/feed/${post.id}/comments`);
             post.__comments = c.comments || [];
@@ -439,6 +460,9 @@ async function bootstrap() {
   } else if (urlHashtag) {
     clearUrlParams();
     setTimeout(() => openHashtag(urlHashtag), 100);
+  } else if (urlThread) {
+    clearUrlParams();
+    setTimeout(() => openThreadById(urlThread), 100);
   }
   renderApp();
 
@@ -452,6 +476,8 @@ async function bootstrap() {
     loadStoriesFeed();
     if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
     if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(state.user);
+    // C3: po prihlásení (napr. cez uložený token) požiadaj o push permisiu
+    if (typeof maybeRequestPushPermission === 'function') maybeRequestPushPermission();
   }
 
   const verifyToken = getUrlParam('verify');
