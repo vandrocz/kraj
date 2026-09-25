@@ -27,6 +27,7 @@
 <body>
   <div id="root"></div>
 
+  <script src="assets/i18n.js"></script>
   <script src="assets/config.js"></script>
   <script src="assets/meta.js"></script>
   <script src="assets/icons.js"></script>
@@ -51,6 +52,9 @@
   <script src="assets/events.js"></script>
 
   <script>
+    // Inicializuj jazyk pred bootstrapom
+    if (typeof initI18n === 'function') initI18n();
+
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('SW:', e));
