@@ -66,6 +66,7 @@ const state = {
   _cookieSettingsOpen: false,
   _cookieSettings: null,
   _pushSubscribed: null,
+  _pushPrompted: false,
   _editingPost: null,
   _storyReplyOpen: null,
 
@@ -74,6 +75,9 @@ const state = {
 
   lightbox: null,
   loading: {},
+
+  // D7: stav zbalenia spodnej lišty na mape
+  _mapNavCollapsed: true,
 };
 
 function fmt(n) { return Number(n || 0).toLocaleString('cs-CZ'); }
@@ -197,7 +201,23 @@ const TABS = [
 
 const VALID_TABS = ['organizations', 'accommodation', 'gastro', 'map', 'events', 'account'];
 
+// ------------------------------------------------------------------
+// D7: Na mapovej záložke je spodná lišta defaultne zbalená do malého
+// tlačidla so šípkou. Po prepnutí na inú kartu sa automaticky rozbalí.
+// ------------------------------------------------------------------
 function renderBottomNav() {
+  const isMapTab = state.tab === 'map' && !state.overlay;
+  const collapsed = isMapTab && state._mapNavCollapsed;
+
+  if (collapsed) {
+    return `
+      <nav class="bottom-nav bottom-nav--collapsed">
+        <button class="bottom-nav-toggle" data-action="toggle-map-nav" aria-label="Rozbalit menu">
+          ${icon('chevronUp', { size: 20 })}
+        </button>
+      </nav>`;
+  }
+
   const btns = TABS.map((t) => {
     const active = state.tab === t.key && !state.overlay;
     let badge = '';
@@ -211,7 +231,12 @@ function renderBottomNav() {
         <span class="visually-hidden">${t.label}</span>
       </button>`;
   }).join('');
-  return `<nav class="bottom-nav">${btns}</nav>`;
+
+  const collapseBtn = isMapTab
+    ? `<button class="bottom-nav-collapse" data-action="toggle-map-nav" aria-label="Zbalit menu">${icon('chevronDown', { size: 18 })}</button>`
+    : '';
+
+  return `<nav class="bottom-nav">${btns}${collapseBtn}</nav>`;
 }
 
 function renderFilterBar(feedKey, typeOptions, showCuisine) {
@@ -274,7 +299,7 @@ function renderModal() {
       <div class="modal-sheet" data-modal-sheet>
         <div class="modal-head">
           <h3>${escapeHtml(m.title || '')}</h3>
-          <button class="modal-close" data-action="close-modal" aria-label="Zavřít">${icon('close', { size: 20 })}</button>
+          <button class="modal-close" type="button" data-action="close-modal" aria-label="Zavřít">${icon('close', { size: 20 })}</button>
         </div>
         <form class="modal-form" data-action="submit-modal">
           <div class="modal-body">${m.body || ''}</div>
@@ -341,6 +366,11 @@ function renderApp() {
   else if (state.overlay?.type === 'onboarding') pageHtml = renderOnboardingOverlay();
   else if (state.overlay?.type === 'edit-post') pageHtml = renderEditPostOverlay();
   else if (state.overlay?.type === 'verification-request') pageHtml = renderVerificationRequestOverlay();
+  else if (state.overlay?.type === 'hashtag') pageHtml = renderHashtagOverlay();
+  else if (state.overlay?.type === 'threads') pageHtml = renderThreadsOverlay();
+  else if (state.overlay?.type === 'thread') pageHtml = renderThreadOverlay();
+  else if (state.overlay?.type === 'groups') pageHtml = renderGroupsOverlay();
+  else if (state.overlay?.type === 'group') pageHtml = renderGroupDetailOverlay();
   else if (state.tab === 'organizations') pageHtml = renderFeedPage('organization', TYPES.organization, false);
   else if (state.tab === 'accommodation') pageHtml = renderFeedPage('accommodation', TYPES.accommodation, false);
   else if (state.tab === 'gastro') pageHtml = renderFeedPage('gastro', TYPES.restaurant, true);
@@ -350,8 +380,8 @@ function renderApp() {
 
   const isMapTab = state.tab === 'map' && !state.overlay;
   const hideAll = state.overlay?.type === 'story-viewer' || state.overlay?.type === 'onboarding';
-  const hideCookieBanner = hideAll || isMapTab;
-  const hideLightbox = hideAll || isMapTab;
+  const hideCookieBanner = hideAll;
+  const hideLightbox = hideAll;
 
   root.innerHTML = `
     <div class="app-shell">
@@ -456,6 +486,8 @@ function switchTab(tab) {
   state.overlay = null;
   state.overlayStack = [];
   state.tab = tab;
+  // D7: pri prepnutí na mapu defaultne zbalená lišta
+  if (tab === 'map') state._mapNavCollapsed = true;
   persistTab(tab);
   getFeedTitle(tab);
   renderApp();
@@ -466,7 +498,9 @@ function switchTab(tab) {
   if (tab === 'account' && isLoggedIn()) loadNotifications();
 }
 
-// LIGHTBOX
+// ============================================================
+// LIGHTBOX — A2, A3, A5 opravy
+// ============================================================
 function openLightbox(images, index = 0, caption = '', post = null) {
   state.lightbox = {
     images,
@@ -477,6 +511,27 @@ function openLightbox(images, index = 0, caption = '', post = null) {
   updateLightboxDOM();
   document.getElementById('lightbox')?.classList.add('is-open');
   document.body.style.overflow = 'hidden';
+
+  // A2: Ak sú komentáre označené ako neznáme (null), načítaj ich
+  if (post && post.id && post.__comments == null) {
+    loadLightboxComments(post.id);
+  }
+}
+
+async function loadLightboxComments(postId) {
+  try {
+    const data = await apiGet(`/api/feed/${postId}/comments`);
+    if (state.lightbox?.post && state.lightbox.post.id === postId) {
+      state.lightbox.post.__comments = data.comments || [];
+      state.lightbox.post.comment_count = data.total || 0;
+      updateLightboxDOM();
+    }
+  } catch (err) {
+    if (state.lightbox?.post && state.lightbox.post.id === postId) {
+      state.lightbox.post.__comments = [];
+      updateLightboxDOM();
+    }
+  }
 }
 
 function closeLightbox() {
@@ -526,13 +581,25 @@ function updateLightboxDOM() {
         ? `<img src="${escapeAttr(logo)}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--c-primary-light);" />`
         : `<span style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:var(--c-primary-light);color:var(--c-primary-dark);font-weight:800;font-size:17px;flex-shrink:0;border:2px solid var(--c-primary-light);">${initial}</span>`;
 
-      const commentsHtml = (post.__comments || []).map((c) => `
+      // A2: komentáre — bud načítané, prázdne, alebo ešte neznáme
+      const commentsReady = post.__comments != null;
+      const commentsList = post.__comments || [];
+      const commentsHtml = commentsList.map((c) => `
         <div class="lightbox-comment">
           <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}">${escapeHtml(c.user_name || 'Uživatel')}</strong>
           <span>${escapeHtml(c.comment_text)}</span>
           <span class="lightbox-comment-time">${timeAgo(c.created_at)}</span>
         </div>
       `).join('');
+
+      let commentsSection;
+      if (!commentsReady) {
+        commentsSection = '<p class="lightbox-comment-empty">Načítám…</p>';
+      } else if (commentsList.length === 0) {
+        commentsSection = '<p class="lightbox-comment-empty">Zatím žádné komentáře.</p>';
+      } else {
+        commentsSection = commentsHtml;
+      }
 
       info.innerHTML = `
         <header class="lightbox-post-head">
@@ -550,9 +617,9 @@ function updateLightboxDOM() {
         </div>
         <div class="lightbox-post-actions">
           <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
-            ${icon('heart', { size: 22, filled: !!post.__liked })}
+            ${icon('spark', { size: 22, filled: !!post.__liked })}
           </button>
-          <span class="lightbox-stat">${fmt(post.likes || 0)}</span>
+          <span class="lightbox-stat">${fmt(post.likes || 0)} Páči sa mi</span>
           <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(getPostText(post))}">
             ${icon('share', { size: 21 })}
           </button>
@@ -561,7 +628,7 @@ function updateLightboxDOM() {
         <div class="lightbox-comments-section">
           <p class="lightbox-comments-title">Komentáře (${post.comment_count || 0})</p>
           <div class="lightbox-comments-list" id="lightbox-comments-list">
-            ${post.__comments ? (commentsHtml || '<p class="lightbox-comment-empty">Zatím žádné komentáře.</p>') : '<p class="lightbox-comment-empty">Načítám…</p>'}
+            ${commentsSection}
           </div>
           ${isLoggedIn() ? `
             <form class="lightbox-comment-form" data-action="submit-lightbox-comment" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
@@ -607,8 +674,8 @@ function renderLightbox() {
 function renderCookieBanner() {
   if (state._cookieConsent) return '';
   try {
-    const stored = localStorage.getItem('naskraj_cookies');
-    if (stored === '1' || stored === '0') { state._cookieConsent = true; return ''; }
+    const stored = getCookieConsentShared();
+    if (stored) { state._cookieConsent = true; return ''; }
   } catch {}
 
   const settings = state._cookieSettings || { necessary: true, analytics: false, marketing: false };
@@ -646,27 +713,54 @@ function renderCookieBanner() {
             <button class="cookie-btn" data-action="reject-cookies">Odmítnout</button>
             <button class="cookie-btn" data-action="open-cookie-settings">Nastavení</button>
           `}
-          <a class="cookie-btn" href="/ochrana-osobnich-udaju" target="_blank" rel="noopener">Více info</a>
+          <a class="cookie-btn" href="/ochrana-osobnich-udaju.html" target="_blank" rel="noopener">Více info</a>
         </div>
       </div>
     </div>`;
 }
 
-function acceptCookies() {
+// ------------------------------------------------------------------
+// E1: Zdieľanie cookie súhlasu medzi subdoménami (.vandro.cz)
+// Cookie sa nastaví s domain=.vandro.cz, aby ju videl aj maps.vandro.cz
+// ------------------------------------------------------------------
+function setCookieConsentShared(value, settings) {
   try {
-    localStorage.setItem('naskraj_cookies', '1');
-    localStorage.setItem('naskraj_cookie_settings', JSON.stringify({ necessary: true, analytics: true, marketing: true }));
+    localStorage.setItem('naskraj_cookies', value);
+    localStorage.setItem('naskraj_cookie_settings', JSON.stringify(settings || {}));
   } catch {}
+  // Zdieľaná cookie s domain=.vandro.cz
+  try {
+    const maxAge = 365 * 24 * 60 * 60;
+    document.cookie = `naskraj_cookies=${value}; path=/; max-age=${maxAge}; domain=.vandro.cz; SameSite=Lax; Secure`;
+  } catch {}
+  // Fallback bez domain pre localhost
+  try {
+    document.cookie = `naskraj_cookies=${value}; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax`;
+  } catch {}
+}
+
+function getCookieConsentShared() {
+  // Najprv skús shared cookie s .vandro.cz
+  try {
+    const m = document.cookie.match(/(?:^|; )naskraj_cookies=([^;]+)/);
+    if (m && (m[1] === '1' || m[1] === '0')) return m[1];
+  } catch {}
+  try {
+    const v = localStorage.getItem('naskraj_cookies');
+    if (v === '1' || v === '0') return v;
+  } catch {}
+  return null;
+}
+
+function acceptCookies() {
+  setCookieConsentShared('1', { necessary: true, analytics: true, marketing: true });
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
   document.getElementById('cookie-banner')?.remove();
 }
 
 function rejectCookies() {
-  try {
-    localStorage.setItem('naskraj_cookies', '0');
-    localStorage.setItem('naskraj_cookie_settings', JSON.stringify({ necessary: true, analytics: false, marketing: false }));
-  } catch {}
+  setCookieConsentShared('0', { necessary: true, analytics: false, marketing: false });
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
   document.getElementById('cookie-banner')?.remove();
@@ -687,10 +781,7 @@ function toggleCookieSetting(key, value) {
 }
 
 function saveCookieSettings() {
-  try {
-    localStorage.setItem('naskraj_cookies', '1');
-    localStorage.setItem('naskraj_cookie_settings', JSON.stringify(state._cookieSettings || { necessary: true }));
-  } catch {}
+  setCookieConsentShared('1', state._cookieSettings || { necessary: true });
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
   document.getElementById('cookie-banner')?.remove();
@@ -719,3 +810,30 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') lightboxNext();
   else if (e.key === 'ArrowLeft') lightboxPrev();
 });
+
+// ------------------------------------------------------------------
+// C3: Po prihlásení s krátkym oneskorením vyžiadaj push povolenie
+// (len ak ešte nebolo povolené a nebolo odmietnuté)
+// ------------------------------------------------------------------
+function maybeRequestPushPermission() {
+  if (!isLoggedIn()) return;
+  if (state._pushPrompted) return;
+  if (!('Notification' in window)) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  if (Notification.permission === 'granted') return;
+  if (Notification.permission === 'denied') return;
+  state._pushPrompted = true;
+  setTimeout(async () => {
+    if (!isLoggedIn()) return;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        if (typeof enablePushNotifications === 'function') {
+          await enablePushNotifications();
+        }
+      }
+    } catch (err) {
+      console.warn('[push-prompt] zlyhalo:', err);
+    }
+  }, 8000);
+}
