@@ -7,8 +7,6 @@ async function loadProfile(kind, id) {
   try {
     const data = await apiGet(`/api/profile/${kind}/${id}`);
 
-    // Ak je to USER s business rolou a má podniky → automaticky otvor business profil
-    // (aby sa nezobrazoval duplicitný "user profil" popri podniku)
     if (kind === 'user' && data.type === 'user' && Array.isArray(data.businesses) && data.businesses.length > 0) {
       const b = data.businesses[0];
       state.profiles[cacheKey] = data;
@@ -59,23 +57,19 @@ function renderProfileOverlay() {
   return renderBusinessProfile(data, id, kind);
 }
 
-// ============================================================
-// USER PROFIL
-// ============================================================
+// USER PROFIL — bez zmien
 function renderUserProfile(data, id) {
   const p = data.profile;
   const isOwn = isLoggedIn() && state.user.id === id;
   const initial = (p.display_name || '?').charAt(0).toUpperCase();
   const roleLabel = { user: 'Turista', organization: 'Organizace', hotelier: 'Podnik', admin: 'Administrátor' }[p.role] || p.role;
 
-  // Info rows
   const infoRows = [
     p.location ? { icon: 'location', label: 'Lokace', value: p.location } : null,
     p.website ? { icon: 'globe', label: 'Web', value: p.website.replace(/^https?:\/\//i, ''), href: p.website } : null,
     p.phone ? { icon: 'phone', label: 'Telefon', value: p.phone, href: `tel:${p.phone}` } : null,
   ].filter(Boolean);
 
-  // Public checkins — načítaj, ak má user zapnuté alebo sme to my
   const showCheckins = isOwn || p.public_checkins;
   if (showCheckins && state._userProfileCheckins === undefined) {
     state._userProfileCheckins = null;
@@ -190,9 +184,12 @@ function renderUserProfile(data, id) {
     </div>`;
 }
 
-// ============================================================
+// ------------------------------------------------------------------
 // BUSINESS PROFIL
-// ============================================================
+// B4: Owner nevidí v overlayi tlačidlá Upravit/Statistiky/Přidat akci —
+// tie sú už v karte "Můj profil".
+// B6: Zobrazujeme nové polia v O nás: Otevírací hodiny, Vstupné, Cenová hladina.
+// ------------------------------------------------------------------
 function renderBusinessProfile(data, id, kind) {
   const b = data.profile;
   const isOwn = isLoggedIn() && state.businesses.some((x) => x.id === id);
@@ -235,13 +232,18 @@ function renderBusinessProfile(data, id, kind) {
   } else if (activeTab === 'reviews') {
     tabContent = renderReviewsTab();
   } else if (activeTab === 'about') {
+    // B6: nové polia
     const infoRows = [
       b.city || b.region ? { icon: 'location', label: 'Adresa', value: [b.city, b.district, b.region].filter(Boolean).join(', ') } : null,
       b.phone ? { icon: 'phone', label: 'Telefon', value: b.phone, href: `tel:${b.phone}` } : null,
       b.website ? { icon: 'globe', label: 'Web', value: b.website.replace(/^https?:\/\//i, '').replace(/\/$/, ''), href: b.website } : null,
       b.type ? { icon: 'bookmark', label: 'Typ', value: b.type } : null,
       b.capacity ? { icon: 'users', label: 'Kapacita', value: `${b.capacity} osob` } : null,
-      b.cuisine_type ? { icon: 'utensils', label: 'Kuchyně', value: b.cuisine_type } : null,
+      b.cuisine_type ? { icon: 'coffee', label: 'Kuchyně', value: b.cuisine_type } : null,
+      // NOVÉ (B6):
+      b.opening_hours ? { icon: 'clock', label: 'Otevírací hodiny', value: b.opening_hours } : null,
+      b.admission ? { icon: 'piggy', label: 'Vstupné', value: b.admission } : null,
+      b.price_level ? { icon: 'piggy', label: 'Cenová hladina', value: '€'.repeat(parseInt(b.price_level, 10) || 1) } : null,
     ].filter(Boolean);
 
     tabContent = `
@@ -330,6 +332,22 @@ function renderBusinessProfile(data, id, kind) {
   const checkinStatus = state._checkinStatus;
   const wishStatus = state._wishlistStatus;
 
+  // B4: Owner v overlayi nevidí akcie — tie sú v "Můj profil"
+  // Neprihlásený: žiadne akcie (okrem webu)
+  // Prihlásený non-owner: Sledovat, Byl jsem tady, Chci navštívit
+  const ownerActions = '';
+  const nonOwnerActions = isLoggedIn() ? `
+    <button class="profile-action-btn ${data.is_following ? 'is-following' : ''}" data-action="toggle-follow" data-kind="${kind}" data-id="${id}">
+      ${data.is_following ? icon('check', { size: 15 }) + ' Sleduji' : icon('plus', { size: 15 }) + ' Sledovat'}
+    </button>
+    <button class="profile-action-btn ${checkinStatus?.checked_in ? 'is-following' : ''}" data-action="open-create-checkin" data-kind="${kind}" data-id="${id}" data-name="${escapeAttr(b.name)}">
+      ${icon('check', { size: 15 })} Byl jsem tady
+    </button>
+    <button class="profile-action-btn ${wishStatus?.in_wishlist ? 'is-in-wishlist' : ''}" data-action="toggle-wishlist" data-kind="${kind}" data-id="${id}">
+      ${icon('bookmark', { size: 15, filled: wishStatus?.in_wishlist })} <span data-wishlist-label>${wishStatus?.in_wishlist ? 'V seznamu' : 'Chci navštívit'}</span>
+    </button>
+  ` : '';
+
   return `
     <div class="page-scroll profile-biz-page">
       <div class="profile-cover" ${cover ? `style="background-image:url('${cover}')"` : ''}>
@@ -356,21 +374,7 @@ function renderBusinessProfile(data, id, kind) {
       </div>
 
       <div class="profile-biz-actions">
-        ${isOwn ? `
-          <button class="profile-action-btn" data-action="edit-profile" data-kind="${kind}" data-id="${id}">${icon('edit', { size: 15 })} Upravit</button>
-          <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${kind}" data-id="${id}">${icon('chart', { size: 15 })} Statistiky</button>
-          <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Přidat akci</button>
-        ` : (isLoggedIn() ? `
-          <button class="profile-action-btn ${data.is_following ? 'is-following' : ''}" data-action="toggle-follow" data-kind="${kind}" data-id="${id}">
-            ${data.is_following ? icon('check', { size: 15 }) + ' Sleduji' : icon('plus', { size: 15 }) + ' Sledovat'}
-          </button>
-          <button class="profile-action-btn ${checkinStatus?.checked_in ? 'is-following' : ''}" data-action="open-create-checkin" data-kind="${kind}" data-id="${id}" data-name="${escapeAttr(b.name)}">
-            ${icon('check', { size: 15 })} Byl jsem tady
-          </button>
-          <button class="profile-action-btn ${wishStatus?.in_wishlist ? 'is-in-wishlist' : ''}" data-action="toggle-wishlist" data-kind="${kind}" data-id="${id}">
-            ${icon('bookmark', { size: 15, filled: wishStatus?.in_wishlist })} <span data-wishlist-label>${wishStatus?.in_wishlist ? 'V seznamu' : 'Chci navštívit'}</span>
-          </button>
-        ` : '')}
+        ${nonOwnerActions}
         ${b.website ? `<a class="profile-action-btn" href="${escapeAttr(b.website)}" target="_blank" rel="noopener">${icon('globe', { size: 15 })} Web</a>` : ''}
       </div>
 
@@ -412,7 +416,10 @@ async function switchBizProfileTab(tab) {
   }
 }
 
-// EDIT PROFILE
+// ------------------------------------------------------------------
+// EDIT PROFILE — B5: centrovaný formulár s obmedzenou šírkou, sekcie
+// B6: nové polia (opening_hours, admission, price_level)
+// ------------------------------------------------------------------
 function renderEditProfileForm() {
   const kind = state.overlay.editKind;
   const id = state.overlay.editId;
@@ -423,33 +430,79 @@ function renderEditProfileForm() {
 
   if (kind === 'user') {
     return `
-      <form data-action="submit-edit-profile" data-kind="user" data-id="${id}" class="edit-profile-form">
-        <div class="form-field">
-          <label class="form-label">Handle (@username)</label>
-          <input class="form-input" name="handle" value="${escapeAttr(p.handle || '')}" pattern="[a-zA-Z0-9._-]{3,30}" minlength="3" maxlength="30" placeholder="napr. jan.novak" />
-          <p class="form-hint">3–30 znaků: písmena, čísla, tečka, podtržítko, pomlčka.</p>
+      <form data-action="submit-edit-profile" data-kind="user" data-id="${id}" class="edit-profile-form edit-profile-form--centered">
+        <div class="form-section">
+          <h3 class="form-section-title">Základní údaje</h3>
+          <div class="form-field">
+            <label class="form-label">Handle (@username)</label>
+            <input class="form-input" name="handle" value="${escapeAttr(p.handle || '')}" pattern="[a-zA-Z0-9._-]{3,30}" minlength="3" maxlength="30" placeholder="napr. jan.novak" />
+            <p class="form-hint">3–30 znaků: písmena, čísla, tečka, podtržítko, pomlčka.</p>
+          </div>
+          <div class="form-field"><label class="form-label">Jméno</label><input class="form-input" name="display_name" value="${escapeAttr(p.display_name || '')}" /></div>
+          <div class="form-field"><label class="form-label">Bio</label><textarea class="form-textarea" name="bio" maxlength="280">${escapeHtml(p.bio || '')}</textarea></div>
         </div>
-        <div class="form-field"><label class="form-label">Jméno</label><input class="form-input" name="display_name" value="${escapeAttr(p.display_name || '')}" /></div>
-        <div class="form-field"><label class="form-label">Bio</label><textarea class="form-textarea" name="bio" maxlength="280">${escapeHtml(p.bio || '')}</textarea></div>
-        <div class="form-field"><label class="form-label">Lokace</label><input class="form-input" name="location" value="${escapeAttr(p.location || '')}" /></div>
-        <div class="form-field"><label class="form-label">Web</label><input class="form-input" name="website" value="${escapeAttr(p.website || '')}" placeholder="https://" /></div>
-        <div class="form-field"><label class="form-label">Telefon</label><input class="form-input" name="phone" value="${escapeAttr(p.phone || '')}" /></div>
+        <div class="form-section">
+          <h3 class="form-section-title">Kontakt</h3>
+          <div class="form-field"><label class="form-label">Lokace</label><input class="form-input" name="location" value="${escapeAttr(p.location || '')}" /></div>
+          <div class="form-field"><label class="form-label">Web</label><input class="form-input" name="website" value="${escapeAttr(p.website || '')}" placeholder="https://" /></div>
+          <div class="form-field"><label class="form-label">Telefon</label><input class="form-input" name="phone" value="${escapeAttr(p.phone || '')}" /></div>
+        </div>
         <button class="form-submit-btn" type="submit">Uložit</button>
       </form>`;
   }
 
   const isGastro = kind === 'restaurants';
   const isAcc = kind === 'accommodation';
+  const isOrg = kind === 'organizations';
+
   return `
-    <form data-action="submit-edit-profile" data-kind="${kind}" data-id="${id}" class="edit-profile-form">
-      <div class="form-field"><label class="form-label">Název</label><input class="form-input" name="name" value="${escapeAttr(p.name || '')}" required /></div>
-      <div class="form-field"><label class="form-label">Popis</label><textarea class="form-textarea" name="description" maxlength="500">${escapeHtml(p.description || '')}</textarea></div>
-      ${renderEditRegionDistrictCity(p)}
-      ${isGastro ? `<div class="form-field"><label class="form-label">Kuchyně</label><select class="form-select" name="cuisine_type">
-        ${TYPES.cuisine.map((t) => `<option value="${t.value}" ${p.cuisine_type === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}</select></div>` : ''}
-      ${isAcc ? `<div class="form-field"><label class="form-label">Kapacita</label><input class="form-input" type="number" name="capacity" min="1" value="${p.capacity || ''}" /></div>` : ''}
-      <div class="form-field"><label class="form-label">Web</label><input class="form-input" name="website" value="${escapeAttr(p.website || '')}" /></div>
-      <div class="form-field"><label class="form-label">Telefon</label><input class="form-input" name="phone" value="${escapeAttr(p.phone || '')}" /></div>
+    <form data-action="submit-edit-profile" data-kind="${kind}" data-id="${id}" class="edit-profile-form edit-profile-form--centered">
+      <div class="form-section">
+        <h3 class="form-section-title">Základní údaje</h3>
+        <div class="form-field"><label class="form-label">Název</label><input class="form-input" name="name" value="${escapeAttr(p.name || '')}" required /></div>
+        <div class="form-field"><label class="form-label">Popis</label><textarea class="form-textarea" name="description" maxlength="500">${escapeHtml(p.description || '')}</textarea></div>
+        ${isGastro ? `<div class="form-field"><label class="form-label">Kuchyně</label><select class="form-select" name="cuisine_type">
+          ${TYPES.cuisine.map((t) => `<option value="${t.value}" ${p.cuisine_type === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}</select></div>` : ''}
+        ${isAcc ? `<div class="form-field"><label class="form-label">Kapacita</label><input class="form-input" type="number" name="capacity" min="1" value="${p.capacity || ''}" /></div>` : ''}
+      </div>
+
+      <div class="form-section">
+        <h3 class="form-section-title">Adresa</h3>
+        ${renderEditRegionDistrictCity(p)}
+      </div>
+
+      <div class="form-section">
+        <h3 class="form-section-title">Kontakt</h3>
+        <div class="form-field"><label class="form-label">Web</label><input class="form-input" name="website" value="${escapeAttr(p.website || '')}" placeholder="https://" /></div>
+        <div class="form-field"><label class="form-label">Telefon</label><input class="form-input" name="phone" value="${escapeAttr(p.phone || '')}" /></div>
+      </div>
+
+      <div class="form-section">
+        <h3 class="form-section-title">Otevírací hodiny a ceny</h3>
+        <div class="form-field">
+          <label class="form-label">Otevírací hodiny</label>
+          <input class="form-input" name="opening_hours" value="${escapeAttr(p.opening_hours || '')}" placeholder="např. Po–Pá 9:00–17:00, So–Ne 10:00–18:00" maxlength="200" />
+        </div>
+        ${isOrg ? `
+          <div class="form-field">
+            <label class="form-label">Vstupné</label>
+            <input class="form-input" name="admission" value="${escapeAttr(p.admission || '')}" placeholder="např. Dospělí 150 Kč, děti 80 Kč" maxlength="200" />
+          </div>
+        ` : ''}
+        ${(isGastro || isAcc) ? `
+          <div class="form-field">
+            <label class="form-label">Cenová hladina</label>
+            <select class="form-select" name="price_level">
+              <option value="" ${!p.price_level ? 'selected' : ''}>— nevyplněno —</option>
+              <option value="1" ${p.price_level === '1' ? 'selected' : ''}>€ (levné)</option>
+              <option value="2" ${p.price_level === '2' ? 'selected' : ''}>€€ (střední)</option>
+              <option value="3" ${p.price_level === '3' ? 'selected' : ''}>€€€ (dražší)</option>
+              <option value="4" ${p.price_level === '4' ? 'selected' : ''}>€€€€ (luxusní)</option>
+            </select>
+          </div>
+        ` : ''}
+      </div>
+
       <button class="form-submit-btn" type="submit">Uložit</button>
     </form>`;
 }
