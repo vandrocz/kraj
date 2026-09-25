@@ -1,9 +1,20 @@
 // ============================================================
-// STORIES — 24h príbehy (video max 10s alebo max 3 fotky)
+// STORIES — 24h príbehy s add button
 // ============================================================
 
 const STORY_MAX_DURATION = 10000;
 const STORY_PHOTO_DURATION = 3333;
+
+// Tlačidlo pre pridanie story — použiteľné v profile
+function renderAddStoryButton() {
+  if (!isLoggedIn()) return '';
+  const groups = state.stories?.groups || [];
+  const meGroup = groups.find((g) => g.is_me);
+  return `
+    <button class="profile-action-btn" data-action="${meGroup ? 'open-story-viewer' : 'open-create-story'}" data-group-key="me" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
+      ${icon('camera', { size: 15 })} ${escapeHtml(t('stories.add'))}
+    </button>`;
+}
 
 async function loadStoriesFeed() {
   if (!isLoggedIn()) { state.stories = { groups: [] }; return; }
@@ -30,7 +41,7 @@ function renderStoriesBar() {
           : `<span class="story-initial">${(state.user.display_name || '?').charAt(0).toUpperCase()}</span>`}
         ${!meGroup ? `<span class="story-plus">${icon('plus', { size: 12 })}</span>` : ''}
       </div>
-      <span class="story-name">Já</span>
+      <span class="story-name">${escapeHtml(t('stories.me'))}</span>
     </button>`;
 
   const othersHtml = others.map((g) => `
@@ -94,7 +105,7 @@ function renderStoryViewerOverlay() {
           <span>${escapeHtml(group.author_name)}</span>
           <span class="story-viewer-time">${timeAgo(story.created_at)}</span>
         </span>
-        <button class="story-viewer-close" data-action="close-story-viewer">${icon('close', { size: 22 })}</button>
+        <button class="story-viewer-close" data-action="close-story-viewer" aria-label="${escapeAttr(t('common.close'))}">${icon('close', { size: 22 })}</button>
       </div>
       <div class="story-viewer-body">
         ${mediaHtml}
@@ -147,9 +158,6 @@ function storyPrev() {
 
 function closeStoryViewer() { closeOverlay(); }
 
-// ------------------------------------------------------------------
-// Vytvorenie story (video alebo max 3 fotky)
-// ------------------------------------------------------------------
 function openCreateStory() {
   state.overlay = { type: 'create-story', files: [], previews: [], uploading: false, storyType: 'photos' };
   pushHistoryState('create-story');
@@ -163,14 +171,14 @@ function renderCreateStoryOverlay() {
 
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Přidat story')}
+      ${renderBackHeader(t('stories.title'))}
       <div class="profile-section">
         <div class="story-type-toggle">
           <button class="story-type-btn ${o.storyType === 'photos' ? 'is-active' : ''}" data-action="story-type" data-type="photos">
-            ${icon('image', { size: 16 })} Fotky (max 3)
+            ${icon('image', { size: 16 })} ${escapeHtml(t('stories.photosType'))}
           </button>
           <button class="story-type-btn ${o.storyType === 'video' ? 'is-active' : ''}" data-action="story-type" data-type="video">
-            ${icon('camera', { size: 16 })} Video (max 10s)
+            ${icon('camera', { size: 16 })} ${escapeHtml(t('stories.videoType'))}
           </button>
         </div>
 
@@ -184,17 +192,17 @@ function renderCreateStoryOverlay() {
                     <button type="button" class="file-preview-remove" data-action="remove-story-file" data-index="${i}">${icon('close', { size: 12 })}</button>
                   </div>
                 `).join('')}</div>`
-              : `${icon('image', { size: 28 })}<br/>Klikni pro výběr ${o.storyType === 'video' ? 'videa' : '1–3 fotek'}`}
+              : `${icon('image', { size: 28 })}<br/>${escapeHtml(o.storyType === 'video' ? t('stories.pickVideo') : t('stories.pickPhotos'))}`}
           </div>
           <div class="form-field">
-            <label class="form-label">Popisek (nepovinné)</label>
+            <label class="form-label">${escapeHtml(t('stories.caption'))}</label>
             <input class="form-input" name="caption" maxlength="200" />
           </div>
           <button class="form-submit-btn" type="submit" ${files.length === 0 ? 'disabled' : ''}>
-            ${o.uploading ? 'Nahrávám…' : 'Zveřejnit story (24 h)'}
+            ${o.uploading ? escapeHtml(t('common.uploading')) : escapeHtml(t('stories.publish'))}
           </button>
         </form>
-        <p class="form-hint">Story zmizí po 24 hodinách. Max 10 sekund.</p>
+        <p class="form-hint">${escapeHtml(t('stories.hint'))}</p>
       </div>
     </div>`;
 }
@@ -206,12 +214,12 @@ async function onStoryFileSelected(inputEl) {
 
   if (o.storyType === 'video') {
     const file = files[0];
-    if (!file.type.startsWith('video/')) { showToast('Vyber video.'); return; }
+    if (!file.type.startsWith('video/')) { showToast(t('stories.videoType')); return; }
     o.files = [file];
     o.previews = [{ type: 'video', url: URL.createObjectURL(file) }];
   } else {
     const photos = files.filter((f) => f.type.startsWith('image/')).slice(0, 3);
-    if (photos.length === 0) { showToast('Vyber fotky.'); return; }
+    if (photos.length === 0) { showToast(t('stories.photosType')); return; }
     const compressed = [];
     for (const f of photos) {
       try { compressed.push(await compressImage(f, { maxDim: 1080, quality: 0.85 })); }
@@ -253,7 +261,7 @@ async function handleCreateStorySubmit(form) {
       media_type: o.storyType === 'video' ? 'video' : 'photo',
     });
 
-    showToast('Story zveřejněna.');
+    showToast(t('stories.published'));
     state.stories = null;
     closeOverlay();
     loadStoriesFeed();
