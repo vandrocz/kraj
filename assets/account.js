@@ -1,5 +1,5 @@
 // ============================================================
-// SEKCE 5: MŮJ ÚČET
+// SEKCE 5: MŮJ PROFIL (zlúčené s "Můj účet" podľa B1)
 // ============================================================
 
 const accountFormState = {
@@ -11,11 +11,17 @@ const accountFormState = {
   formBusy: false,
 };
 
+// ------------------------------------------------------------------
+// B1: Toto je teraz jediná "Profil" karta. Hlavička má iba 2 tlačidlá:
+// zvonček (s badge) + nastavenia.
+// ------------------------------------------------------------------
 function renderAccountPage() {
   if (!isLoggedIn()) {
     const html = `
       <div class="page-scroll">
-        ${renderHeader('Můj účet')}
+        ${renderHeader('Můj profil', `
+          <button class="header-icon-btn" data-action="open-settings" aria-label="Nastavení">${icon('settings', { size: 19 })}</button>
+        `)}
         ${renderAuthCard()}
       </div>`;
     setTimeout(() => {
@@ -24,16 +30,18 @@ function renderAccountPage() {
     }, 80);
     return html;
   }
+
+  const headerActions = `
+    <button class="header-icon-btn" data-action="open-notifications" style="position:relative" aria-label="Notifikace">
+      ${icon('bell', { size: 19 })}
+      ${state.unreadNotifications > 0 ? `<span class="nav-badge">${state.unreadNotifications > 9 ? '9+' : state.unreadNotifications}</span>` : ''}
+    </button>
+    <button class="header-icon-btn" data-action="open-settings" aria-label="Nastavení">${icon('settings', { size: 19 })}</button>
+  `;
+
   return `
     <div class="page-scroll">
-      ${renderHeader('Můj účet', `
-        <button class="header-icon-btn" data-action="open-notifications" style="position:relative" aria-label="Notifikace">
-          ${icon('bell', { size: 19 })}
-          ${state.unreadNotifications > 0 ? `<span class="nav-badge">${state.unreadNotifications > 9 ? '9+' : state.unreadNotifications}</span>` : ''}
-        </button>
-        <button class="header-icon-btn" data-action="open-search" aria-label="Hledat">${icon('search', { size: 19 })}</button>
-        <button class="header-icon-btn" data-action="open-settings" aria-label="Nastavení">${icon('settings', { size: 19 })}</button>
-      `)}
+      ${renderHeader('Můj profil', headerActions)}
       ${renderVerifyBanner()}
       ${renderAccountHeaderCard()}
       ${renderRoleSpecificContent()}
@@ -61,7 +69,7 @@ function renderAuthCard() {
         <button class="auth-tab ${state.authView === 'register' ? 'is-active' : ''}" data-action="set-auth-view" data-view="register">Registrace</button>
       </div>
       ${accountFormState.formError ? `<div class="form-error">${accountFormState.formError}</div>` : ''}
-      <div id="google-signin-container" style="display:flex;justify-content:center;margin-bottom:18px;"></div>
+      <div id="google-signin-container" style="display:flex;justify-content:center;margin-bottom:18px;max-width:100%;overflow:hidden;"></div>
       <div class="auth-divider"><span>nebo</span></div>
       ${state.authView === 'login' ? renderLoginForm() : renderRegisterForm()}
       ${state.authView === 'login' ? `<p style="text-align:center;margin-top:14px;font-size:12.5px"><button type="button" data-action="open-forgot" style="color:var(--c-primary-dark);font-weight:600">Zapomněl jsi heslo?</button></p>` : ''}
@@ -116,7 +124,7 @@ function renderRegisterForm() {
         <button type="button" class="form-role-btn ${role === 'hotelier' ? 'is-selected' : ''}" data-action="set-register-role" data-role="hotelier">Podnik</button>
       </div>
       <input type="hidden" name="role" value="${role}" />
-      <div class="form-field"><label class="form-label">Zobrazované jméno</label><input class="form-input" name="displayName" required /></div>
+      ${role === 'user' ? `<div class="form-field"><label class="form-label">Zobrazované jméno</label><input class="form-input" name="displayName" required /></div>` : ''}
       <div class="form-field"><label class="form-label">E-mail</label><input class="form-input" type="email" name="email" required /></div>
       <div class="form-field"><label class="form-label">Heslo</label><input class="form-input" type="password" name="password" required minlength="8" /><p class="form-hint">Alespoň 8 znaků.</p></div>
       ${roleFields}
@@ -204,6 +212,8 @@ function finishLogin(data) {
   loadNotifications();
   if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(data.user);
   if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
+  // C3: po prihlásení s oneskorením požiadaj o push permisiu
+  if (typeof maybeRequestPushPermission === 'function') maybeRequestPushPermission();
 }
 
 async function handleRegisterSubmit(form) {
@@ -239,6 +249,7 @@ function handleLogout() {
   state.overlay = null;
   state.unreadNotifications = 0;
   state._pushSubscribed = false;
+  state._pushPrompted = false;
   showToast('Byl jsi odhlášen.');
   renderApp();
 }
@@ -309,7 +320,9 @@ function renderUserAboutSection() {
     </div>`;
 }
 
-// BUSINESS
+// ------------------------------------------------------------------
+// B3: Všetky akcie podniku na jednom mieste v sekcii "Tvůj podnik"
+// ------------------------------------------------------------------
 function renderBusinessDashboard() {
   const businesses = state.businesses || [];
   if (businesses.length === 0) return '<p class="empty-state">K účtu není přiřazen žádný podnik.</p>';
@@ -326,34 +339,47 @@ function renderBusinessDashboard() {
 
   const vreq = state._verificationStatus?.request;
   const isPending = vreq?.status === 'pending';
+  const isVerified = Number(selected.is_verified);
+
+  const postFormOpen = accountFormState._postFormOpen || false;
 
   return `
     <div class="profile-section">
       <h3 class="profile-section-title">Tvůj podnik</h3>
-      <div class="business-picker">
-        ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${Number(b.is_verified) ? '✓' : ''}</button>`).join('')}
-      </div>
-      <div style="padding:0 16px 10px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="profile-action-btn" data-action="open-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('user', { size: 15 })} Zobrazit profil</button>
-        <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">${icon('chart', { size: 15 })} Statistiky</button>
-        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Přidat akci</button>
-      </div>
-      ${!Number(selected.is_verified) && !isPending ? `
-        <div style="padding:0 16px 10px">
-          <button class="profile-action-btn" data-action="open-verification-request" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
-            ${icon('shield', { size: 15 })} Ověřit účet firmy
-          </button>
+
+      ${businesses.length > 1 ? `
+        <div class="business-picker">
+          ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${Number(b.is_verified) ? '✓' : ''}</button>`).join('')}
         </div>
       ` : ''}
-      ${!Number(selected.is_verified) && isPending ? `
+
+      <div style="padding:0 16px 10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="profile-action-btn" data-action="open-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('user', { size: 15 })} Profil</button>
+        <button class="profile-action-btn" data-action="edit-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('edit', { size: 15 })} Upravit</button>
+        <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">${icon('chart', { size: 15 })} Statistiky</button>
+        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Přidat akci</button>
+        <button class="profile-action-btn" data-action="toggle-post-form" data-id="${selected.id}">${icon('image', { size: 15 })} Přidat příspěvek</button>
+        ${!isVerified && !isPending ? `
+          <button class="profile-action-btn" data-action="open-verification-request" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
+            ${icon('shield', { size: 15 })} Ověřit
+          </button>
+        ` : ''}
+      </div>
+
+      ${!isVerified && isPending ? `
         <p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">⏳ Žádost o ověření čeká na schválení.</p>
       ` : ''}
-      ${Number(selected.is_verified) ? `
+      ${isVerified ? `
         <p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">✓ Profil je ověřený</p>
       ` : ''}
     </div>
 
-    <div class="profile-section">
+    ${postFormOpen ? renderInlineBusinessPostForm(selected, targetFeed) : ''}`;
+}
+
+function renderInlineBusinessPostForm(selected, targetFeed) {
+  return `
+    <div class="profile-section" id="inline-post-form">
       <h3 class="profile-section-title">Přidat příspěvek (max. 4 fotky)</h3>
       <form data-action="submit-business-post" data-business-id="${selected.id}" data-target-feed="${targetFeed}">
         <div class="file-drop" data-action="trigger-file-input">
@@ -442,7 +468,6 @@ async function handleBusinessPostSubmit(form) {
 
   let html = getEditorHtml(form);
 
-  // Pridať odkaz z formulárových polí
   const linkUrl = (form.querySelector('[name="link_url"]')?.value || '').trim();
   const linkText = (form.querySelector('[name="link_text"]')?.value || '').trim();
   if (linkUrl) {
@@ -469,6 +494,7 @@ async function handleBusinessPostSubmit(form) {
     showToast('Příspěvek zveřejněn!');
     if (state.socialFeeds[targetFeed]) state.socialFeeds[targetFeed].items = [];
     accountFormState.postFiles = [];
+    accountFormState._postFormOpen = false;
     renderApp();
   } catch (err) {
     showToast(err.message);
@@ -503,7 +529,7 @@ function renderProfileStatsOverlay() {
             <div class="stat-card"><div class="stat-card-value">${fmt(s.posts)}</div><div class="stat-card-label">Příspěvků</div></div>
             <div class="stat-card"><div class="stat-card-value">${fmt(s.events)}</div><div class="stat-card-label">Akce</div></div>
             <div class="stat-card"><div class="stat-card-value">${fmt(s.followers)}</div><div class="stat-card-label">Sledujících</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.likes)}</div><div class="stat-card-label">Lajků</div></div>
+            <div class="stat-card"><div class="stat-card-value">${fmt(s.likes)}</div><div class="stat-card-label">Isker</div></div>
             <div class="stat-card"><div class="stat-card-value">${fmt(s.comments)}</div><div class="stat-card-label">Komentářů</div></div>
           </div>
         </div>
@@ -824,10 +850,7 @@ function renderAdminTools() {
     </div>`;
 }
 
-// ============================================================
 // ADMIN LOADERS + AKCIE
-// ============================================================
-
 async function loadAdminStats() {
   try { state.adminStats = await apiGet('/api/admin/stats'); }
   catch { state.adminStats = { totals: {} }; }
