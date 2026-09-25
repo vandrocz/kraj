@@ -77,13 +77,39 @@ const state = {
   loading: {},
 
   _mapNavCollapsed: true,
+  _historyPushed: false,
 };
 
 // ------------------------------------------------------------------
-// Cache pre iframe mapy. Uchováva iframe element mimo DOM medzi
-// renderApp() volaniami, aby sa neznovu-načítaval pri každom re-renderi.
+// Cache pre iframe mapy — zabraňuje reloadu pri re-renderoch
 // ------------------------------------------------------------------
 let _mapIframeCache = null;
+
+// ------------------------------------------------------------------
+// History API — zatváranie lightboxov/overlayov tlačidlom späť
+// ------------------------------------------------------------------
+function pushHistoryState(type) {
+  try {
+    if (state._historyPushed) return;
+    history.pushState({ naskraj: true, type }, '', location.href);
+    state._historyPushed = true;
+  } catch {}
+}
+
+function clearHistoryState() {
+  try {
+    if (state._historyPushed) {
+      state._historyPushed = false;
+      history.back();
+    }
+  } catch {}
+}
+
+window.addEventListener('popstate', () => {
+  state._historyPushed = false;
+  if (state.lightbox) { closeLightbox(true); return; }
+  if (state.overlay) { closeOverlay(true); return; }
+});
 
 function fmt(n) { return Number(n || 0).toLocaleString('cs-CZ'); }
 
@@ -148,6 +174,7 @@ function setupInfiniteScroll(loadMoreFn) {
 function renderHeader(title, rightHtml) {
   return `
     <header class="app-header">
+      <img src="https://cdn.vandro.cz/Untitled18_20260523111243.png" alt="" class="app-header-logo" />
       <h1 class="app-header-title">${title}</h1>
       <div class="app-header-right">${rightHtml || ''}</div>
     </header>`;
@@ -190,15 +217,19 @@ const TABS = [
 
 const VALID_TABS = ['organizations', 'accommodation', 'gastro', 'map', 'events', 'account'];
 
+// ------------------------------------------------------------------
+// OPRAVA: Bottom nav — na mape na mobile len šípka späť, na PC plná lišta
+// ------------------------------------------------------------------
 function renderBottomNav() {
   const isMapTab = state.tab === 'map' && !state.overlay;
-  const collapsed = isMapTab && state._mapNavCollapsed;
+  const isMobile = window.innerWidth < 720;
 
-  if (collapsed) {
+  // Na mobile + mape: len tlačidlo so šípkou späť
+  if (isMapTab && isMobile) {
     return `
       <nav class="bottom-nav bottom-nav--collapsed">
-        <button class="bottom-nav-toggle" data-action="toggle-map-nav" aria-label="Rozbalit menu">
-          ${icon('chevronUp', { size: 20 })}
+        <button class="bottom-nav-toggle" data-action="toggle-map-nav" aria-label="Zpět">
+          ${icon('arrowLeft', { size: 20 })}
         </button>
       </nav>`;
   }
@@ -217,11 +248,7 @@ function renderBottomNav() {
       </button>`;
   }).join('');
 
-  const collapseBtn = isMapTab
-    ? `<button class="bottom-nav-collapse" data-action="toggle-map-nav" aria-label="Zbalit menu">${icon('chevronDown', { size: 18 })}</button>`
-    : '';
-
-  return `<nav class="bottom-nav">${btns}${collapseBtn}</nav>`;
+  return `<nav class="bottom-nav">${btns}</nav>`;
 }
 
 function renderFilterBar(feedKey, typeOptions, showCuisine) {
@@ -269,11 +296,13 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
 // ============================================================
 function openModal(opts) {
   state._modal = opts || {};
+  pushHistoryState('modal');
   renderApp();
 }
-function closeModal() {
+function closeModal(fromHistory = false) {
   state._modal = null;
   state._modalLoading = false;
+  if (!fromHistory && state._historyPushed) clearHistoryState();
   renderApp();
 }
 function renderModal() {
@@ -323,12 +352,7 @@ function renderApp() {
 
   const root = document.getElementById('root');
 
-  // ------------------------------------------------------------------
-  // KĽÚČOVÁ OPRAVA: Pred prepísaním innerHTML odpojíme iframe mapy
-  // (ak existuje) a odložíme ho do cache. Po renderi ho vložíme späť.
-  // Presun existujúceho iframe elementu NEspôsobuje reload, na rozdiel
-  // od opätovného vytvorenia.
-  // ------------------------------------------------------------------
+  // Odpoj iframe mapy pred prepísaním innerHTML
   const liveMapIframe = document.getElementById('vandro-map-iframe');
   if (liveMapIframe) {
     liveMapIframe.remove();
@@ -389,10 +413,7 @@ function renderApp() {
     </div>
     ${renderModal()}`;
 
-  // ------------------------------------------------------------------
-  // Vloženie iframe mapy späť do wrappera (ak sme na mape a nie je overlay).
-  // Využívame cached iframe, aby sa neznovu-načítal.
-  // ------------------------------------------------------------------
+  // Vlož iframe mapy späť
   if (state.tab === 'map' && !state.overlay && !hideAll) {
     const wrap = document.querySelector('[data-map-wrap]');
     if (wrap) {
@@ -407,7 +428,6 @@ function renderApp() {
 
   applySeo();
 
-  // Obnov lightbox, ak bol otvorený pred renderom
   if (state.lightbox && state.lightbox.images && state.lightbox.images.length > 0 && !hideLightbox) {
     const lbEl = document.getElementById('lightbox');
     if (lbEl) {
@@ -469,7 +489,7 @@ async function applySeo() {
 }
 
 function openProfile(kind, id) {
-  if (state.lightbox) closeLightbox();
+  if (state.lightbox) closeLightbox(true);
   let k = kind; if (kind === 'organization') k = 'organizations'; if (kind === 'gastro') k = 'restaurants';
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'profile', kind: k, id };
@@ -477,25 +497,31 @@ function openProfile(kind, id) {
   state._reviews = null; state._myReview = null;
   state._checkinStatus = undefined; state._wishlistStatus = undefined; state._verificationStatus = undefined;
   state._userProfileCheckins = undefined;
+  pushHistoryState('overlay');
   renderApp();
   window.scrollTo(0, 0);
 }
 
-function closeOverlay() { const prev = state.overlayStack.pop(); state.overlay = prev || null; renderApp(); }
+function closeOverlay(fromHistory = false) {
+  const prev = state.overlayStack.pop();
+  state.overlay = prev || null;
+  if (!fromHistory && state._historyPushed) clearHistoryState();
+  renderApp();
+}
 function clearOverlay() { state.overlay = null; state.overlayStack = []; renderApp(); }
-function openSettings() { state.overlay = { type: 'settings' }; renderApp(); }
-function openSecurity() { state.overlay = { type: 'security' }; renderApp(); }
-function openNotifications() { state.overlay = { type: 'notifications' }; renderApp(); loadNotifications(); }
-function openSearch() { state.overlay = { type: 'search' }; renderApp(); }
-function openBlocks() { state.overlay = { type: 'blocks' }; renderApp(); loadBlocks(); }
-function openFollowers(kind, id) { state.overlay = { type: 'followers', kind, id }; renderApp(); loadFollowers(kind, id); }
-function openFollowing() { state.overlay = { type: 'following' }; renderApp(); loadFollowing(); }
-function openForgotPassword() { state.overlay = { type: 'forgot' }; renderApp(); }
-function openLoginLogs() { state.overlay = { type: 'login-logs' }; renderApp(); loadLoginLogs(); }
-function openBookmarks() { state.overlay = { type: 'bookmarks' }; state._bookmarks = null; renderApp(); loadBookmarks(); }
-function openBadges() { state.overlay = { type: 'badges' }; state._userBadges = null; renderApp(); if (isLoggedIn()) loadUserBadges(state.user.id); }
-function openUserCheckins(userId) { state.overlay = { type: 'user-checkins', userId }; state._userCheckins = null; renderApp(); loadUserCheckins(userId); }
-function openWishlist() { state.overlay = { type: 'wishlist' }; state._wishlist = null; renderApp(); loadWishlist(); }
+function openSettings() { state.overlay = { type: 'settings' }; pushHistoryState('overlay'); renderApp(); }
+function openSecurity() { state.overlay = { type: 'security' }; pushHistoryState('overlay'); renderApp(); }
+function openNotifications() { state.overlay = { type: 'notifications' }; pushHistoryState('overlay'); renderApp(); loadNotifications(); }
+function openSearch() { state.overlay = { type: 'search' }; pushHistoryState('overlay'); renderApp(); }
+function openBlocks() { state.overlay = { type: 'blocks' }; pushHistoryState('overlay'); renderApp(); loadBlocks(); }
+function openFollowers(kind, id) { state.overlay = { type: 'followers', kind, id }; pushHistoryState('overlay'); renderApp(); loadFollowers(kind, id); }
+function openFollowing() { state.overlay = { type: 'following' }; pushHistoryState('overlay'); renderApp(); loadFollowing(); }
+function openForgotPassword() { state.overlay = { type: 'forgot' }; pushHistoryState('overlay'); renderApp(); }
+function openLoginLogs() { state.overlay = { type: 'login-logs' }; pushHistoryState('overlay'); renderApp(); loadLoginLogs(); }
+function openBookmarks() { state.overlay = { type: 'bookmarks' }; state._bookmarks = null; pushHistoryState('overlay'); renderApp(); loadBookmarks(); }
+function openBadges() { state.overlay = { type: 'badges' }; state._userBadges = null; pushHistoryState('overlay'); renderApp(); if (isLoggedIn()) loadUserBadges(state.user.id); }
+function openUserCheckins(userId) { state.overlay = { type: 'user-checkins', userId }; state._userCheckins = null; pushHistoryState('overlay'); renderApp(); loadUserCheckins(userId); }
+function openWishlist() { state.overlay = { type: 'wishlist' }; state._wishlist = null; pushHistoryState('overlay'); renderApp(); loadWishlist(); }
 
 function persistTab(tab) { try { localStorage.setItem('naskraj_tab', tab); } catch {} }
 function restoreTab() {
@@ -509,9 +535,9 @@ function restoreTab() {
 function switchTab(tab) {
   state.overlay = null;
   state.overlayStack = [];
-  if (state.lightbox) closeLightbox();
+  if (state.lightbox) closeLightbox(true);
+  if (state._historyPushed) { state._historyPushed = false; }
   state.tab = tab;
-  if (tab === 'map') state._mapNavCollapsed = true;
   persistTab(tab);
   getFeedTitle(tab);
   renderApp();
@@ -531,10 +557,12 @@ function openLightbox(images, index = 0, caption = '', post = null) {
     index: Math.max(0, Math.min(index, images.length - 1)),
     caption,
     post,
+    expanded: false,
   };
   updateLightboxDOM();
   document.getElementById('lightbox')?.classList.add('is-open');
   document.body.style.overflow = 'hidden';
+  pushHistoryState('lightbox');
 
   if (post && post.id && post.__comments == null) {
     loadLightboxComments(post.id);
@@ -557,10 +585,11 @@ async function loadLightboxComments(postId) {
   }
 }
 
-function closeLightbox() {
+function closeLightbox(fromHistory = false) {
   document.getElementById('lightbox')?.classList.remove('is-open');
   document.body.style.overflow = '';
   state.lightbox = null;
+  if (!fromHistory && state._historyPushed) clearHistoryState();
 }
 
 function lightboxPrev() {
@@ -573,6 +602,13 @@ function lightboxNext() {
   if (!state.lightbox) return;
   state.lightbox.index = (state.lightbox.index + 1) % state.lightbox.images.length;
   updateLightboxDOM();
+}
+
+function toggleLightboxExpand() {
+  if (!state.lightbox) return;
+  state.lightbox.expanded = !state.lightbox.expanded;
+  const pane = document.querySelector('.lightbox-info-pane');
+  if (pane) pane.classList.toggle('is-expanded', state.lightbox.expanded);
 }
 
 function updateLightboxDOM() {
@@ -636,6 +672,7 @@ function updateLightboxDOM() {
       }
 
       info.innerHTML = `
+        <div class="lightbox-drag-handle" data-action="toggle-lightbox-expand"></div>
         <header class="lightbox-post-head">
           <button data-action="open-profile" data-kind="${post.__feedKey || ''}" data-id="${biz.id || ''}" style="background:none;border:none;padding:0;cursor:pointer;flex-shrink:0;">
             ${avatarHtml}
@@ -762,7 +799,7 @@ async function openNotification(notifId) {
     return;
   }
 
-  if ((t === 'follow' || t === 'story_reply') && n.actor_id) {
+  if ((t === 'follow' || t === 'story_reply' || t === 'story_like') && n.actor_id) {
     renderApp();
     openProfile('user', n.actor_id);
     return;
@@ -913,7 +950,6 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') lightboxPrev();
 });
 
-// C3: push permisia
 function maybeRequestPushPermission() {
   if (!isLoggedIn()) return;
   if (state._pushPrompted) return;
