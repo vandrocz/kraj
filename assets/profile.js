@@ -532,44 +532,56 @@ async function loadSettings() {
 function renderSettingsOverlay() {
   if (!state._settings) loadSettings();
   const s = state._settings || { public_profile: true, show_contributions: true, public_checkins: true };
+  const currentLang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Nastavení')}
+      ${renderBackHeader(t('settings.title'))}
       <div class="profile-section">
-        <h3 class="profile-section-title">Notifikace</h3>
+        <h3 class="profile-section-title">${escapeHtml(t('settings.language'))}</h3>
+        <label class="settings-toggle" style="flex-direction:column;align-items:flex-start;gap:8px;">
+          <span style="font-weight:600">${escapeHtml(t('settings.languageLabel'))}</span>
+          <select class="form-select" data-action="lang-select" style="width:100%">
+            <option value="cs" ${currentLang === 'cs' ? 'selected' : ''}>${escapeHtml(t('settings.langCs'))}</option>
+            <option value="sk" ${currentLang === 'sk' ? 'selected' : ''}>${escapeHtml(t('settings.langSk'))}</option>
+            <option value="en" ${currentLang === 'en' ? 'selected' : ''}>${escapeHtml(t('settings.langEn'))}</option>
+          </select>
+        </label>
+      </div>
+      <div class="profile-section">
+        <h3 class="profile-section-title">${escapeHtml(t('settings.notifications'))}</h3>
         <label class="settings-toggle">
-          <span>Push notifikace v prohlížeči</span>
+          <span>${escapeHtml(t('settings.pushNotifications'))}</span>
           <input type="checkbox" data-action="push-toggle" ${state._pushSubscribed ? 'checked' : ''} />
         </label>
       </div>
       <div class="profile-section">
-        <h3 class="profile-section-title">Soukromí</h3>
-        <label class="settings-toggle"><span>Veřejný profil</span><input type="checkbox" data-action="setting-toggle" data-key="public_profile" ${s.public_profile ? 'checked' : ''} /></label>
-        <label class="settings-toggle"><span>Zobrazovat moje příspěvky</span><input type="checkbox" data-action="setting-toggle" data-key="show_contributions" ${s.show_contributions ? 'checked' : ''} /></label>
+        <h3 class="profile-section-title">${escapeHtml(t('settings.privacy'))}</h3>
+        <label class="settings-toggle"><span>${escapeHtml(t('settings.publicProfile'))}</span><input type="checkbox" data-action="setting-toggle" data-key="public_profile" ${s.public_profile ? 'checked' : ''} /></label>
+        <label class="settings-toggle"><span>${escapeHtml(t('settings.showPosts'))}</span><input type="checkbox" data-action="setting-toggle" data-key="show_contributions" ${s.show_contributions ? 'checked' : ''} /></label>
         <label class="settings-toggle">
-          <span>Zobrazovat veřejně navštívená místa</span>
+          <span>${escapeHtml(t('settings.showCheckins'))}</span>
           <input type="checkbox" data-action="setting-toggle" data-key="public_checkins" ${s.public_checkins ? 'checked' : ''} />
         </label>
       </div>
       <div class="profile-section">
-        <h3 class="profile-section-title">Účet</h3>
-        <button class="settings-row" data-action="edit-profile" data-kind="user" data-id="${state.user.id}">${icon('edit', { size: 17 })} Upravit profil ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
-        <button class="settings-row" data-action="open-security">${icon('shield', { size: 17 })} Bezpečnost a 2FA ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
-        <button class="settings-row" data-action="open-login-logs">${icon('chart', { size: 17 })} Historie přihlášení ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
-        <button class="settings-row" data-action="open-blocks">${icon('ban', { size: 17 })} Blokovaní uživatelé ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
-        <button class="settings-row" data-action="open-following">${icon('users', { size: 17 })} Sleduji ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
-        <button class="settings-row" data-action="open-bookmarks">${icon('bookmark', { size: 17 })} Uložené příspěvky ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
-        <button class="settings-row" data-action="open-wishlist">${icon('bookmark', { size: 17 })} Chci navštívit ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
+        <h3 class="profile-section-title">${escapeHtml(t('settings.account'))}</h3>
+        <button class="settings-row" data-action="edit-profile" data-kind="user" data-id="${state.user.id}">${icon('edit', { size: 17 })} ${escapeHtml(t('settings.editProfile'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
+        <button class="settings-row" data-action="open-security">${icon('shield', { size: 17 })} ${escapeHtml(t('settings.security'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
+        <button class="settings-row" data-action="open-login-logs">${icon('chart', { size: 17 })} ${escapeHtml(t('settings.loginHistory'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
+        <button class="settings-row" data-action="open-blocks">${icon('ban', { size: 17 })} ${escapeHtml(t('settings.blockedUsers'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
+        <button class="settings-row" data-action="open-following">${icon('users', { size: 17 })} ${escapeHtml(t('settings.following'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
+        <button class="settings-row" data-action="open-bookmarks">${icon('bookmark', { size: 17 })} ${escapeHtml(t('settings.savedPosts'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
+        <button class="settings-row" data-action="open-wishlist">${icon('bookmark', { size: 17 })} ${escapeHtml(t('settings.wishlist'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
       </div>
       <div class="profile-section">
-        <h3 class="profile-section-title">Data a soukromí (GDPR)</h3>
-        <button class="settings-row" data-action="export-data">${icon('download', { size: 17 })} Stáhnout moje data ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
-        <a class="settings-row" href="/obchodni-podminky" target="_blank" rel="noopener">${icon('help', { size: 17 })} Obchodní podmínky ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
-        <a class="settings-row" href="/ochrana-osobnich-udaju" target="_blank" rel="noopener">${icon('help', { size: 17 })} Ochrana osobních údajů ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
-        <button class="settings-row" data-action="delete-account" style="color:#B3273C">${icon('trash', { size: 17 })} Smazat účet ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
+        <h3 class="profile-section-title">${escapeHtml(t('settings.gdpr'))}</h3>
+        <button class="settings-row" data-action="export-data">${icon('download', { size: 17 })} ${escapeHtml(t('settings.downloadData'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
+        <a class="settings-row" href="/obchodni-podminky" target="_blank" rel="noopener">${icon('help', { size: 17 })} ${escapeHtml(t('settings.terms'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
+        <a class="settings-row" href="/ochrana-osobnich-udaju" target="_blank" rel="noopener">${icon('help', { size: 17 })} ${escapeHtml(t('settings.privacyPolicy'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
+        <button class="settings-row" data-action="delete-account" style="color:#B3273C">${icon('trash', { size: 17 })} ${escapeHtml(t('settings.deleteAccount'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
       </div>
       <div class="profile-section">
-        <button class="settings-row" data-action="logout" style="color:#B3273C">${icon('logout', { size: 17 })} Odhlásit se</button>
+        <button class="settings-row" data-action="logout" style="color:#B3273C">${icon('logout', { size: 17 })} ${escapeHtml(t('settings.logout'))}</button>
       </div>
     </div>`;
 }
