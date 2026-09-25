@@ -3490,3 +3490,328 @@ body.no-scroll { overflow: hidden; }
 .story-context-chip strong {
   font-weight: 800;
 }
+
+/* ============================================================
+   CROP EDITOR + UPLOAD PROGRESS + BIZ DASHBOARD redesign
+   ============================================================ */
+
+/* --- Upload overlay (blokujúci) --- */
+.upload-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6,14,10,0.85);
+  backdrop-filter: blur(6px);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s;
+}
+.upload-overlay.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.upload-overlay-inner {
+  background: var(--c-surface);
+  border-radius: var(--radius-lg);
+  padding: 28px 32px;
+  width: min(90vw, 360px);
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.upload-spinner {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: 4px solid var(--c-primary-light);
+  border-top-color: var(--c-primary);
+  animation: uploadSpin 0.9s linear infinite;
+  margin: 0 auto 16px;
+}
+@keyframes uploadSpin { to { transform: rotate(360deg); } }
+.upload-overlay-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--c-text);
+  margin: 0 0 12px;
+}
+.upload-overlay-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--c-bg);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.upload-overlay-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--c-primary), var(--c-primary-dark));
+  border-radius: 999px;
+  transition: width .2s;
+}
+.upload-overlay-percent {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--c-primary-dark);
+  margin: 0;
+}
+.upload-overlay-hint {
+  font-size: 11.5px;
+  color: var(--c-text-muted);
+  margin: 8px 0 0;
+}
+
+/* --- Crop modal --- */
+.crop-modal {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: scale(0.96);
+  pointer-events: none;
+  transition: opacity .2s, transform .2s;
+}
+.crop-modal.is-open {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+.crop-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #0e1713;
+  color: white;
+  padding-top: calc(12px + env(safe-area-inset-top));
+  flex-shrink: 0;
+}
+.crop-modal-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+.crop-modal-btn {
+  background: transparent;
+  color: white;
+  border: none;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.crop-modal-btn-primary {
+  background: var(--c-primary);
+  color: white;
+}
+.crop-stage {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #000;
+  padding: 12px;
+  min-height: 0;
+}
+.crop-canvas {
+  display: block;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.15);
+  touch-action: none;
+  cursor: grab;
+}
+.crop-canvas:active { cursor: grabbing; }
+.crop-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.crop-grid-line {
+  position: absolute;
+  background: rgba(255,255,255,0.25);
+}
+.crop-grid-v1 { top: 0; bottom: 0; left: 33.33%; width: 1px; }
+.crop-grid-v2 { top: 0; bottom: 0; left: 66.66%; width: 1px; }
+.crop-grid-h1 { left: 0; right: 0; top: 33.33%; height: 1px; }
+.crop-grid-h2 { left: 0; right: 0; top: 66.66%; height: 1px; }
+.crop-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: #0e1713;
+  color: white;
+  flex-shrink: 0;
+}
+.crop-tool-btn {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.crop-tool-btn:active { background: rgba(255,255,255,0.25); }
+.crop-zoom-slider {
+  flex: 1;
+  accent-color: var(--c-primary);
+  height: 4px;
+}
+
+/* --- Format hints --- */
+.story-format-hint,
+.post-format-hint {
+  display: inline-block;
+  padding: 6px 12px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-round);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--c-text-muted);
+  margin-bottom: 12px;
+}
+
+/* --- Story preview 9:16 --- */
+.story-preview-grid--9-16 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.story-preview-item--9-16 {
+  aspect-ratio: 9 / 16;
+}
+
+/* --- Story viewer — multi-photo dots --- */
+.story-viewer-dots {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(0,0,0,0.35);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  z-index: 3;
+}
+.story-viewer-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.5);
+  transition: background .2s, transform .2s;
+}
+.story-viewer-dot.is-active {
+  background: white;
+  transform: scale(1.3);
+}
+
+/* --- Progress bar s CSS premennou (aktivna segment) --- */
+.story-progress-bar.is-active {
+  background: linear-gradient(
+    to right,
+    rgba(255,255,255,0.9) var(--progress, 0%),
+    rgba(255,255,255,0.35) var(--progress, 0%)
+  );
+  animation: none;
+}
+
+/* --- Business dashboard: action grid ako stat-cards --- */
+.biz-current-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px 12px;
+  font-size: 13px;
+  color: var(--c-text);
+  flex-wrap: wrap;
+}
+.biz-current-label svg { color: var(--c-primary-dark); }
+.biz-verified-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--c-primary-light);
+  color: var(--c-primary-dark);
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.biz-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding: 0 16px 8px;
+}
+@media (min-width: 480px) {
+  .biz-action-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.biz-action-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 8px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: center;
+  transition: transform .1s, border-color .15s, box-shadow .15s;
+  font-family: inherit;
+}
+.biz-action-card:hover {
+  border-color: var(--c-primary);
+  box-shadow: 0 4px 12px rgba(47,191,113,0.12);
+}
+.biz-action-card:active {
+  transform: scale(0.97);
+}
+.biz-action-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--c-primary-light);
+  color: var(--c-primary-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.biz-action-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--c-text);
+  line-height: 1.2;
+}
+.biz-action-card--accent .biz-action-icon {
+  background: var(--c-primary);
+  color: white;
+}
+.biz-action-card--accent {
+  border-color: var(--c-primary);
+  background: var(--c-primary-light);
+}
+
+/* --- Progress overlay sa nesmie skryť pri scroll lock --- */
+body > .upload-overlay { pointer-events: auto; }
