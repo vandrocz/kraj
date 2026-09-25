@@ -1,9 +1,12 @@
 // ============================================================
 // SEKCE 2: MAPA VÝLETŮ
 // ============================================================
-// Mapa má počasí a dopravu už zabudované ve vlastním rozhraní na maps.vandro.cz,
-// takže tu jen embedujeme iframe na celou obrazovku bez naší hlavičky a bez duplicitních ovládačů.
-// Spodná navigácia zostáva viditeľná nad iframom vďaka position:fixed a vyššiemu z-indexu.
+// Mapa má počasí a dopravu už zabudované ve vlastním rozhraní na maps.vandro.cz.
+// Embedujeme iframe na celú obrazovku bez našej hlavičky a bez duplicitných ovládačov.
+//
+// D7: Spodná lišta (bottom-nav) je na tejto karte štandardne zbalená
+// do malého tlačidla so šípkou — riešené v renderBottomNav() v app.js.
+// Po prepnutí na inú kartu sa automaticky rozbalí do plnej podoby.
 
 function renderMapPage() {
   return `
