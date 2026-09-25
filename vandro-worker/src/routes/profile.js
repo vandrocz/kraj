@@ -35,34 +35,6 @@ function escapePlain(t) {
   return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// PATCH /me/:type/:id — rozšírené povolené polia (B6)
-profileRoutes.patch('/me/:type/:id', async (c) => {
-  const user = c.get('user');
-  const table = TYPE_TO_TABLE[normalizeType(c.req.param('type'))];
-  const id = c.req.param('id');
-  if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
-  const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(id).first();
-  if (!owned) return c.json({ error: 'Nenájdené.' }, 404);
-  if (owned.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
-
-  // B6: nové polia — opening_hours pre všetky, admission pre orgs, price_level pre gastro/acc
-  const common = ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'type', 'opening_hours'];
-  const allowedFields = table === 'restaurants'
-    ? [...common, 'cuisine_type', 'price_level']
-    : table === 'accommodation'
-      ? [...common, 'capacity', 'price_level']
-      : [...common, 'admission'];
-
-  const body = await c.req.json().catch(() => ({}));
-  const sets = [], params = [];
-  for (const f of allowedFields) if (f in body) { sets.push(`${f} = ?`); params.push(body[f] ?? null); }
-  if (sets.length === 0) return c.json({ error: 'Žiadne polia.' }, 400);
-  params.push(id);
-  await c.env.DB.prepare(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run();
-  const updated = await c.env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(id).first();
-  return c.json({ business: updated });
-});
-
 profileRoutes.get('/search', async (c) => {
   const user = c.get('user');
   const q = (c.req.query('q') || '').trim();
@@ -192,7 +164,6 @@ profileRoutes.get('/me/settings', async (c) => {
   const row = await c.env.DB.prepare(`SELECT settings_json, public_checkins FROM users WHERE id = ?`).bind(user.sub).first();
   let settings = { push_notifications: true, email_notifications: true, public_profile: true, show_contributions: true, public_checkins: true };
   if (row?.settings_json) { try { settings = { ...settings, ...JSON.parse(row.settings_json) }; } catch {} }
-  // Public checkins je aj samostatný stĺpec
   if (row && row.public_checkins != null) settings.public_checkins = !!row.public_checkins;
   return c.json({ settings });
 });
@@ -206,7 +177,6 @@ profileRoutes.patch('/me/settings', async (c) => {
   if (row?.settings_json) { try { settings = JSON.parse(row.settings_json); } catch {} }
   for (const k of allowed) if (k in body) settings[k] = !!body[k];
 
-  // Public checkins uložíme aj do samostatného stĺpca (rýchlejší read na profile)
   if ('public_checkins' in body) {
     try {
       await c.env.DB.prepare(`UPDATE users SET public_checkins = ? WHERE id = ?`).bind(body.public_checkins ? 1 : 0, user.sub).run();
@@ -257,6 +227,69 @@ profileRoutes.patch('/me/user', async (c) => {
   return c.json({ user: updated });
 });
 
+// ------------------------------------------------------------------
+// NOVÉ: Pridať ďalší podnik k existujúcemu účtu (organizácia / podnik)
+// ------------------------------------------------------------------
+profileRoutes.post('/me/business', async (c) => {
+  const user = c.get('user');
+  const body = await c.req.json().catch(() => ({}));
+  const kind = (body.kind || '').toString();
+
+  const validKinds = ['organizations', 'accommodation', 'restaurants'];
+  if (!validKinds.includes(kind)) return c.json({ error: 'Neplatný typ podniku.' }, 400);
+
+  // Role check
+  if (kind === 'organizations' && user.role !== 'organization' && user.role !== 'admin') {
+    return c.json({ error: 'Iba organizácie môžu pridať organizáciu.' }, 403);
+  }
+  if ((kind === 'accommodation' || kind === 'restaurants') && user.role !== 'hotelier' && user.role !== 'admin') {
+    return c.json({ error: 'Iba podniky môžu pridať ubytovanie alebo gastro.' }, 403);
+  }
+
+  const name = (body.name || '').toString().trim().slice(0, 200);
+  const type = (body.type || '').toString().trim().slice(0, 100);
+  const region = (body.region || '').toString().trim().slice(0, 100);
+  const district = (body.district || '').toString().trim().slice(0, 100);
+  const city = (body.city || '').toString().trim().slice(0, 100) || null;
+  const description = (body.description || '').toString().trim().slice(0, 500);
+
+  if (!name || !type || !region || !district) {
+    return c.json({ error: 'Vyplň názov, typ, kraj a okres.' }, 400);
+  }
+
+  const id = newId(kind === 'organizations' ? 'org' : kind === 'accommodation' ? 'acc' : 'rest');
+
+  try {
+    if (kind === 'organizations') {
+      await c.env.DB.prepare(
+        `INSERT INTO organizations (id, user_id, name, type, region, district, city, description, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, region, district, city, description || '').run();
+    } else if (kind === 'accommodation') {
+      const capacity = body.capacity ? parseInt(body.capacity, 10) : null;
+      await c.env.DB.prepare(
+        `INSERT INTO accommodation (id, user_id, name, type, region, district, city, description, capacity, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, region, district, city, description || '', capacity).run();
+    } else {
+      const cuisineType = (body.cuisine_type || '').toString().trim() || null;
+      await c.env.DB.prepare(
+        `INSERT INTO restaurants (id, user_id, name, type, cuisine_type, region, district, city, description, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, cuisineType, region, district, city, description || '').run();
+    }
+  } catch (err) {
+    console.error('[add business]', err);
+    return c.json({ error: 'Nepodarilo sa vytvoriť podnik: ' + err.message }, 500);
+  }
+
+  const businessKind = kind === 'organizations' ? 'organization' : kind === 'accommodation' ? 'accommodation' : 'gastro';
+
+  return c.json({
+    business: { id, kind: businessKind, name, is_verified: 0 },
+  }, 201);
+});
+
 profileRoutes.patch('/me/:type/:id', async (c) => {
   const user = c.get('user');
   const table = TYPE_TO_TABLE[normalizeType(c.req.param('type'))];
@@ -266,11 +299,12 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
   if (!owned) return c.json({ error: 'Nenájdené.' }, 404);
   if (owned.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
 
+  const common = ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'type', 'opening_hours'];
   const allowedFields = table === 'restaurants'
-    ? ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'cuisine_type', 'type']
+    ? [...common, 'cuisine_type', 'price_level']
     : table === 'accommodation'
-      ? ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'capacity', 'type']
-      : ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'type'];
+      ? [...common, 'capacity', 'price_level']
+      : [...common, 'admission'];
 
   const body = await c.req.json().catch(() => ({}));
   const sets = [], params = [];
