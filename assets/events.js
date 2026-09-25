@@ -9,6 +9,10 @@ document.addEventListener('click', (e) => {
 
   switch (action) {
     case 'set-tab': switchTab(el.dataset.tab); break;
+    case 'toggle-nav-collapse':
+      state._navCollapsed = !state._navCollapsed;
+      renderApp();
+      break;
     case 'close-modal': closeModal(); break;
     case 'close-modal-scrim':
       // Zavrieť len ak klik bol priamo na scrim (nie na sheet vnútri)
