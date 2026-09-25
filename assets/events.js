@@ -10,23 +10,28 @@ document.addEventListener('click', (e) => {
   switch (action) {
     case 'set-tab': switchTab(el.dataset.tab); break;
 
-    // D7: prepínanie zbalenia spodnej lišty na mape
+    // D7
     case 'toggle-map-nav':
       state._mapNavCollapsed = !state._mapNavCollapsed;
       renderApp();
       break;
 
-    // B3: toggle inline formulára pre pridanie príspevku
+    // B3
     case 'toggle-post-form': {
       accountFormState._postFormOpen = !accountFormState._postFormOpen;
       accountFormState.postFiles = [];
       renderApp();
-      // Skroluj k formuláru
       setTimeout(() => {
         document.getElementById('inline-post-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 50);
       break;
     }
+
+    // NOVÉ: Otvorenie notifikácie — routovanie podľa typu
+    case 'open-notification': openNotification(el.dataset.notifId); break;
+
+    // NOVÉ: Pridať ďalší podnik
+    case 'open-add-business': openAddBusinessModal(); break;
 
     case 'share-event': shareEvent(el.dataset.id); break;
     case 'add-to-calendar': addEventToCalendar(el.dataset.id); break;
@@ -236,27 +241,14 @@ document.addEventListener('click', (e) => {
     case 'admin-cleanup-test': adminCleanupTest(); break;
 
     case 'push-test': testPush(); break;
-
     case 'accept-cookies': acceptCookies(); break;
 
-    // D6: zatvorenie modálu klikom na scrim
     case 'close-modal-scrim':
-      // Iba ak klikol priamo na scrim, nie na sheet
       if (e.target.classList.contains('modal-scrim') || e.target.closest('.modal-scrim') === e.target) {
         closeModal();
       }
       break;
     case 'close-modal': closeModal(); break;
-  }
-});
-
-// D1: Hash v URL — oprava skrolovania
-// Ak sa v URL objaví `#`, zabránime defaultnému skoku a po zatvorení overlaya obnovíme skrolovanie
-window.addEventListener('hashchange', () => {
-  // Ak je hash prítomný ale je to len prázdny anchor, zrušíme ho
-  if (location.hash && !location.hash.startsWith('#!')) {
-    // Nerobíme nič — necháme prehliadač, ale po zavretí overlaya
-    // app.js obnoví scrollovanie cez document.body.style.overflow = ''
   }
 });
 
@@ -303,6 +295,8 @@ document.addEventListener('change', (e) => {
   else if (a === 'onboarding-avatar-change') onboardingAvatarChange(el);
   else if (a === 'verif-doc-selected') onVerifDocSelected(el);
   else if (a === 'push-toggle') handlePushToggle(el.checked);
+  // NOVÉ: zmena typu podniku v add-business modáli → aktualizuj typ select
+  else if (a === 'add-business-kind-change') updateAddBusinessTypeOptions(el.value);
   else if (a === 'district-change') {
     const form = el.closest('form');
     const citySelect = form.querySelector('select[name="city"]');
@@ -359,7 +353,6 @@ document.addEventListener('submit', (e) => {
   const a = form.dataset.action;
   if (a === 'submit-login') handleLoginSubmit(form);
   else if (a === 'submit-modal') {
-    // D6: potvrdenie modálneho formulára
     const m = state._modal;
     if (!m || !m.onSubmit) return;
     const fd = new FormData(form);
@@ -371,7 +364,9 @@ document.addEventListener('submit', (e) => {
     const id = form.dataset.id;
     const feed = form.dataset.feed;
     const input = form.querySelector('[data-lightbox-comment-input]');
-    submitLightboxComment(id, feed, input.value);
+    const text = input.value;
+    input.value = '';  // vyčisti hneď, aby sa nezobrazoval starý text
+    submitLightboxComment(id, feed, text);
     return;
   }
   else if (a === 'submit-register') handleRegisterSubmit(form);
@@ -420,11 +415,6 @@ async function bootstrap() {
   renderApp();
   await loadMetaFromApi();
 
-  // D1: hash v URL — vyčisti ho pri štarte, aby nerušil skrolovanie
-  if (location.hash && !location.hash.startsWith('#!')) {
-    // Nechaj hash, ale skrolovanie sa obnoví po zatvorení overlaya
-  }
-
   const urlEvent = getUrlParam('event');
   const urlPost = getUrlParam('post');
   const urlProfile = getUrlParam('profile');
@@ -444,6 +434,7 @@ async function bootstrap() {
           try {
             const c = await apiGet(`/api/feed/${post.id}/comments`);
             post.__comments = c.comments || [];
+            post.comment_count = c.total || 0;
           } catch {}
           if (post.media && post.media.length > 0) {
             openLightbox(post.media, 0, post.text || '', post);
@@ -476,7 +467,6 @@ async function bootstrap() {
     loadStoriesFeed();
     if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
     if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(state.user);
-    // C3: po prihlásení (napr. cez uložený token) požiadaj o push permisiu
     if (typeof maybeRequestPushPermission === 'function') maybeRequestPushPermission();
   }
 
