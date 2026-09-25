@@ -19,6 +19,17 @@ function renderAccountPage() {
         ${renderHeader('Můj profil', `
           <button class="header-icon-btn" data-action="open-settings" aria-label="Nastavení">${icon('settings', { size: 19 })}</button>
         `)}
+        <div class="welcome-hero">
+          <img src="https://cdn.vandro.cz/Untitled18_20260523111243.png" alt="Náš kraj" class="welcome-logo" />
+          <h1 class="welcome-title">Vítej v Náš kraj</h1>
+          <p class="welcome-lead">Objevuj hrady, zámky, ubytování a gastro v Česku. Sdílej zážitky, sbírej odznaky a podporuj regionální projekty.</p>
+          <div class="welcome-features">
+            <div class="welcome-feature"><span class="welcome-feature-icon">🏰</span><span>Objevuj památky</span></div>
+            <div class="welcome-feature"><span class="welcome-feature-icon">🏨</span><span>Najdi ubytování</span></div>
+            <div class="welcome-feature"><span class="welcome-feature-icon">🍽️</span><span>Objevuj gastro</span></div>
+            <div class="welcome-feature"><span class="welcome-feature-icon">👥</span><span>Sleduj oblíbené</span></div>
+          </div>
+        </div>
         ${renderAuthCard()}
       </div>`;
     setTimeout(() => {
@@ -27,6 +38,23 @@ function renderAccountPage() {
     }, 80);
     return html;
   }
+
+  const headerActions = `
+    <button class="header-icon-btn" data-action="open-notifications" style="position:relative" aria-label="Notifikace">
+      ${icon('bell', { size: 19 })}
+      ${state.unreadNotifications > 0 ? `<span class="nav-badge">${state.unreadNotifications > 9 ? '9+' : state.unreadNotifications}</span>` : ''}
+    </button>
+    <button class="header-icon-btn" data-action="open-settings" aria-label="Nastavení">${icon('settings', { size: 19 })}</button>
+  `;
+
+  return `
+    <div class="page-scroll">
+      ${renderHeader('Můj profil', headerActions)}
+      ${renderVerifyBanner()}
+      ${renderAccountHeaderCard()}
+      ${renderRoleSpecificContent()}
+    </div>`;
+}
 
   const headerActions = `
     <button class="header-icon-btn" data-action="open-notifications" style="position:relative" aria-label="Notifikace">
@@ -86,12 +114,57 @@ function renderRegisterForm() {
   const role = accountFormState.registerRole;
   const kind = accountFormState.registerBusinessKind;
 
+  const orgTypeOptions = [
+    { value: 'hrad', label: 'Hrad' },
+    { value: 'zamek', label: 'Zámek' },
+    { value: 'muzeum', label: 'Muzeum' },
+    { value: 'lyzarske_stredisko', label: 'Lyžařské středisko' },
+    { value: 'galerie', label: 'Galerie' },
+    { value: 'zoo', label: 'ZOO' },
+    { value: 'prirodni_pamatka', label: 'Přírodní památka' },
+    { value: 'rozhledna', label: 'Rozhledna' },
+    { value: 'zricenina', label: 'Zřícenina' },
+    { value: 'kostel', label: 'Kostel / klášter' },
+    { value: 'technicka_pamatka', label: 'Technická památka' },
+    { value: 'jine', label: 'Jiné' },
+  ];
+
+  const accTypeOptions = [
+    { value: 'hotel', label: 'Hotel' },
+    { value: 'penzion', label: 'Penzion' },
+    { value: 'chata', label: 'Chata' },
+    { value: 'chalupa', label: 'Chalupa' },
+    { value: 'kemp', label: 'Kemp' },
+    { value: 'apartman', label: 'Apartmán' },
+    { value: 'glamping', label: 'Glamping' },
+    { value: 'hostel', label: 'Hostel' },
+    { value: 'ubytovna', label: 'Ubytovna' },
+    { value: 'jine', label: 'Jiné' },
+  ];
+
+  const restTypeOptions = [
+    { value: 'restaurace', label: 'Restaurace' },
+    { value: 'kavarna', label: 'Kavárna' },
+    { value: 'hospoda', label: 'Hospoda' },
+    { value: 'pivovar', label: 'Pivovar' },
+    { value: 'bistro', label: 'Bistro' },
+    { value: 'cukrarna', label: 'Cukrárna' },
+    { value: 'vinarna', label: 'Vinárna' },
+    { value: 'food_truck', label: 'Food truck' },
+    { value: 'jine', label: 'Jiné' },
+  ];
+
   const roleFields = role === 'organization' ? `
-    <div class="form-field"><label class="form-label">Název organizace</label><input class="form-input" name="orgName" required /></div>
-    <div class="form-field"><label class="form-label">Druh</label>
+    <div class="form-field">
+      <label class="form-label">Název organizace</label>
+      <input class="form-input" name="orgName" required placeholder="např. Hrad Tematín, Zámek Konopiště" />
+    </div>
+    <div class="form-field">
+      <label class="form-label">Druh</label>
       <select class="form-select" name="orgType" required>
-        ${TYPES.organization.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
-      </select></div>
+        ${orgTypeOptions.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
+      </select>
+    </div>
     ${renderRegionDistrictCityFields('reg')}
     <div class="form-field"><label class="form-label">Popis</label><textarea class="form-textarea" name="description"></textarea></div>
   ` : role === 'hotelier' ? `
@@ -100,11 +173,16 @@ function renderRegisterForm() {
       <button type="button" class="form-role-btn ${kind === 'gastro' ? 'is-selected' : ''}" data-action="set-business-kind" data-kind="gastro">Gastro</button>
     </div>
     <input type="hidden" name="businessKind" value="${kind}" />
-    <div class="form-field"><label class="form-label">Název podniku</label><input class="form-input" name="businessName" required /></div>
-    <div class="form-field"><label class="form-label">Typ</label>
+    <div class="form-field">
+      <label class="form-label">Název podniku</label>
+      <input class="form-input" name="businessName" required placeholder="např. Hospoda pod Lipou, Hotel Sněžník" />
+    </div>
+    <div class="form-field">
+      <label class="form-label">Typ</label>
       <select class="form-select" name="businessType" required>
-        ${(kind === 'accommodation' ? TYPES.accommodation : TYPES.restaurant).map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
-      </select></div>
+        ${(kind === 'accommodation' ? accTypeOptions : restTypeOptions).map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
+      </select>
+    </div>
     ${kind === 'gastro' ? `<div class="form-field"><label class="form-label">Kuchyně</label>
       <select class="form-select" name="cuisineType">${TYPES.cuisine.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}</select></div>`
       : `<div class="form-field"><label class="form-label">Kapacita</label><input class="form-input" type="number" name="capacity" min="1" /></div>`}
@@ -121,7 +199,18 @@ function renderRegisterForm() {
         <button type="button" class="form-role-btn ${role === 'hotelier' ? 'is-selected' : ''}" data-action="set-register-role" data-role="hotelier">Podnik</button>
       </div>
       <input type="hidden" name="role" value="${role}" />
-      ${role === 'user' ? `<div class="form-field"><label class="form-label">Zobrazované jméno</label><input class="form-input" name="displayName" required /></div>` : ''}
+      ${role === 'user' ? `
+        <div class="form-field">
+          <label class="form-label">Zobrazované jméno</label>
+          <input class="form-input" name="displayName" required placeholder="např. Jan Novák" />
+        </div>
+      ` : `
+        <div class="form-field">
+          <label class="form-label">Zobrazované jméno (názov podniku)</label>
+          <input class="form-input" name="displayName" required placeholder="např. Hrad Tematín, Hospoda pod Lipou" />
+          <p class="form-hint">Toto jméno sa zobrazí v aplikácii. Pri podnikoch/organizáciách zadajte názov podniku.</p>
+        </div>
+      `}
       <div class="form-field"><label class="form-label">E-mail</label><input class="form-input" type="email" name="email" required /></div>
       <div class="form-field"><label class="form-label">Heslo</label><input class="form-input" type="password" name="password" required minlength="8" /><p class="form-hint">Alespoň 8 znaků.</p></div>
       ${roleFields}
