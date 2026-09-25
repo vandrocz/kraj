@@ -13,12 +13,12 @@ storiesRoutes.get('/feed', async (c) => {
   await c.env.DB.prepare(`DELETE FROM stories WHERE expires_at < datetime('now')`).run();
 
   const my = await c.env.DB.prepare(
-    `SELECT id, user_id, business_id, image_url, caption, created_at, expires_at FROM stories
+    `SELECT id, user_id, business_id, image_url, caption, media_type, media_urls_json, created_at, expires_at FROM stories
      WHERE user_id = ? AND expires_at > datetime('now') ORDER BY created_at ASC`,
   ).bind(user.sub).all();
 
   const { results: followedStories } = await c.env.DB.prepare(
-    `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.created_at, s.expires_at,
+    `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
             u.display_name AS author_name, u.avatar_url AS author_avatar
      FROM stories s JOIN users u ON u.id = s.user_id
      WHERE s.expires_at > datetime('now') AND s.user_id != ? AND s.user_id IN (
@@ -27,7 +27,7 @@ storiesRoutes.get('/feed', async (c) => {
   ).bind(user.sub, user.sub).all();
 
   const { results: bizStories } = await c.env.DB.prepare(
-    `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.created_at, s.expires_at,
+    `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
             COALESCE(o.name, a.name, r.name) AS business_name
      FROM stories s
      LEFT JOIN organizations o ON o.id = s.business_id
@@ -45,7 +45,14 @@ storiesRoutes.get('/feed', async (c) => {
     for (const s of list) {
       const key = s.business_id || s.user_id;
       if (!map.has(key)) map.set(key, { key, author_name: s.business_name || s.author_name || 'Profil', author_avatar: s.author_avatar || null, stories: [] });
-      map.get(key).stories.push({ id: s.id, image_url: s.image_url, caption: s.caption, created_at: s.created_at });
+      map.get(key).stories.push({
+        id: s.id,
+        image_url: s.image_url,
+        caption: s.caption,
+        media_type: s.media_type || 'photo',
+        media_urls: s.media_urls_json ? JSON.parse(s.media_urls_json) : null,
+        created_at: s.created_at,
+      });
     }
     return Array.from(map.values());
   }
@@ -56,7 +63,14 @@ storiesRoutes.get('/feed', async (c) => {
     groups.push({
       key: 'me', is_me: true,
       author_name: me?.display_name || 'Já', author_avatar: me?.avatar_url || null,
-      stories: my.results.map((s) => ({ id: s.id, image_url: s.image_url, caption: s.caption, created_at: s.created_at })),
+      stories: my.results.map((s) => ({
+        id: s.id,
+        image_url: s.image_url,
+        caption: s.caption,
+        media_type: s.media_type || 'photo',
+        media_urls: s.media_urls_json ? JSON.parse(s.media_urls_json) : null,
+        created_at: s.created_at,
+      })),
     });
   }
   groups.push(...groupBy(followedStories), ...groupBy(bizStories));
@@ -73,13 +87,16 @@ storiesRoutes.post('/', async (c) => {
   const image_url = (body.image_url || '').toString();
   const caption = (body.caption || '').toString().slice(0, 200);
   const business_id = body.business_id ? body.business_id.toString() : null;
+  const media_type = (body.media_type || 'photo').toString();
+  const media_urls = Array.isArray(body.media_urls) ? body.media_urls : null;
   if (!image_url) return c.json({ error: 'Chýba obrázek.' }, 400);
 
   const id = newId('story');
   const exp = new Date(Date.now() + STORY_TTL_MS).toISOString();
   await c.env.DB.prepare(
-    `INSERT INTO stories (id, user_id, business_id, image_url, caption, expires_at) VALUES (?, ?, ?, ?, ?, ?)`,
-  ).bind(id, user.sub, business_id, image_url, caption, exp).run();
+    `INSERT INTO stories (id, user_id, business_id, image_url, caption, media_type, media_urls_json, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(id, user.sub, business_id, image_url, caption, media_type, media_urls ? JSON.stringify(media_urls) : null, exp).run();
   return c.json({ id, expires_at: exp }, 201);
 });
 
@@ -98,11 +115,72 @@ storiesRoutes.post('/upload', async (c) => {
   return c.json({ url }, 201);
 });
 
+// NOVÉ: Video upload (max 30 MB)
+storiesRoutes.post('/upload-video', async (c) => {
+  const user = c.get('user');
+  const form = await c.req.parseBody();
+  const file = form.file;
+  if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
+  if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
+  if (file.size > 30 * 1024 * 1024) return c.json({ error: 'Video je příliš velké (max 30 MB).' }, 400);
+
+  const allowedTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
+  if (!allowedTypes.includes(file.type)) return c.json({ error: 'Povolené formáty: MP4, WebM, MOV.' }, 400);
+
+  const publicBase = c.env.R2_PUBLIC_BASE || '';
+  const ext = ((file.name || 'video.mp4').split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const key = `stories/${newId()}.${ext}`;
+  await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
+  const url = publicBase ? `${publicBase}/${key}` : key;
+  return c.json({ url, media_type: 'video' }, 201);
+});
+
 storiesRoutes.post('/:id/view', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
   await c.env.DB.prepare(`INSERT OR IGNORE INTO story_views (story_id, viewer_id) VALUES (?, ?)`).bind(id, user.sub).run();
   return c.json({ ok: true });
+});
+
+// NOVÉ: Lajk stories
+storiesRoutes.post('/:id/like', async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  const story = await c.env.DB.prepare(`SELECT id, user_id FROM stories WHERE id = ?`).bind(id).first();
+  if (!story) return c.json({ error: 'Story nenalezena.' }, 404);
+
+  const likeKey = `like:story:${id}:${user.sub}`;
+  const existing = await c.env.NASKRAJ_LAJKY.get(likeKey);
+  const curRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:story:${id}`);
+  let cur = curRaw ? parseInt(curRaw, 10) : 0;
+
+  if (existing) {
+    await c.env.NASKRAJ_LAJKY.delete(likeKey);
+    cur = Math.max(0, cur - 1);
+    await c.env.NASKRAJ_LAJKY.put(`likecount:story:${id}`, String(cur));
+    return c.json({ liked: false, likes: cur });
+  }
+
+  await c.env.NASKRAJ_LAJKY.put(likeKey, '1');
+  cur = cur + 1;
+  await c.env.NASKRAJ_LAJKY.put(`likecount:story:${id}`, String(cur));
+
+  if (story.user_id && story.user_id !== user.sub) {
+    try {
+      const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
+      await c.env.DB.prepare(
+        `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
+         VALUES (?, ?, 'story_like', ?, 'story', ?, 'dal(a) iskru tvé story')`,
+      ).bind(newId('notif'), story.user_id, user.sub, id).run();
+      await sendPushToUser(c.env, story.user_id, {
+        title: 'Nová iskra',
+        body: `${actor?.display_name || 'Někdo'} dal(a) iskru tvé story`,
+        url: '/',
+      });
+    } catch {}
+  }
+
+  return c.json({ liked: true, likes: cur }, 201);
 });
 
 // Odpoveď na story → DM autorovi + notifikácia
@@ -130,7 +208,6 @@ storiesRoutes.post('/:id/reply', async (c) => {
 
   await c.env.DB.prepare(`UPDATE stories SET reply_count = reply_count + 1 WHERE id = ?`).bind(id).run();
 
-  // Nájdi alebo vytvor DM thread
   const [a, b] = user.sub < story.user_id ? [user.sub, story.user_id] : [story.user_id, user.sub];
   let thread = await c.env.DB.prepare(`SELECT id FROM dm_threads WHERE user_a = ? AND user_b = ?`).bind(a, b).first();
   if (!thread) {
@@ -146,7 +223,6 @@ storiesRoutes.post('/:id/reply', async (c) => {
     `UPDATE dm_threads SET last_message_at = datetime('now'), last_message_preview = ? WHERE id = ?`,
   ).bind(dmText.slice(0, 100), thread.id).run();
 
-  // Notifikácia + push
   try {
     await c.env.DB.prepare(
       `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
