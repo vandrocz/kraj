@@ -1,6 +1,9 @@
 // ============================================================
-// STORIES
+// STORIES — 24h príbehy (video max 10s alebo max 3 fotky)
 // ============================================================
+
+const STORY_MAX_DURATION = 10000;
+const STORY_PHOTO_DURATION = 3333;
 
 async function loadStoriesFeed() {
   if (!isLoggedIn()) { state.stories = { groups: [] }; return; }
@@ -53,7 +56,8 @@ function openStoryViewer(groupKey) {
   const groups = state.stories?.groups || [];
   const group = groups.find((g) => g.key === groupKey);
   if (!group || group.stories.length === 0) return;
-  state.overlay = { type: 'story-viewer', groupKey, index: 0, replyOpen: false, replyText: '' };
+  state.overlay = { type: 'story-viewer', groupKey, index: 0, likes: {} };
+  pushHistoryState('story-viewer');
   renderApp();
   markStoryViewed(group);
 }
@@ -65,14 +69,21 @@ function markStoryViewed(group) {
 }
 
 function renderStoryViewerOverlay() {
-  const { groupKey, index, replyOpen, replyText } = state.overlay;
+  const { groupKey, index } = state.overlay;
   const groups = state.stories?.groups || [];
   const group = groups.find((g) => g.key === groupKey);
   if (!group || !group.stories[index]) { setTimeout(() => closeOverlay(), 0); return ''; }
   const story = group.stories[index];
   const isMe = group.is_me;
 
+  const isVideo = story.media_type === 'video' || (story.image_url || '').match(/\.(mp4|webm|mov)$/i);
+  const mediaHtml = isVideo
+    ? `<video src="${story.image_url}" class="story-viewer-media" autoplay muted playsinline loop></video>`
+    : `<img src="${story.image_url}" alt="" class="story-viewer-media" />`;
+
   const bars = group.stories.map((_, i) => `<span class="story-progress-bar ${i < index ? 'is-done' : i === index ? 'is-active' : ''}"></span>`).join('');
+
+  const liked = state.overlay.likes?.[story.id] || false;
 
   return `
     <div class="story-viewer" data-action="story-tap">
@@ -86,57 +97,29 @@ function renderStoryViewerOverlay() {
         <button class="story-viewer-close" data-action="close-story-viewer">${icon('close', { size: 22 })}</button>
       </div>
       <div class="story-viewer-body">
-        <img src="${story.image_url}" alt="" class="story-viewer-img" />
+        ${mediaHtml}
         ${story.caption ? `<p class="story-viewer-caption">${escapeHtml(story.caption)}</p>` : ''}
       </div>
       <div class="story-viewer-nav story-viewer-prev" data-action="story-prev"></div>
       <div class="story-viewer-nav story-viewer-next" data-action="story-next"></div>
       ${!isMe ? `
-        ${!replyOpen ? `
-          <button class="story-reply-trigger" data-action="story-reply-open">
-            ${icon('chat', { size: 18 })} Odpovědět
-          </button>
-        ` : `
-          <div class="story-reply-box">
-            <input type="text" class="story-reply-input" placeholder="Odpověz…" value="${escapeAttr(replyText)}" data-story-reply-input maxlength="500" autofocus />
-            <button class="story-reply-send" data-action="story-reply-send">${icon('send', { size: 18 })}</button>
-            <button class="story-reply-cancel" data-action="story-reply-cancel">${icon('close', { size: 18 })}</button>
-          </div>
-        `}
+        <button class="story-like-btn ${liked ? 'is-liked' : ''}" data-action="story-like" data-id="${story.id}">
+          ${icon('spark', { size: 22, filled: liked })}
+          <span class="story-like-count">${story.likes || 0}</span>
+        </button>
       ` : ''}
     </div>`;
 }
 
-function storyReplyOpen() {
-  if (state.overlay?.type !== 'story-viewer') return;
-  state.overlay.replyOpen = true;
-  renderApp();
-  setTimeout(() => document.querySelector('[data-story-reply-input]')?.focus(), 50);
-}
-
-function storyReplyCancel() {
-  if (state.overlay?.type !== 'story-viewer') return;
-  state.overlay.replyOpen = false;
-  state.overlay.replyText = '';
-  renderApp();
-}
-
-async function storyReplySend() {
-  if (state.overlay?.type !== 'story-viewer') return;
-  const group = state.stories.groups.find((g) => g.key === state.overlay.groupKey);
-  if (!group) return;
-  const story = group.stories[state.overlay.index];
-  if (!story) return;
-
-  const input = document.querySelector('[data-story-reply-input]');
-  const text = (input?.value || '').trim();
-  if (!text) return;
-
+async function storyLike(storyId) {
   try {
-    await apiPost(`/api/stories/${story.id}/reply`, { text });
-    showToast('Odpověď odeslána.');
-    state.overlay.replyOpen = false;
-    state.overlay.replyText = '';
+    const res = await apiPost(`/api/stories/${storyId}/like`, {});
+    if (!state.overlay.likes) state.overlay.likes = {};
+    state.overlay.likes[storyId] = res.liked;
+    for (const g of state.stories.groups) {
+      const s = g.stories.find((x) => x.id === storyId);
+      if (s) s.likes = res.likes;
+    }
     renderApp();
   } catch (err) { showToast(err.message); }
 }
@@ -147,7 +130,7 @@ function storyNext() {
   const group = state.stories.groups.find((g) => g.key === groupKey);
   if (!group) return;
   if (index + 1 < group.stories.length) {
-    state.overlay = { ...state.overlay, index: index + 1, replyOpen: false, replyText: '' };
+    state.overlay = { ...state.overlay, index: index + 1 };
     renderApp();
   } else {
     closeOverlay();
@@ -157,67 +140,126 @@ function storyNext() {
 function storyPrev() {
   if (state.overlay?.type !== 'story-viewer') return;
   if (state.overlay.index > 0) {
-    state.overlay = { ...state.overlay, index: state.overlay.index - 1, replyOpen: false, replyText: '' };
+    state.overlay = { ...state.overlay, index: state.overlay.index - 1 };
     renderApp();
   }
 }
 
 function closeStoryViewer() { closeOverlay(); }
 
+// ------------------------------------------------------------------
+// Vytvorenie story (video alebo max 3 fotky)
+// ------------------------------------------------------------------
 function openCreateStory() {
-  state.overlay = { type: 'create-story', file: null, previewUrl: null, uploading: false };
+  state.overlay = { type: 'create-story', files: [], previews: [], uploading: false, storyType: 'photos' };
+  pushHistoryState('create-story');
   renderApp();
 }
 
 function renderCreateStoryOverlay() {
+  const o = state.overlay;
+  const files = o.files || [];
+  const previews = o.previews || [];
+
   return `
     <div class="page-scroll">
       ${renderBackHeader('Přidat story')}
       <div class="profile-section">
+        <div class="story-type-toggle">
+          <button class="story-type-btn ${o.storyType === 'photos' ? 'is-active' : ''}" data-action="story-type" data-type="photos">
+            ${icon('image', { size: 16 })} Fotky (max 3)
+          </button>
+          <button class="story-type-btn ${o.storyType === 'video' ? 'is-active' : ''}" data-action="story-type" data-type="video">
+            ${icon('camera', { size: 16 })} Video (max 10s)
+          </button>
+        </div>
+
         <form data-action="submit-create-story">
-          <div class="file-drop ${state.overlay.file ? 'has-file' : ''}" data-action="trigger-story-file">
-            <input type="file" accept="image/*" id="story-file-input" data-action="story-file-selected" style="display:none" />
-            ${state.overlay.previewUrl
-              ? `<img src="${state.overlay.previewUrl}" style="max-height:280px;border-radius:12px;margin:0 auto" />`
-              : `${icon('image', { size: 28 })}<br/>Klikni pro výběr fotky`}
+          <div class="file-drop ${files.length > 0 ? 'has-file' : ''}" data-action="trigger-story-file">
+            <input type="file" accept="${o.storyType === 'video' ? 'video/*' : 'image/*'}" id="story-file-input" data-action="story-file-selected" style="display:none" ${o.storyType === 'photos' ? 'multiple' : ''} />
+            ${previews.length > 0
+              ? `<div class="story-preview-grid">${previews.map((p, i) => `
+                  <div class="story-preview-item">
+                    ${p.type === 'video' ? `<video src="${p.url}" muted></video>` : `<img src="${p.url}" />`}
+                    <button type="button" class="file-preview-remove" data-action="remove-story-file" data-index="${i}">${icon('close', { size: 12 })}</button>
+                  </div>
+                `).join('')}</div>`
+              : `${icon('image', { size: 28 })}<br/>Klikni pro výběr ${o.storyType === 'video' ? 'videa' : '1–3 fotek'}`}
           </div>
           <div class="form-field">
             <label class="form-label">Popisek (nepovinné)</label>
             <input class="form-input" name="caption" maxlength="200" />
           </div>
-          <button class="form-submit-btn" type="submit" ${state.overlay.file ? '' : 'disabled'}>
-            ${state.overlay.uploading ? 'Nahrávam…' : 'Zveřejnit story (24 h)'}
+          <button class="form-submit-btn" type="submit" ${files.length === 0 ? 'disabled' : ''}>
+            ${o.uploading ? 'Nahrávám…' : 'Zveřejnit story (24 h)'}
           </button>
         </form>
+        <p class="form-hint">Story zmizí po 24 hodinách. Max 10 sekund.</p>
       </div>
     </div>`;
 }
 
 async function onStoryFileSelected(inputEl) {
-  const file = inputEl.files?.[0];
-  if (!file) return;
-  const compressed = await compressImage(file, { maxDim: 1080, quality: 0.85 });
-  state.overlay = { ...state.overlay, file: compressed, previewUrl: URL.createObjectURL(compressed) };
+  const o = state.overlay;
+  const files = Array.from(inputEl.files || []);
+  if (files.length === 0) return;
+
+  if (o.storyType === 'video') {
+    const file = files[0];
+    if (!file.type.startsWith('video/')) { showToast('Vyber video.'); return; }
+    o.files = [file];
+    o.previews = [{ type: 'video', url: URL.createObjectURL(file) }];
+  } else {
+    const photos = files.filter((f) => f.type.startsWith('image/')).slice(0, 3);
+    if (photos.length === 0) { showToast('Vyber fotky.'); return; }
+    const compressed = [];
+    for (const f of photos) {
+      try { compressed.push(await compressImage(f, { maxDim: 1080, quality: 0.85 })); }
+      catch { compressed.push(f); }
+    }
+    o.files = compressed;
+    o.previews = compressed.map((f) => ({ type: 'image', url: URL.createObjectURL(f) }));
+  }
+  renderApp();
+}
+
+function removeStoryFile(index) {
+  state.overlay.files.splice(index, 1);
+  state.overlay.previews.splice(index, 1);
   renderApp();
 }
 
 async function handleCreateStorySubmit(form) {
-  if (!state.overlay.file) return;
-  state.overlay.uploading = true;
+  const o = state.overlay;
+  if (!o.files || o.files.length === 0) return;
+  o.uploading = true;
   renderApp();
+
   try {
-    const fd = new FormData();
-    fd.append('file', state.overlay.file);
-    const up = await apiPost('/api/stories/upload', fd);
+    const uploadedUrls = [];
+    for (const file of o.files) {
+      const fd = new FormData();
+      fd.append('file', file);
+      const endpoint = o.storyType === 'video' ? '/api/stories/upload-video' : '/api/stories/upload';
+      const up = await apiPost(endpoint, fd);
+      uploadedUrls.push(up.url);
+    }
+
     const caption = form.querySelector('input[name="caption"]')?.value || '';
-    await apiPost('/api/stories', { image_url: up.url, caption });
+    await apiPost('/api/stories', {
+      image_url: uploadedUrls[0],
+      caption,
+      media_urls: uploadedUrls,
+      media_type: o.storyType === 'video' ? 'video' : 'photo',
+    });
+
     showToast('Story zveřejněna.');
     state.stories = null;
     closeOverlay();
     loadStoriesFeed();
   } catch (err) {
     showToast(err.message);
-    state.overlay.uploading = false;
+    o.uploading = false;
     renderApp();
   }
 }
