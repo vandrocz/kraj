@@ -18,11 +18,6 @@ async function loadUserBadges(userId) {
   if (state.overlay?.type === 'badges') renderApp();
 }
 
-function openCheckinCreate(kind, id, name) {
-  if (!isLoggedIn()) { showToast('Pro přidání návštěvy se musíš přihlásit.'); switchTab('account'); return; }
-  state.overlay = { type: 'create-checkin', kind, id, name, note: '', uploading: false };
-  renderApp();
-}
 
 function renderCreateCheckinOverlay() {
   const { kind, id, name } = state.overlay;
