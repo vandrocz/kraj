@@ -561,29 +561,104 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
       return c.json({ error: 'Nemáš oprávnění.' }, 403);
     }
 
-    let posts = 0, events = 0, followers = 0, likes = 0, comments = 0;
-    let recent = [];
+    // Základné počty
+    let posts = 0, events = 0, followers = 0, likes = 0, comments = 0, views = 0;
 
     try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).first(); posts = r?.n || 0; } catch {}
     try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM events WHERE business_id = ? AND status = 'published'`).bind(id).first(); events = r?.n || 0; } catch {}
     try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first(); followers = r?.n || 0; } catch {}
 
-    try {
-      const { results: postRows } = await c.env.DB.prepare(`SELECT id FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).all();
-      for (const p of postRows) {
-        try { const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`); likes += raw ? parseInt(raw, 10) : 0; } catch {}
-        try { const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first(); comments += cc?.n || 0; } catch {}
-      }
-    } catch {}
+    // Post IDs pre ďalšie agregácie
+    const { results: postRows } = await c.env.DB.prepare(
+      `SELECT id, created_at, view_count FROM posts WHERE business_id = ? AND status = 'published'`,
+    ).bind(id).all();
 
+    // Likes + comments + views súčty
+    for (const p of postRows) {
+      try { const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`); likes += raw ? parseInt(raw, 10) : 0; } catch {}
+      try { const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first(); comments += cc?.n || 0; } catch {}
+      views += p.view_count || 0;
+    }
+
+    // ------------------------------------------------------------------
+    // Denné agregácie pre graf — posts, likes, comments, views
+    // ------------------------------------------------------------------
+    const days = 30;
+    const dayList = [];
+    const today = new Date();
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      dayList.push(d.toISOString().slice(0, 10));
+    }
+
+    // Posts podľa dňa
+    const postsByDay = {};
+    for (const p of postRows) {
+      const day = (p.created_at || '').slice(0, 10);
+      if (!day) continue;
+      postsByDay[day] = (postsByDay[day] || 0) + 1;
+    }
+
+    // Comments podľa dňa
+    const commentsByDay = {};
     try {
-      const r = await c.env.DB.prepare(
-        `SELECT DATE(created_at) AS day, COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published' AND created_at >= datetime('now','-30 days') GROUP BY day ORDER BY day ASC`,
+      const { results: cRows } = await c.env.DB.prepare(
+        `SELECT DATE(comments.created_at) AS day, COUNT(*) AS n
+         FROM comments JOIN posts ON posts.id = comments.post_id
+         WHERE posts.business_id = ? AND comments.created_at >= datetime('now','-${days} days')
+         GROUP BY day`,
       ).bind(id).all();
-      recent = r?.results || [];
+      for (const r of cRows) commentsByDay[r.day] = r.n;
     } catch {}
 
-    return c.json({ posts, events, followers, likes, comments, last_30_days: recent });
+    // Events podľa dňa (created_at)
+    const eventsByDay = {};
+    try {
+      const { results: eRows } = await c.env.DB.prepare(
+        `SELECT DATE(created_at) AS day, COUNT(*) AS n
+         FROM events WHERE business_id = ? AND status = 'published' AND created_at >= datetime('now','-${days} days')
+         GROUP BY day`,
+      ).bind(id).all();
+      for (const r of eRows) eventsByDay[r.day] = r.n;
+    } catch {}
+
+    // Likes podľa dňa — odhad: rovnaký ako deň vytvorenia postu (KV neuchováva čas)
+    // Pre lepšiu presnosť by bolo treba log, ale toto stačí na vizualizáciu
+    const likesByDay = {};
+    for (const p of postRows) {
+      const day = (p.created_at || '').slice(0, 10);
+      if (!day) continue;
+      try {
+        const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`);
+        const l = raw ? parseInt(raw, 10) : 0;
+        likesByDay[day] = (likesByDay[day] || 0) + l;
+      } catch {}
+    }
+
+    // Views podľa dňa — rovnaký princíp
+    const viewsByDay = {};
+    for (const p of postRows) {
+      const day = (p.created_at || '').slice(0, 10);
+      if (!day) continue;
+      viewsByDay[day] = (viewsByDay[day] || 0) + (p.view_count || 0);
+    }
+
+    // Poskladaj série (30 dní)
+    const dailySeries = {
+      posts: dayList.map((d) => ({ day: d, n: postsByDay[d] || 0 })),
+      likes: dayList.map((d) => ({ day: d, n: likesByDay[d] || 0 })),
+      comments: dayList.map((d) => ({ day: d, n: commentsByDay[d] || 0 })),
+      views: dayList.map((d) => ({ day: d, n: viewsByDay[d] || 0 })),
+      events: dayList.map((d) => ({ day: d, n: eventsByDay[d] || 0 })),
+    };
+
+    return c.json({
+      posts, events, followers, likes, comments, views,
+      daily: dailySeries,
+      // zachovaj starý formát pre spätnú kompatibilitu
+      last_30_days: dailySeries.posts,
+    });
   } catch (err) {
     console.error('stats fatal:', err);
     return c.json({ error: 'Chyba při načítání statistik.', detail: err.message }, 500);
