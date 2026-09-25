@@ -10,107 +10,155 @@ export const storiesRoutes = new Hono();
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
-// ============================================================
-// Pomocná funkcia — zmazať konkrétne story súbory z R2
-// ============================================================
-async function deleteStoryFiles(env, urls) {
-  if (!env.MEDIA) return;
-  const publicBase = env.R2_PUBLIC_BASE || '';
-  for (const url of urls) {
-    if (!url) continue;
-    try {
-      let key = url;
-      if (publicBase && url.startsWith(publicBase + '/')) {
-        key = url.slice(publicBase.length + 1);
-      }
-      if (key && !key.startsWith('http')) {
-        await env.MEDIA.delete(key);
-      }
-    } catch (err) {
-      console.warn('[stories] R2 delete failed:', err.message);
-    }
-  }
+// Pomocná — normalizuj riadok zo stories tabuľky na API formát
+function normalizeStory(s) {
+  return {
+    id: s.id,
+    image_url: s.image_url,
+    caption: s.caption,
+    media_type: s.media_type || 'photo',
+    media_urls: s.media_urls_json ? JSON.parse(s.media_urls_json) : null,
+    created_at: s.created_at,
+  };
 }
 
 // ============================================================
-// GET /feed — vráti grupy stories + priebežne čistí expirované
+// GET /feed
+// Vracia groups:
+//   - { key: 'me', is_me: true }                 → osobné stories usera (business_id NULL)
+//   - { key: 'mybiz_xxx', is_my_business: true } → business stories usera (business_id NOT NULL)
+//   - { key: 'user_yyy' }                        → stories od sledovaných userov
+//   - { key: 'biz_zzz' }                         → stories od sledovaných podnikov
 // ============================================================
 storiesRoutes.get('/feed', async (c) => {
   const user = c.get('user');
 
-  // 1) Najprv vyčisti expirované stories (DB + R2)
-  try {
-    await deleteExpiredStories(c.env);
-  } catch (err) {
+  // Priebežne čisti expirované stories (DB + R2)
+  try { await deleteExpiredStories(c.env); } catch (err) {
     console.warn('[stories] cleanup on feed failed:', err.message);
   }
 
-  const my = await c.env.DB.prepare(
-    `SELECT id, user_id, business_id, image_url, caption, media_type, media_urls_json, created_at, expires_at FROM stories
-     WHERE user_id = ? AND expires_at > datetime('now') ORDER BY created_at ASC`,
+  // 1) Moje osobné stories (business_id NULL)
+  const myPersonal = await c.env.DB.prepare(
+    `SELECT id, user_id, business_id, image_url, caption, media_type, media_urls_json, created_at, expires_at
+     FROM stories
+     WHERE user_id = ? AND business_id IS NULL AND expires_at > datetime('now')
+     ORDER BY created_at ASC`,
   ).bind(user.sub).all();
 
-  const { results: followedStories } = await c.env.DB.prepare(
+  // 2) Moje business stories (business_id NOT NULL) — groupované podľa business_id
+  const { results: myBiz } = await c.env.DB.prepare(
+    `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
+            COALESCE(o.name, a.name, r.name) AS business_name,
+            COALESCE(o.logo_url, a.image_url, r.image_url) AS business_logo
+     FROM stories s
+     LEFT JOIN organizations o ON o.id = s.business_id
+     LEFT JOIN accommodation a ON a.id = s.business_id
+     LEFT JOIN restaurants r ON r.id = s.business_id
+     WHERE s.user_id = ? AND s.business_id IS NOT NULL AND s.expires_at > datetime('now')
+     ORDER BY s.created_at ASC`,
+  ).bind(user.sub).all();
+
+  // 3) Stories od userov, ktorých sledujem (business_id NULL, iní)
+  const { results: followedUser } = await c.env.DB.prepare(
     `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
             u.display_name AS author_name, u.avatar_url AS author_avatar
      FROM stories s JOIN users u ON u.id = s.user_id
-     WHERE s.expires_at > datetime('now') AND s.user_id != ? AND s.user_id IN (
-       SELECT target_id FROM follows WHERE follower_id = ? AND target_type = 'users'
-     ) ORDER BY s.created_at ASC`,
+     WHERE s.expires_at > datetime('now') AND s.business_id IS NULL
+       AND s.user_id != ?
+       AND s.user_id IN (
+         SELECT target_id FROM follows WHERE follower_id = ? AND target_type = 'users'
+       )
+     ORDER BY s.created_at ASC`,
   ).bind(user.sub, user.sub).all();
 
-  const { results: bizStories } = await c.env.DB.prepare(
+  // 4) Stories od podnikov, ktoré sledujem (business_id NOT NULL)
+  const { results: followedBiz } = await c.env.DB.prepare(
     `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
-            COALESCE(o.name, a.name, r.name) AS business_name
+            COALESCE(o.name, a.name, r.name) AS business_name,
+            COALESCE(o.logo_url, a.image_url, r.image_url) AS business_logo
      FROM stories s
      LEFT JOIN organizations o ON o.id = s.business_id
      LEFT JOIN accommodation a ON a.id = s.business_id
      LEFT JOIN restaurants r ON r.id = s.business_id
      WHERE s.expires_at > datetime('now') AND s.business_id IS NOT NULL
        AND s.business_id IN (
-         SELECT target_id FROM follows WHERE follower_id = ?
-           AND target_type IN ('organizations','accommodation','restaurants')
-       ) ORDER BY s.created_at ASC`,
+         SELECT target_id FROM follows
+         WHERE follower_id = ? AND target_type IN ('organizations','accommodation','restaurants')
+       )
+     ORDER BY s.created_at ASC`,
   ).bind(user.sub).all();
 
-  function groupBy(list) {
-    const map = new Map();
-    for (const s of list) {
-      const key = s.business_id || s.user_id;
-      if (!map.has(key)) map.set(key, { key, author_name: s.business_name || s.author_name || 'Profil', author_avatar: s.author_avatar || null, stories: [] });
-      map.get(key).stories.push({
-        id: s.id,
-        image_url: s.image_url,
-        caption: s.caption,
-        media_type: s.media_type || 'photo',
-        media_urls: s.media_urls_json ? JSON.parse(s.media_urls_json) : null,
-        created_at: s.created_at,
-      });
-    }
-    return Array.from(map.values());
-  }
-
   const groups = [];
-  if (my.results.length > 0) {
-    const me = await c.env.DB.prepare(`SELECT display_name, avatar_url FROM users WHERE id = ?`).bind(user.sub).first();
+
+  // Osobné "me" — len ak má osobné stories
+  if (myPersonal.results.length > 0) {
+    const me = await c.env.DB.prepare(
+      `SELECT display_name, avatar_url FROM users WHERE id = ?`,
+    ).bind(user.sub).first();
     groups.push({
-      key: 'me', is_me: true,
-      author_name: me?.display_name || 'Já', author_avatar: me?.avatar_url || null,
-      stories: my.results.map((s) => ({
-        id: s.id,
-        image_url: s.image_url,
-        caption: s.caption,
-        media_type: s.media_type || 'photo',
-        media_urls: s.media_urls_json ? JSON.parse(s.media_urls_json) : null,
-        created_at: s.created_at,
-      })),
+      key: 'me',
+      is_me: true,
+      author_name: me?.display_name || 'Já',
+      author_avatar: me?.avatar_url || null,
+      stories: myPersonal.results.map(normalizeStory),
     });
   }
-  groups.push(...groupBy(followedStories), ...groupBy(bizStories));
+
+  // Moje business stories — groupované podľa business_id
+  const myBizMap = new Map();
+  for (const s of myBiz) {
+    if (!myBizMap.has(s.business_id)) {
+      myBizMap.set(s.business_id, {
+        key: `mybiz_${s.business_id}`,
+        is_my_business: true,
+        business_id: s.business_id,
+        author_name: s.business_name || 'Podnik',
+        author_avatar: s.business_logo || null,
+        stories: [],
+      });
+    }
+    myBizMap.get(s.business_id).stories.push(normalizeStory(s));
+  }
+  groups.push(...myBizMap.values());
+
+  // Sledovaní useri
+  const userMap = new Map();
+  for (const s of followedUser) {
+    if (!userMap.has(s.user_id)) {
+      userMap.set(s.user_id, {
+        key: `user_${s.user_id}`,
+        author_name: s.author_name || 'Profil',
+        author_avatar: s.author_avatar || null,
+        stories: [],
+      });
+    }
+    userMap.get(s.user_id).stories.push(normalizeStory(s));
+  }
+  groups.push(...userMap.values());
+
+  // Sledované podniky
+  const fBizMap = new Map();
+  for (const s of followedBiz) {
+    if (!fBizMap.has(s.business_id)) {
+      fBizMap.set(s.business_id, {
+        key: `biz_${s.business_id}`,
+        business_id: s.business_id,
+        author_name: s.business_name || 'Podnik',
+        author_avatar: s.business_logo || null,
+        stories: [],
+      });
+    }
+    fBizMap.get(s.business_id).stories.push(normalizeStory(s));
+  }
+  groups.push(...fBizMap.values());
 
   return c.json({ groups });
 });
 
+// ============================================================
+// POST / — vytvorenie story
+// ============================================================
 storiesRoutes.post('/', async (c) => {
   const user = c.get('user');
   const rl = await rateLimit(c.env, 'story', user.sub, 10, 86400);
@@ -130,10 +178,13 @@ storiesRoutes.post('/', async (c) => {
     `INSERT INTO stories (id, user_id, business_id, image_url, caption, media_type, media_urls_json, expires_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(id, user.sub, business_id, image_url, caption, media_type, media_urls ? JSON.stringify(media_urls) : null, exp).run();
+
   return c.json({ id, expires_at: exp }, 201);
 });
 
-// Upload fotky s MIME validáciou
+// ============================================================
+// Upload fotky
+// ============================================================
 storiesRoutes.post('/upload', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -161,7 +212,9 @@ storiesRoutes.post('/upload', async (c) => {
   return c.json({ url }, 201);
 });
 
-// Upload videa s MIME validáciou
+// ============================================================
+// Upload videa
+// ============================================================
 storiesRoutes.post('/upload-video', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -189,6 +242,9 @@ storiesRoutes.post('/upload-video', async (c) => {
   return c.json({ url, media_type: 'video' }, 201);
 });
 
+// ============================================================
+// View
+// ============================================================
 storiesRoutes.post('/:id/view', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -196,7 +252,9 @@ storiesRoutes.post('/:id/view', async (c) => {
   return c.json({ ok: true });
 });
 
-// Lajk stories
+// ============================================================
+// Like
+// ============================================================
 storiesRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -237,7 +295,9 @@ storiesRoutes.post('/:id/like', async (c) => {
   return c.json({ liked: true, likes: cur }, 201);
 });
 
-// Odpoveď na story → DM + notifikácia
+// ============================================================
+// Reply na story
+// ============================================================
 storiesRoutes.post('/:id/reply', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -295,6 +355,9 @@ storiesRoutes.post('/:id/reply', async (c) => {
   return c.json({ id: replyId, ok: true }, 201);
 });
 
+// ============================================================
+// Replies
+// ============================================================
 storiesRoutes.get('/:id/replies', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -313,7 +376,7 @@ storiesRoutes.get('/:id/replies', async (c) => {
 });
 
 // ============================================================
-// Manuálny cleanup endpoint (pre testovanie / admin)
+// Manuálny cleanup (admin)
 // ============================================================
 storiesRoutes.post('/admin/cleanup-expired', async (c) => {
   const user = c.get('user');
