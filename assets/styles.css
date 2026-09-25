@@ -3169,3 +3169,141 @@ body.no-scroll { overflow: hidden; }
     bottom: 20px;
   }
 }
+
+/* ============================================================
+   OPRAVY VÁRKA 11 — štatistiky graf, jazyk, welcome, logo
+   ============================================================ */
+
+/* --- Logo v hlavičke --- */
+.app-header-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* --- Welcome hero pre neprihlásených --- */
+.welcome-hero { text-align: center; padding: 32px 20px 20px; }
+.welcome-logo { width: 72px; height: 72px; border-radius: 18px; object-fit: contain; margin: 0 auto 16px; display: block; box-shadow: var(--c-shadow); }
+.welcome-title { font-family: var(--font-display); font-size: 26px; font-weight: 800; margin-bottom: 10px; }
+.welcome-lead { font-size: 14.5px; color: var(--c-text-muted); line-height: 1.6; max-width: 420px; margin: 0 auto 24px; }
+.welcome-features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; max-width: 360px; margin: 0 auto 8px; }
+.welcome-feature { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 8px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius-md); font-size: 12.5px; font-weight: 600; color: var(--c-text); }
+.welcome-feature-icon { font-size: 24px; }
+
+/* --- Lightbox drag handle --- */
+.lightbox-drag-handle { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); width: 40px; height: 4px; border-radius: 2px; background: var(--c-border); cursor: grab; z-index: 5; }
+.lightbox-drag-handle:active { cursor: grabbing; background: var(--c-text-muted); }
+@media (min-width: 900px) { .lightbox-drag-handle { display: none; } }
+@media (max-width: 899px) {
+  .lightbox-info-pane { max-height: 45vh; transition: max-height .25s ease; padding-top: 18px; }
+  .lightbox-info-pane.is-expanded { max-height: 85vh; }
+}
+
+/* --- Stories --- */
+.story-viewer-media { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.story-viewer-body { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; background: #000; overflow: hidden; }
+.story-like-btn { position: absolute; bottom: 24px; right: 20px; display: flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 999px; background: rgba(255,255,255,0.15); color: white; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.3); font-size: 14px; font-weight: 700; z-index: 5; cursor: pointer; }
+.story-like-btn.is-liked { color: #FF8A1F; }
+.story-like-count { font-size: 13px; }
+.story-type-toggle { display: flex; gap: 8px; margin-bottom: 16px; background: var(--c-bg); padding: 4px; border-radius: var(--radius-round); }
+.story-type-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border-radius: var(--radius-round); font-size: 13px; font-weight: 700; color: var(--c-text-muted); background: transparent; border: none; cursor: pointer; }
+.story-type-btn.is-active { background: var(--c-surface); color: var(--c-primary-dark); box-shadow: var(--c-shadow); }
+.story-preview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; }
+.story-preview-item { position: relative; aspect-ratio: 9/16; border-radius: var(--radius-sm); overflow: hidden; background: var(--c-border); }
+.story-preview-item img, .story-preview-item video { width: 100%; height: 100%; object-fit: cover; }
+
+/* --- Štatistiky: graf --- */
+.stats-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (min-width: 480px) {
+  .stats-controls { flex-direction: row; gap: 16px; }
+  .stats-control-group { flex: 1; }
+}
+.stats-control-group { display: flex; flex-direction: column; gap: 6px; }
+.stats-control-label { font-size: 11.5px; font-weight: 700; color: var(--c-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.stats-control-select { padding: 10px 14px; font-size: 13px; }
+.stats-period-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--c-bg);
+  padding: 4px;
+  border-radius: var(--radius-round);
+}
+.stats-period-btn {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: var(--radius-round);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.stats-period-btn.is-active {
+  background: var(--c-surface);
+  color: var(--c-primary-dark);
+  box-shadow: 0 2px 6px rgba(16,32,26,0.08);
+}
+.stats-chart-wrap {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  position: relative;
+}
+.stats-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.stats-chart-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--c-text-muted);
+}
+.stats-chart-total {
+  font-size: 12.5px;
+  color: var(--c-text-muted);
+}
+.stats-chart-total strong {
+  color: var(--c-primary-dark);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 800;
+}
+.stats-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  aspect-ratio: 640 / 220;
+  max-height: 260px;
+}
+.stats-chart-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--c-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+  background: rgba(255,255,255,0.85);
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+
+/* Bottom nav na mape na mobile: šípka späť */
+@media (max-width: 719px) {
+  .bottom-nav--collapsed { bottom: 20px; }
+}
