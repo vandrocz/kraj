@@ -359,11 +359,7 @@ function renderBusinessProfile(data, id, kind) {
       </div>
 
       <div class="profile-biz-actions">
-        ${isOwn ? `
-          <button class="profile-action-btn" data-action="edit-profile" data-kind="${kind}" data-id="${id}">${icon('edit', { size: 15 })} Upravit</button>
-          <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${kind}" data-id="${id}">${icon('chart', { size: 15 })} Statistiky</button>
-          <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Přidat akci</button>
-        ` : (isLoggedIn() ? `
+        ${!isOwn && isLoggedIn() ? `
           <button class="profile-action-btn ${data.is_following ? 'is-following' : ''}" data-action="toggle-follow" data-kind="${kind}" data-id="${id}">
             ${data.is_following ? icon('check', { size: 15 }) + ' Sleduji' : icon('plus', { size: 15 }) + ' Sledovat'}
           </button>
