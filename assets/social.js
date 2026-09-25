@@ -1,5 +1,5 @@
 // ============================================================
-// SOCIÁLNY FEED
+// SOCIÁLNY FEED — i18n verzia
 // ============================================================
 
 function buildFeedQuery(feedKey) {
@@ -30,7 +30,7 @@ async function loadSocialFeed(feedKey, loadMore = false) {
     f.next_cursor = data.next_cursor || null;
   } catch (err) {
     console.error(`Feed ${feedKey}:`, err.message);
-    showToast('Příspěvky se nepodařilo načíst.');
+    showToast(t('errors.loadPostsFailed'));
   } finally {
     state.loading[feedKey] = false;
     f.loading_more = false;
@@ -64,7 +64,7 @@ function renderMediaCarousel(post) {
       <div class="post-image-wrap post-image-empty">
         <div class="post-image-placeholder">
           ${icon('image', { size: 36 })}
-          <span>Bez fotky</span>
+          <span>${escapeHtml(t('feed.noPhoto'))}</span>
         </div>
       </div>`;
   }
@@ -123,7 +123,7 @@ function renderSocialPostCard(post, feedKey) {
        </div>`
     : '';
 
-  const likeText = post.likes > 0 ? `${fmt(post.likes)} Páči sa mi` : 'Páči sa mi';
+  const likeText = post.likes > 0 ? `${fmt(post.likes)} ${t('feed.likesMe')}` : t('feed.likesMe');
 
   return `
     <article class="post-card" data-post-id="${post.id}">
@@ -153,7 +153,7 @@ function renderSocialPostCard(post, feedKey) {
         ${isMinePost ? `<button class="post-action" data-action="delete-post" data-id="${post.id}" data-feed="${feedKey}" style="color:#B3273C">${icon('trash', { size: 18 })}</button>` : ''}
       </div>
       <div class="post-body">
-        <p class="post-likes" data-like-count="${post.id}">${likeText}${post.views ? ` · ${fmt(post.views)} zobrazení` : ''}</p>
+        <p class="post-likes" data-like-count="${post.id}">${likeText}${post.views ? ` · ${fmt(post.views)} ${t('feed.views')}` : ''}</p>
         <p class="post-caption" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(captionText)}">
           <strong class="post-caption-author">${escapeHtml(post.business.name)}</strong>
           <span class="post-caption-text">${linkifyHashtags(captionText)}</span>
@@ -165,7 +165,7 @@ function renderSocialPostCard(post, feedKey) {
 }
 
 async function togglePostLike(postId, feedKey, btnEl) {
-  if (!isLoggedIn()) { showToast('Pro iskru se musíš přihlásit.'); switchTab('account'); return; }
+  if (!isLoggedIn()) { showToast(t('post.loginToComment')); switchTab('account'); return; }
 
   let post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
   if (!post) {
@@ -188,7 +188,7 @@ async function togglePostLike(postId, feedKey, btnEl) {
     btnEl.innerHTML = icon('spark', { size: 22, filled: post.__liked });
   }
   const likesEl = document.querySelector(`[data-like-count="${postId}"]`);
-  if (likesEl) likesEl.textContent = post.likes > 0 ? `${fmt(post.likes)} Páči sa mi` : 'Páči sa mi';
+  if (likesEl) likesEl.textContent = post.likes > 0 ? `${fmt(post.likes)} ${t('feed.likesMe')}` : t('feed.likesMe');
 
   try {
     const data = await apiPost(`/api/feed/${postId}/like`, {});
@@ -198,7 +198,7 @@ async function togglePostLike(postId, feedKey, btnEl) {
       btnEl.classList.toggle('is-liked', data.liked);
       btnEl.innerHTML = icon('spark', { size: 22, filled: data.liked });
     }
-    if (likesEl) likesEl.textContent = data.likes > 0 ? `${fmt(data.likes)} Páči sa mi` : 'Páči sa mi';
+    if (likesEl) likesEl.textContent = data.likes > 0 ? `${fmt(data.likes)} ${t('feed.likesMe')}` : t('feed.likesMe');
   } catch (err) {
     post.__liked = wasLiked;
     post.likes = Math.max(0, (post.likes || 0) + (wasLiked ? 1 : -1));
@@ -211,7 +211,7 @@ async function togglePostLike(postId, feedKey, btnEl) {
 }
 
 async function toggleBookmark(postId, btnEl) {
-  if (!isLoggedIn()) { showToast('Pro uložení se musíš přihlásit.'); switchTab('account'); return; }
+  if (!isLoggedIn()) { showToast(t('post.loginToComment')); switchTab('account'); return; }
   try {
     const data = await apiPost(`/api/feed/${postId}/bookmark`, {});
     if (btnEl) {
@@ -229,7 +229,7 @@ async function toggleBookmark(postId, btnEl) {
       const p = state.socialFeeds[k].items.find((x) => x.id === postId);
       if (p) p.__bookmarked = data.bookmarked;
     }
-    showToast(data.bookmarked ? 'Uloženo.' : 'Odebráno z uložených.');
+    showToast(data.bookmarked ? t('toasts.saved') : t('toasts.removedFromWishlist'));
   } catch (err) { showToast(err.message); }
 }
 
@@ -238,8 +238,8 @@ async function sharePost(postId, text) {
   if (navigator.share) {
     try { await navigator.share({ title: 'Náš kraj', text: text || '', url }); return; } catch { return; }
   }
-  try { await navigator.clipboard.writeText(url); showToast('Odkaz zkopírován.'); }
-  catch { showToast('Zdílení se nepodařilo.'); }
+  try { await navigator.clipboard.writeText(url); showToast(t('toasts.copied')); }
+  catch { showToast(t('toasts.shareFailed')); }
 }
 
 function renderFeedPage(feedKey, typeOptions, showCuisine) {
@@ -247,8 +247,8 @@ function renderFeedPage(feedKey, typeOptions, showCuisine) {
   return `
     <div class="page-scroll">
       ${renderHeader(title, `
-        <button class="header-icon-btn" data-action="open-nearby" aria-label="V okolí">${icon('location', { size: 19 })}</button>
-        <button class="header-icon-btn" data-action="open-search" aria-label="Hledat">${icon('search', { size: 19 })}</button>
+        <button class="header-icon-btn" data-action="open-nearby" aria-label="${escapeAttr(t('nearby.title'))}">${icon('location', { size: 19 })}</button>
+        <button class="header-icon-btn" data-action="open-search" aria-label="${escapeAttr(t('search.title'))}">${icon('search', { size: 19 })}</button>
       `)}
       ${renderStoriesBar()}
       ${renderFilterBar(feedKey, typeOptions, showCuisine)}
@@ -259,32 +259,32 @@ function renderFeedPage(feedKey, typeOptions, showCuisine) {
 function renderSocialFeedBody(feedKey) {
   const f = state.socialFeeds[feedKey];
   const items = f.items;
-  if (state.loading[feedKey] && items.length === 0) return '<p class="empty-state">Načítám příspěvky…</p>';
-  if (items.length === 0) return '<p class="empty-state">Žádné příspěvky neodpovídají zvoleným filtrům.</p>';
+  if (state.loading[feedKey] && items.length === 0) return `<p class="empty-state">${escapeHtml(t('feed.loadingPosts'))}</p>`;
+  if (items.length === 0) return `<p class="empty-state">${escapeHtml(t('feed.noPosts'))}</p>`;
   return `
     <div class="post-feed-grid">${items.map((p) => renderSocialPostCard(p, feedKey)).join('')}</div>
-    ${f.loading_more ? '<p class="empty-state">Načítám další…</p>' : ''}
+    ${f.loading_more ? `<p class="empty-state">${escapeHtml(t('common.loadingMore'))}</p>` : ''}
     ${f.next_cursor ? `<div data-load-more style="height:1px"></div>` : ''}
   `;
 }
 
 function reportPost(postId) {
-  if (!isLoggedIn()) { showToast('Pro nahlášení se musíš přihlásit.'); switchTab('account'); return; }
+  if (!isLoggedIn()) { showToast(t('post.loginToComment')); switchTab('account'); return; }
   openModal({
-    title: 'Nahlásit příspěvek',
+    title: t('post.reportTitle'),
     body: `
       <div class="form-field">
-        <label class="form-label">Důvod (nepovinné)</label>
-        <textarea class="form-textarea" name="reason" rows="3" maxlength="500" placeholder="Proč tento příspěvek nahlašuješ?"></textarea>
+        <label class="form-label">${escapeHtml(t('post.reportReason'))}</label>
+        <textarea class="form-textarea" name="reason" rows="3" maxlength="500" placeholder="${escapeAttr(t('post.reportReasonPlaceholder'))}"></textarea>
       </div>`,
-    submitLabel: 'Odeslat nahlášení',
+    submitLabel: t('post.reportSend'),
     danger: true,
     onSubmit: async (data) => {
       state._modalLoading = true; renderApp();
       try {
         await apiPost(`/api/feed/${postId}/report`, { reason: data.reason || null });
         closeModal();
-        showToast('Příspěvek byl nahlášen.');
+        showToast(t('toasts.reportSent'));
       } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
     },
   });
@@ -292,9 +292,9 @@ function reportPost(postId) {
 
 function deletePost(postId, feedKey) {
   openModal({
-    title: 'Smazat příspěvek?',
-    body: `<p style="font-size:14px;line-height:1.6">Příspěvek bude skryt ze všech feedů. Akce je nevratná.</p>`,
-    submitLabel: 'Smazat',
+    title: t('post.deleteTitle'),
+    body: `<p style="font-size:14px;line-height:1.6">${escapeHtml(t('post.deleteText'))}</p>`,
+    submitLabel: t('common.delete'),
     danger: true,
     onSubmit: async () => {
       state._modalLoading = true; renderApp();
@@ -302,7 +302,7 @@ function deletePost(postId, feedKey) {
         await apiDelete(`/api/feed/post/${postId}`);
         if (state.socialFeeds[feedKey]) state.socialFeeds[feedKey].items = state.socialFeeds[feedKey].items.filter((p) => p.id !== postId);
         closeModal();
-        showToast('Smazáno.');
+        showToast(t('toasts.postDeleted'));
       } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
     },
   });
@@ -311,7 +311,6 @@ function deletePost(postId, feedKey) {
 async function deleteComment(commentId, feedKey, postId) {
   try {
     await apiDelete(`/api/feed/comment/${commentId}`);
-    // Refresh lightbox komentárov
     if (state.lightbox?.post?.id === postId) {
       try {
         const c = await apiGet(`/api/feed/${postId}/comments`);
@@ -320,7 +319,7 @@ async function deleteComment(commentId, feedKey, postId) {
         updateLightboxDOM();
       } catch {}
     }
-    showToast('Komentář smazán.');
+    showToast(t('toasts.deleted'));
   } catch (err) { showToast(err.message); }
 }
 
@@ -348,10 +347,10 @@ function renderBookmarksOverlay() {
   const list = state._bookmarks;
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Uložené příspěvky')}
+      ${renderBackHeader(t('settings.savedPosts'))}
       <div class="profile-section">
-        ${list == null ? '<p class="empty-state">Načítám…</p>'
-          : list.length === 0 ? '<p class="empty-state">Zatím nic uloženého.</p>'
+        ${list == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
+          : list.length === 0 ? `<p class="empty-state">${escapeHtml(t('wishlist.empty'))}</p>`
           : list.map((b) => `
             <button class="user-list-item" data-action="open-post-bookmark" data-id="${b.id}">
               ${b.image_url ? `<img src="${b.image_url}" class="user-list-avatar" style="border-radius:12px" alt="" />` : `<span class="user-list-avatar user-list-avatar-init">${icon('image', { size: 18 })}</span>`}
@@ -369,6 +368,7 @@ function openEditPost(postId, feedKey) {
   if (!post) return;
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'edit-post', postId, feedKey, html: post.html || post.text || '' };
+  pushHistoryState('overlay');
   renderApp();
 }
 
@@ -376,11 +376,11 @@ function renderEditPostOverlay() {
   const { postId, feedKey, html } = state.overlay;
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Upravit příspěvek')}
+      ${renderBackHeader(t('post.writeEdit'))}
       <div class="profile-section">
         <form data-action="submit-edit-post" data-post-id="${postId}" data-feed="${feedKey}">
-          ${renderRichEditor('text_html', 'Text příspěvku…', html)}
-          <button class="form-submit-btn" type="submit">Uložit změny</button>
+          ${renderRichEditor('text_html', t('post.textPlaceholder'), html)}
+          <button class="form-submit-btn" type="submit">${escapeHtml(t('post.saveChanges'))}</button>
         </form>
       </div>
     </div>`;
@@ -391,34 +391,27 @@ async function handleEditPostSubmit(form) {
   const feedKey = form.dataset.feed;
   const html = getEditorHtml(form);
   const btn = form.querySelector('button[type="submit"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Ukládám…'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('common.saving'); }
 
   try {
     const res = await apiPatch(`/api/feed/post/${postId}`, { html });
     const post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
     if (post) { post.html = res.html; post.text = res.text; }
     closeOverlay();
-    showToast('Uloženo.');
+    showToast(t('toasts.saved'));
   } catch (err) {
     showToast(err.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Uložit změny'; }
+    if (btn) { btn.disabled = false; btn.textContent = t('post.saveChanges'); }
   }
 }
 
-// ------------------------------------------------------------------
-// OPRAVA: submitLightboxComment
-// - NEVOLÁ renderApp() (nezatvára lightbox)
-// - Počet komentárov berie priamo zo servera (žiadne +1 navyše)
-// - Aktualizuje badge na kartách vo feede cez DOM
-// ------------------------------------------------------------------
 async function submitLightboxComment(postId, feedKey, text) {
   if (!text.trim()) return;
-  if (!isLoggedIn()) { showToast('Pro komentování se musíš přihlásit.'); return; }
+  if (!isLoggedIn()) { showToast(t('post.loginToComment')); return; }
 
   try {
     await apiPost(`/api/feed/${postId}/comment`, { text: text.trim() });
 
-    // Získaj presný stav zo servera
     let newComments = null;
     let newTotal = null;
     try {
@@ -427,14 +420,12 @@ async function submitLightboxComment(postId, feedKey, text) {
       newTotal = (c.total != null) ? c.total : newComments.length;
     } catch {}
 
-    // Aktualizuj lightbox bez plného re-renderu
     if (state.lightbox && state.lightbox.post && state.lightbox.post.id === postId) {
       if (newComments) state.lightbox.post.__comments = newComments;
       if (newTotal != null) state.lightbox.post.comment_count = newTotal;
       updateLightboxDOM();
     }
 
-    // Aktualizuj komentáre v in-memory feedoch
     const applyToPost = (p) => {
       if (newTotal != null) p.comment_count = newTotal;
       if (newComments) p.__comments = newComments;
@@ -451,14 +442,13 @@ async function submitLightboxComment(postId, feedKey, text) {
       }
     }
 
-    // Aktualizuj badge v existujúcom DOM (bez renderApp)
     if (newTotal != null) {
       document.querySelectorAll(`.post-card[data-post-id="${postId}"] .post-action-badge`).forEach((badge) => {
         badge.textContent = newTotal > 99 ? '99+' : String(newTotal);
       });
     }
 
-    showToast('Komentář přidán.');
+    showToast(t('toasts.commentAdded'));
   } catch (err) {
     showToast(err.message);
   }
