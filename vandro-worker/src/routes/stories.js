@@ -4,14 +4,46 @@ import { rateLimit } from '../ratelimit.js';
 import { checkText } from '../moderation.js';
 import { sendPushToUser } from '../push.js';
 import { validateUpload } from '../moderation.js';
+import { deleteExpiredStories } from '../cron.js';
 
 export const storiesRoutes = new Hono();
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
+// ============================================================
+// Pomocná funkcia — zmazať konkrétne story súbory z R2
+// ============================================================
+async function deleteStoryFiles(env, urls) {
+  if (!env.MEDIA) return;
+  const publicBase = env.R2_PUBLIC_BASE || '';
+  for (const url of urls) {
+    if (!url) continue;
+    try {
+      let key = url;
+      if (publicBase && url.startsWith(publicBase + '/')) {
+        key = url.slice(publicBase.length + 1);
+      }
+      if (key && !key.startsWith('http')) {
+        await env.MEDIA.delete(key);
+      }
+    } catch (err) {
+      console.warn('[stories] R2 delete failed:', err.message);
+    }
+  }
+}
+
+// ============================================================
+// GET /feed — vráti grupy stories + priebežne čistí expirované
+// ============================================================
 storiesRoutes.get('/feed', async (c) => {
   const user = c.get('user');
-  await c.env.DB.prepare(`DELETE FROM stories WHERE expires_at < datetime('now')`).run();
+
+  // 1) Najprv vyčisti expirované stories (DB + R2)
+  try {
+    await deleteExpiredStories(c.env);
+  } catch (err) {
+    console.warn('[stories] cleanup on feed failed:', err.message);
+  }
 
   const my = await c.env.DB.prepare(
     `SELECT id, user_id, business_id, image_url, caption, media_type, media_urls_json, created_at, expires_at FROM stories
@@ -101,7 +133,7 @@ storiesRoutes.post('/', async (c) => {
   return c.json({ id, expires_at: exp }, 201);
 });
 
-// Upload fotky — s MIME validáciou
+// Upload fotky s MIME validáciou
 storiesRoutes.post('/upload', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -109,7 +141,6 @@ storiesRoutes.post('/upload', async (c) => {
   if (!file || typeof file === 'string') return c.json({ error: 'Chýba soubor.' }, 400);
   if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
 
-  // MIME + size + magic bytes validácia
   const v = await validateUpload(file, 'image');
   if (!v.ok) {
     const msgs = {
@@ -130,7 +161,7 @@ storiesRoutes.post('/upload', async (c) => {
   return c.json({ url }, 201);
 });
 
-// Upload videa — s MIME validáciou
+// Upload videa s MIME validáciou
 storiesRoutes.post('/upload-video', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -138,7 +169,6 @@ storiesRoutes.post('/upload-video', async (c) => {
   if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
   if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
 
-  // MIME + size + magic bytes validácia
   const v = await validateUpload(file, 'video');
   if (!v.ok) {
     const msgs = {
@@ -207,7 +237,7 @@ storiesRoutes.post('/:id/like', async (c) => {
   return c.json({ liked: true, likes: cur }, 201);
 });
 
-// Odpoveď na story → DM autorovi + notifikácia
+// Odpoveď na story → DM + notifikácia
 storiesRoutes.post('/:id/reply', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -280,4 +310,14 @@ storiesRoutes.get('/:id/replies', async (c) => {
      ORDER BY story_replies.created_at DESC LIMIT 100`,
   ).bind(id).all();
   return c.json({ replies: results });
+});
+
+// ============================================================
+// Manuálny cleanup endpoint (pre testovanie / admin)
+// ============================================================
+storiesRoutes.post('/admin/cleanup-expired', async (c) => {
+  const user = c.get('user');
+  if (user.role !== 'admin') return c.json({ error: 'Len pre administrátorov.' }, 403);
+  const result = await deleteExpiredStories(c.env);
+  return c.json(result);
 });
