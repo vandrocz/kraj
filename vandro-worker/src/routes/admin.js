@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { logAudit } from '../audit.js';
 import { newId, generateUniqueHandle } from '../auth.js';
 import { runDailyDistribution } from '../cron.js';
 import { sendPushToUser } from '../push.js';
@@ -169,6 +170,7 @@ adminRoutes.get('/users', async (c) => {
 
 adminRoutes.post('/users/:id/suspend', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
+  const admin = c.get('user');
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
   const reason = (body.reason || '').slice(0, 500);
@@ -180,7 +182,21 @@ adminRoutes.post('/users/:id/suspend', async (c) => {
        VALUES (?, ?, 'account_suspended', 'user', ?, ?)`,
     ).bind(newId('notif'), id, id, `Tvůj účet byl pozastaven.${reason ? ' Důvod: ' + reason : ''}`).run();
   } catch {}
+
+  await logAudit(c.env, { adminId: admin.sub, action: 'suspend_user', targetType: 'user', targetId: id, reason });
+
   return c.json({ ok: true });
+});
+
+adminRoutes.get('/audit-log', async (c) => {
+  if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
+  const { results } = await c.env.DB.prepare(
+    `SELECT al.*, u.display_name AS admin_name
+     FROM audit_log al
+     LEFT JOIN users u ON u.id = al.admin_id
+     ORDER BY al.created_at DESC LIMIT 200`,
+  ).all();
+  return c.json({ logs: results });
 });
 
 adminRoutes.post('/users/:id/unsuspend', async (c) => {
@@ -346,9 +362,41 @@ adminRoutes.get('/posts', async (c) => {
 
 adminRoutes.delete('/posts/:id', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
+  const admin = c.get('user');
   const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const reason = (body.reason || 'Porušenie pravidiel platformy').slice(0, 500);
+
+  const post = await c.env.DB.prepare('SELECT id, user_id FROM posts WHERE id = ?').bind(id).first();
+  if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
+
   await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE id = ?`).bind(id).run();
   await c.env.DB.prepare(`UPDATE reports SET resolved = 1 WHERE post_id = ?`).bind(id).run();
+
+  // DSA: notifikácia autorovi s odôvodnením
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO notifications (id, user_id, type, entity_type, entity_id, text)
+       VALUES (?, ?, 'moderation_removed', 'post', ?, ?)`,
+    ).bind(newId('notif'), post.user_id, id, reason).run();
+
+    const { sendPushToUser } = await import('../push.js');
+    await sendPushToUser(c.env, post.user_id, {
+      title: 'Příspěvek byl odstraněn',
+      body: reason,
+      url: '/',
+    });
+  } catch (err) { console.warn('DSA notif failed:', err); }
+
+  // Audit log
+  await logAudit(c.env, {
+    adminId: admin.sub,
+    action: 'delete_post',
+    targetType: 'post',
+    targetId: id,
+    reason,
+  });
+
   return c.json({ ok: true });
 });
 
