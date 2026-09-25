@@ -1,5 +1,5 @@
 // ============================================================
-// SEKCE 5: MŮJ PROFIL (zlúčené s "Můj účet" podľa B1)
+// SEKCE 5: MŮJ PROFIL
 // ============================================================
 
 const accountFormState = {
@@ -9,12 +9,9 @@ const accountFormState = {
   postFiles: [],
   formError: '',
   formBusy: false,
+  _postFormOpen: false,
 };
 
-// ------------------------------------------------------------------
-// B1: Toto je teraz jediná "Profil" karta. Hlavička má iba 2 tlačidlá:
-// zvonček (s badge) + nastavenia.
-// ------------------------------------------------------------------
 function renderAccountPage() {
   if (!isLoggedIn()) {
     const html = `
@@ -212,7 +209,6 @@ function finishLogin(data) {
   loadNotifications();
   if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(data.user);
   if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
-  // C3: po prihlásení s oneskorením požiadaj o push permisiu
   if (typeof maybeRequestPushPermission === 'function') maybeRequestPushPermission();
 }
 
@@ -250,6 +246,7 @@ function handleLogout() {
   state.unreadNotifications = 0;
   state._pushSubscribed = false;
   state._pushPrompted = false;
+  if (state.lightbox) closeLightbox();
   showToast('Byl jsi odhlášen.');
   renderApp();
 }
@@ -280,7 +277,6 @@ function renderRoleSpecificContent() {
   return '';
 }
 
-// USER
 function renderUserAboutSection() {
   const u = state.user;
   return `
@@ -321,7 +317,8 @@ function renderUserAboutSection() {
 }
 
 // ------------------------------------------------------------------
-// B3: Všetky akcie podniku na jednom mieste v sekcii "Tvůj podnik"
+// BUSINESS DASHBOARD
+// Pridané: tlačidlo "Přidat další podnik" (organizácia/podnik môže mať viac)
 // ------------------------------------------------------------------
 function renderBusinessDashboard() {
   const businesses = state.businesses || [];
@@ -340,8 +337,11 @@ function renderBusinessDashboard() {
   const vreq = state._verificationStatus?.request;
   const isPending = vreq?.status === 'pending';
   const isVerified = Number(selected.is_verified);
-
   const postFormOpen = accountFormState._postFormOpen || false;
+
+  // Aký ďalší podnik môže user pridať?
+  const canAddMore = state.user.role === 'organization' || state.user.role === 'hotelier' || state.user.role === 'admin';
+  const addKind = state.user.role === 'organization' ? 'organizations' : 'accommodation';
 
   return `
     <div class="profile-section">
@@ -364,17 +364,122 @@ function renderBusinessDashboard() {
             ${icon('shield', { size: 15 })} Ověřit
           </button>
         ` : ''}
+        ${canAddMore ? `
+          <button class="profile-action-btn" data-action="open-add-business" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
+            ${icon('plus', { size: 15 })} Přidat další podnik
+          </button>
+        ` : ''}
       </div>
 
-      ${!isVerified && isPending ? `
-        <p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">⏳ Žádost o ověření čeká na schválení.</p>
-      ` : ''}
-      ${isVerified ? `
-        <p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">✓ Profil je ověřený</p>
-      ` : ''}
+      ${!isVerified && isPending ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">⏳ Žádost o ověření čeká na schválení.</p>` : ''}
+      ${isVerified ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">✓ Profil je ověřený</p>` : ''}
     </div>
 
     ${postFormOpen ? renderInlineBusinessPostForm(selected, targetFeed) : ''}`;
+}
+
+// ------------------------------------------------------------------
+// Nové: modal pre pridanie ďalšieho podniku
+// ------------------------------------------------------------------
+function openAddBusinessModal() {
+  const role = state.user.role;
+  const isOrg = role === 'organization' || role === 'admin';
+  const isHotelier = role === 'hotelier' || role === 'admin';
+
+  const kindOptions = [];
+  if (isOrg) kindOptions.push({ value: 'organizations', label: 'Organizace (hrad, zámek, muzeum…)' });
+  if (isHotelier) {
+    kindOptions.push({ value: 'accommodation', label: 'Ubytování' });
+    kindOptions.push({ value: 'restaurants', label: 'Gastro' });
+  }
+
+  const initialKind = kindOptions[0]?.value || 'organizations';
+  const initialTypeOptions = initialKind === 'organizations' ? TYPES.organization
+    : initialKind === 'accommodation' ? TYPES.accommodation
+    : TYPES.restaurant;
+
+  openModal({
+    title: 'Přidat další podnik',
+    body: `
+      ${kindOptions.length > 1 ? `
+        <div class="form-field">
+          <label class="form-label">Typ podniku</label>
+          <select class="form-select" name="kind" data-action="add-business-kind-change">
+            ${kindOptions.map((o) => `<option value="${o.value}">${o.label}</option>`).join('')}
+          </select>
+        </div>
+      ` : `<input type="hidden" name="kind" value="${initialKind}" />`}
+
+      <div class="form-field"><label class="form-label">Název</label><input class="form-input" name="name" required maxlength="200" /></div>
+
+      <div class="form-field">
+        <label class="form-label">Typ / druh</label>
+        <select class="form-select" name="type" id="add-business-type-select" required>
+          ${initialTypeOptions.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">Kraj</label>
+        <select class="form-select" name="region" data-action="region-select-change" required>
+          <option value="">Vyberte kraj…</option>
+          ${Object.keys(REGIONS).map((r) => `<option value="${r}">${r}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">Okres</label>
+        <select class="form-select" name="district" data-action="district-change" required>
+          <option value="">Nejprve vyberte kraj</option>
+        </select>
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">Obec</label>
+        <select class="form-select" name="city">
+          <option value="">Nejprve vyberte okres</option>
+        </select>
+      </div>
+
+      <div class="form-field"><label class="form-label">Popis (nepovinné)</label><textarea class="form-textarea" name="description" maxlength="500"></textarea></div>
+    `,
+    submitLabel: 'Vytvořit podnik',
+    onSubmit: async (data) => {
+      state._modalLoading = true; renderApp();
+      try {
+        const res = await apiPost('/api/profile/me/business', {
+          kind: data.kind,
+          name: data.name,
+          type: data.type,
+          region: data.region,
+          district: data.district,
+          city: data.city || null,
+          description: data.description || '',
+        });
+        // Pridaj do state a vyber nový podnik
+        state.businesses = [...(state.businesses || []), res.business];
+        setStoredBusinesses(state.businesses);
+        accountFormState.postTargetBusiness = res.business.id;
+        state._verificationStatus = undefined;
+        closeModal();
+        showToast('Podnik vytvořen! Můžeš ho ověřit.');
+      } catch (err) {
+        showToast(err.message);
+        state._modalLoading = false;
+        renderApp();
+      }
+    },
+  });
+}
+
+// Aktualizácia typu pri zmene kind v add-business modáli
+function updateAddBusinessTypeOptions(kind) {
+  const sel = document.getElementById('add-business-type-select');
+  if (!sel) return;
+  const typeOptions = kind === 'organizations' ? TYPES.organization
+    : kind === 'accommodation' ? TYPES.accommodation
+    : TYPES.restaurant;
+  sel.innerHTML = typeOptions.map((t) => `<option value="${t.value}">${t.label}</option>`).join('');
 }
 
 function renderInlineBusinessPostForm(selected, targetFeed) {
@@ -408,6 +513,7 @@ function renderInlineBusinessPostForm(selected, targetFeed) {
 
 function selectBusiness(id) {
   accountFormState.postTargetBusiness = id;
+  accountFormState._postFormOpen = false;
   state._verificationStatus = undefined;
   renderApp();
 }
@@ -502,7 +608,6 @@ async function handleBusinessPostSubmit(form) {
   }
 }
 
-// STATISTIKY
 async function openProfileStats(kind, id) {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'profile-stats', kind, id };
@@ -547,7 +652,6 @@ function renderProfileStatsOverlay() {
     </div>`;
 }
 
-// FORGOT / RESET / 2FA login
 function renderForgotPasswordOverlay() {
   return `
     <div class="page-scroll">
@@ -850,7 +954,6 @@ function renderAdminTools() {
     </div>`;
 }
 
-// ADMIN LOADERS + AKCIE
 async function loadAdminStats() {
   try { state.adminStats = await apiGet('/api/admin/stats'); }
   catch { state.adminStats = { totals: {} }; }
@@ -1080,7 +1183,6 @@ async function adminCleanupTest() {
   } catch (err) { showToast(err.message); }
 }
 
-// VERIFICATION REQUEST
 function openVerificationRequest(kind, id, name) {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'verification-request', kind, id, name, docFile: null, uploading: false };
@@ -1154,7 +1256,6 @@ async function handleVerificationSubmit(form) {
   }
 }
 
-// PUSH
 async function handlePushToggle(checked) {
   if (checked) await enablePushNotifications();
   else await disablePushNotifications();
