@@ -83,9 +83,6 @@ const state = {
 
 let _mapIframeCache = null;
 
-// ------------------------------------------------------------------
-// History API
-// ------------------------------------------------------------------
 function pushHistoryState(type) {
   try {
     if (state._historyPushed) return;
@@ -447,6 +444,7 @@ function renderApp() {
     if (lbEl) {
       lbEl.classList.add('is-open');
       document.body.style.overflow = 'hidden';
+      applyLightboxPanelState();
       updateLightboxDOM();
     }
   }
@@ -576,7 +574,7 @@ function switchTab(tab) {
 }
 
 // ============================================================
-// LIGHTBOX
+// LIGHTBOX — s 3-stavovým panelom (compact / expanded / fullscreen)
 // ============================================================
 function openLightbox(images, index = 0, caption = '', post = null) {
   state.lightbox = {
@@ -584,12 +582,18 @@ function openLightbox(images, index = 0, caption = '', post = null) {
     index: Math.max(0, Math.min(index, images.length - 1)),
     caption,
     post,
-    expanded: false,
+    panelState: 0, // 0 = compact (45vh), 1 = expanded (75vh), 2 = fullscreen (100vh)
   };
   updateLightboxDOM();
-  document.getElementById('lightbox')?.classList.add('is-open');
+  const lbEl = document.getElementById('lightbox');
+  if (lbEl) lbEl.classList.add('is-open');
   document.body.style.overflow = 'hidden';
   pushHistoryState('lightbox');
+
+  setTimeout(() => {
+    applyLightboxPanelState();
+    setupLightboxDrag();
+  }, 10);
 
   if (post && post.id && post.__comments == null) {
     loadLightboxComments(post.id);
@@ -615,6 +619,7 @@ async function loadLightboxComments(postId) {
 function closeLightbox(fromHistory = false) {
   document.getElementById('lightbox')?.classList.remove('is-open');
   document.body.style.overflow = '';
+  teardownLightboxDrag();
   state.lightbox = null;
   if (!fromHistory && state._historyPushed) clearHistoryState();
 }
@@ -631,11 +636,105 @@ function lightboxNext() {
   updateLightboxDOM();
 }
 
-function toggleLightboxExpand() {
+// ============================================================
+// Panel state — 3 úrovne
+// ============================================================
+function setLightboxPanelState(state_) {
   if (!state.lightbox) return;
-  state.lightbox.expanded = !state.lightbox.expanded;
+  state.lightbox.panelState = Math.max(0, Math.min(2, state_));
+  applyLightboxPanelState();
+}
+
+function cycleLightboxPanelState() {
+  if (!state.lightbox) return;
+  const cur = state.lightbox.panelState || 0;
+  const next = (cur + 1) % 3;
+  setLightboxPanelState(next);
+}
+
+function applyLightboxPanelState() {
+  const lb = state.lightbox;
+  if (!lb) return;
+  const inner = document.querySelector('.lightbox-inner');
   const pane = document.querySelector('.lightbox-info-pane');
-  if (pane) pane.classList.toggle('is-expanded', state.lightbox.expanded);
+  const imgPane = document.querySelector('.lightbox-image-pane');
+  if (!inner || !pane || !imgPane) return;
+
+  inner.classList.remove('lb-panel-0', 'lb-panel-1', 'lb-panel-2');
+  inner.classList.add(`lb-panel-${lb.panelState || 0}`);
+}
+
+// ============================================================
+// Drag handle — swipe up/down na paneli
+// ============================================================
+let _lbDragHandlers = null;
+
+function setupLightboxDrag() {
+  teardownLightboxDrag();
+
+  const handle = document.querySelector('.lightbox-drag-handle');
+  const pane = document.querySelector('.lightbox-info-pane');
+  if (!handle || !pane) return;
+
+  let startY = 0;
+  let startState = 0;
+  let moved = false;
+
+  const onTouchStart = (e) => {
+    startY = e.touches[0].clientY;
+    startState = state.lightbox?.panelState || 0;
+    moved = false;
+    handle.classList.add('is-dragging');
+  };
+
+  const onTouchMove = (e) => {
+    if (!state.lightbox) return;
+    const dy = e.touches[0].clientY - startY;
+    if (Math.abs(dy) > 6) moved = true;
+  };
+
+  const onTouchEnd = (e) => {
+    handle.classList.remove('is-dragging');
+    if (!state.lightbox) return;
+    const endY = e.changedTouches[0].clientY;
+    const dy = endY - startY;
+
+    // Malý pohyb = klik → cyklus
+    if (!moved || Math.abs(dy) < 20) {
+      cycleLightboxPanelState();
+      return;
+    }
+
+    // Swipe up = expand, swipe down = collapse
+    if (dy < -40) {
+      setLightboxPanelState(Math.min(2, startState + 1));
+    } else if (dy > 40) {
+      setLightboxPanelState(Math.max(0, startState - 1));
+    }
+  };
+
+  const onClick = (e) => {
+    e.preventDefault();
+    cycleLightboxPanelState();
+  };
+
+  _lbDragHandlers = { onTouchStart, onTouchMove, onTouchEnd, onClick };
+  handle.addEventListener('touchstart', onTouchStart, { passive: true });
+  handle.addEventListener('touchmove', onTouchMove, { passive: true });
+  handle.addEventListener('touchend', onTouchEnd, { passive: true });
+  handle.addEventListener('click', onClick);
+}
+
+function teardownLightboxDrag() {
+  if (!_lbDragHandlers) return;
+  const handle = document.querySelector('.lightbox-drag-handle');
+  if (handle) {
+    handle.removeEventListener('touchstart', _lbDragHandlers.onTouchStart);
+    handle.removeEventListener('touchmove', _lbDragHandlers.onTouchMove);
+    handle.removeEventListener('touchend', _lbDragHandlers.onTouchEnd);
+    handle.removeEventListener('click', _lbDragHandlers.onClick);
+  }
+  _lbDragHandlers = null;
 }
 
 function updateLightboxDOM() {
@@ -699,7 +798,7 @@ function updateLightboxDOM() {
       }
 
       info.innerHTML = `
-        <div class="lightbox-drag-handle" data-action="toggle-lightbox-expand"></div>
+        <div class="lightbox-drag-handle" data-action="lightbox-cycle-panel" role="button" aria-label="Zobrazit komentáře"></div>
         <header class="lightbox-post-head">
           <button data-action="open-profile" data-kind="${post.__feedKey || ''}" data-id="${biz.id || ''}" style="background:none;border:none;padding:0;cursor:pointer;flex-shrink:0;">
             ${avatarHtml}
@@ -740,6 +839,12 @@ function updateLightboxDOM() {
           `}
         </div>
       `;
+
+      // Po rendere pripojíme drag handlery
+      setTimeout(() => {
+        setupLightboxDrag();
+        applyLightboxPanelState();
+      }, 0);
     }
   }
 }
@@ -970,11 +1075,13 @@ function renderCookieBanner() {
   let startX = 0, startY = 0;
   document.addEventListener('touchstart', (e) => {
     if (!e.target.closest('.lightbox.is-open')) return;
+    if (e.target.closest('.lightbox-comments-section')) return; // neruš swipe v komentároch
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
   }, { passive: true });
   document.addEventListener('touchend', (e) => {
     if (!e.target.closest('.lightbox.is-open')) return;
+    if (e.target.closest('.lightbox-comments-section')) return;
     const dx = e.changedTouches[0].clientX - startX;
     const dy = e.changedTouches[0].clientY - startY;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
