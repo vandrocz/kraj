@@ -81,13 +81,10 @@ const state = {
   _historyPushed: false,
 };
 
-// ------------------------------------------------------------------
-// Cache pre iframe mapy — zabraňuje reloadu pri re-renderoch
-// ------------------------------------------------------------------
 let _mapIframeCache = null;
 
 // ------------------------------------------------------------------
-// History API — zatváranie lightboxov/overlayov tlačidlom späť
+// History API
 // ------------------------------------------------------------------
 function pushHistoryState(type) {
   try {
@@ -175,15 +172,12 @@ function setupInfiniteScroll(loadMoreFn) {
   _infiniteObserver.observe(target);
 }
 
-// ------------------------------------------------------------------
-// LOGO — nové logo z CDN
-// ------------------------------------------------------------------
 const APP_LOGO_URL = 'https://cdn.vandro.cz/Untitled15_20260522160351.png';
 
 function renderHeader(title, rightHtml) {
   return `
     <header class="app-header">
-      <img src="${APP_LOGO_URL}" alt="" class="app-header-logo" />
+      <img src="${APP_LOGO_URL}" alt="VANDRO" class="app-header-logo" />
       <h1 class="app-header-title">${title}</h1>
       <div class="app-header-right">${rightHtml || ''}</div>
     </header>`;
@@ -222,7 +216,7 @@ const FEED_TITLES_EN = {
 function pickRandomTitle(key) {
   const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
   const dict = lang === 'en' ? FEED_TITLES_EN : lang === 'sk' ? FEED_TITLES_SK : FEED_TITLES;
-  const arr = dict[key] || ['Náš kraj'];
+  const arr = dict[key] || ['VANDRO'];
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
@@ -242,9 +236,6 @@ const TABS = [
 
 const VALID_TABS = ['organizations', 'accommodation', 'gastro', 'map', 'events', 'account'];
 
-// ------------------------------------------------------------------
-// Bottom nav — na mape na mobile len šípka späť, na PC plná lišta
-// ------------------------------------------------------------------
 function renderBottomNav() {
   const isMapTab = state.tab === 'map' && !state.overlay;
   const isMobile = window.innerWidth < 720;
@@ -377,7 +368,6 @@ function renderApp() {
 
   const root = document.getElementById('root');
 
-  // Odpoj iframe mapy pred prepísaním innerHTML
   const liveMapIframe = document.getElementById('vandro-map-iframe');
   if (liveMapIframe) {
     liveMapIframe.remove();
@@ -438,7 +428,6 @@ function renderApp() {
     </div>
     ${renderModal()}`;
 
-  // Vlož iframe mapy späť
   if (state.tab === 'map' && !state.overlay && !hideAll) {
     const wrap = document.querySelector('[data-map-wrap]');
     if (wrap) {
@@ -499,7 +488,7 @@ async function applySeo() {
     if (state.overlay?.type === 'profile') {
       const d = state.profiles[`${state.overlay.kind}:${state.overlay.id}`];
       if (d?.profile) {
-        og.title = `${d.profile.name || d.profile.display_name} — Náš kraj`;
+        og.title = `${d.profile.name || d.profile.display_name} — VANDRO`;
         og.description = (d.profile.description || d.profile.bio || '').slice(0, 160);
         og.image = d.profile.cover_url || d.profile.logo_url || d.profile.image_url || d.profile.avatar_url || og.image;
       }
@@ -781,7 +770,7 @@ function renderLightbox() {
 }
 
 // ============================================================
-// NOTIFIKÁCIE — navigácia po kliknutí
+// NOTIFIKÁCIE
 // ============================================================
 async function openNotification(notifId) {
   const n = (state.notifications || []).find((x) => x.id === notifId);
@@ -853,43 +842,60 @@ async function openNotification(notifId) {
 }
 
 // ============================================================
-// COOKIES
+// GDPR COOKIE CONSENT V2
 // ============================================================
+const COOKIE_CONSENT_VERSION = '2';
+
 function setCookieConsentShared(value, settings) {
-  try {
-    localStorage.setItem('naskraj_cookies', value);
-    localStorage.setItem('naskraj_cookie_settings', JSON.stringify(settings || {}));
-  } catch {}
+  const payload = {
+    v: COOKIE_CONSENT_VERSION,
+    ts: Date.now(),
+    necessary: true,
+    analytics: !!(settings && settings.analytics),
+    marketing: !!(settings && settings.marketing),
+  };
+  const json = JSON.stringify(payload);
+  try { localStorage.setItem('naskraj_cookies', json); } catch {}
   try {
     const maxAge = 365 * 24 * 60 * 60;
-    document.cookie = `naskraj_cookies=${value}; path=/; max-age=${maxAge}; domain=.vandro.cz; SameSite=Lax; Secure`;
+    document.cookie = `naskraj_cookies=${encodeURIComponent(json)}; path=/; max-age=${maxAge}; domain=.vandro.cz; SameSite=Lax; Secure`;
   } catch {}
   try {
-    document.cookie = `naskraj_cookies=${value}; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax`;
+    document.cookie = `naskraj_cookies=${encodeURIComponent(json)}; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax`;
   } catch {}
 }
 
 function getCookieConsentShared() {
   try {
     const m = document.cookie.match(/(?:^|; )naskraj_cookies=([^;]+)/);
-    if (m && (m[1] === '1' || m[1] === '0')) return m[1];
+    if (m) {
+      const parsed = JSON.parse(decodeURIComponent(m[1]));
+      if (parsed && parsed.v === COOKIE_CONSENT_VERSION) return parsed;
+    }
   } catch {}
   try {
-    const v = localStorage.getItem('naskraj_cookies');
-    if (v === '1' || v === '0') return v;
+    const raw = localStorage.getItem('naskraj_cookies');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.v === COOKIE_CONSENT_VERSION) return parsed;
+    }
   } catch {}
   return null;
 }
 
+function hasValidCookieConsent() {
+  return !!getCookieConsentShared();
+}
+
 function acceptCookies() {
-  setCookieConsentShared('1', { necessary: true, analytics: true, marketing: true });
+  setCookieConsentShared('1', { analytics: true, marketing: true });
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
   document.getElementById('cookie-banner')?.remove();
 }
 
 function rejectCookies() {
-  setCookieConsentShared('0', { necessary: true, analytics: false, marketing: false });
+  setCookieConsentShared('0', { analytics: false, marketing: false });
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
   document.getElementById('cookie-banner')?.remove();
@@ -897,11 +903,8 @@ function rejectCookies() {
 
 function openCookieSettings() {
   state._cookieSettingsOpen = true;
-  try {
-    const stored = localStorage.getItem('naskraj_cookie_settings');
-    if (stored) state._cookieSettings = JSON.parse(stored);
-    else state._cookieSettings = { necessary: true, analytics: false, marketing: false };
-  } catch {}
+  const existing = getCookieConsentShared();
+  state._cookieSettings = existing || { necessary: true, analytics: false, marketing: false };
   renderApp();
 }
 
@@ -910,7 +913,8 @@ function toggleCookieSetting(key, value) {
 }
 
 function saveCookieSettings() {
-  setCookieConsentShared('1', state._cookieSettings || { necessary: true });
+  const s = state._cookieSettings || { necessary: true, analytics: false, marketing: false };
+  setCookieConsentShared('1', { analytics: s.analytics, marketing: s.marketing });
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
   document.getElementById('cookie-banner')?.remove();
@@ -918,16 +922,14 @@ function saveCookieSettings() {
 
 function renderCookieBanner() {
   if (state._cookieConsent) return '';
-  try {
-    const stored = getCookieConsentShared();
-    if (stored) { state._cookieConsent = true; return ''; }
-  } catch {}
+  const existing = getCookieConsentShared();
+  if (existing) { state._cookieConsent = true; return ''; }
 
   const settings = state._cookieSettings || { necessary: true, analytics: false, marketing: false };
   const showSettings = state._cookieSettingsOpen;
 
   return `
-    <div class="cookie-banner" id="cookie-banner">
+    <div class="cookie-banner" id="cookie-banner" role="dialog" aria-modal="true" aria-label="${escapeAttr(t('cookie.title'))}">
       <div class="cookie-body">
         <p class="cookie-text">
           <strong>${escapeHtml(t('cookie.title'))}</strong>
@@ -955,7 +957,7 @@ function renderCookieBanner() {
             <button class="cookie-btn cookie-btn-primary" data-action="save-cookie-settings">${escapeHtml(t('cookie.save'))}</button>
           ` : `
             <button class="cookie-btn cookie-btn-primary" data-action="accept-cookies">${escapeHtml(t('cookie.acceptAll'))}</button>
-            <button class="cookie-btn" data-action="reject-cookies">${escapeHtml(t('cookie.reject'))}</button>
+            <button class="cookie-btn cookie-btn-primary" data-action="reject-cookies" style="background:transparent;border-color:rgba(255,255,255,0.5)">${escapeHtml(t('cookie.reject'))}</button>
             <button class="cookie-btn" data-action="open-cookie-settings">${escapeHtml(t('cookie.settings'))}</button>
           `}
           <a class="cookie-btn" href="/ochrana-osobnich-udaju.html" target="_blank" rel="noopener">${escapeHtml(t('cookie.more'))}</a>
@@ -992,7 +994,6 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') lightboxPrev();
 });
 
-// C3: push permisia
 function maybeRequestPushPermission() {
   if (!isLoggedIn()) return;
   if (state._pushPrompted) return;
