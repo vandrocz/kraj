@@ -71,6 +71,28 @@ function decodeCursor(cursor) {
   } catch { return null; }
 }
 
+// ============================================================
+// Pomocná funkcia: zmazať z R2 všetky médiá príspevku
+// ============================================================
+async function deletePostMediaFromR2(env, urls) {
+  if (!env.MEDIA || !urls || urls.length === 0) return;
+  const publicBase = env.R2_PUBLIC_BASE || '';
+  for (const url of urls) {
+    if (!url) continue;
+    try {
+      let key = url;
+      if (publicBase && url.startsWith(publicBase + '/')) {
+        key = url.slice(publicBase.length + 1);
+      }
+      if (key && !key.startsWith('http')) {
+        await env.MEDIA.delete(key);
+      }
+    } catch (err) {
+      console.warn('[feed] R2 delete failed for', url, err.message);
+    }
+  }
+}
+
 async function saveHashtags(env, postId, text) {
   const tags = extractHashtags(text);
   if (tags.length === 0) return [];
@@ -455,14 +477,42 @@ feedRoutes.patch('/post/:id', async (c) => {
   return c.json({ ok: true, id, text: plainText, html: contentHtml });
 });
 
+// ============================================================
+// DELETE POST — soft delete v DB + tvrdé zmazanie médií z R2 (GDPR)
+// ============================================================
 feedRoutes.delete('/post/:id', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
-  const post = await c.env.DB.prepare('SELECT id, user_id FROM posts WHERE id = ?').bind(id).first();
+
+  const post = await c.env.DB.prepare(
+    'SELECT id, user_id, image_url FROM posts WHERE id = ?',
+  ).bind(id).first();
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
   if (post.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
+
+  // Zozbieraj všetky URL médií tohto príspevku
+  const { results: mediaRows } = await c.env.DB.prepare(
+    `SELECT image_url FROM post_media WHERE post_id = ?`,
+  ).bind(id).all();
+
+  const allUrls = [
+    post.image_url,
+    ...(mediaRows || []).map((m) => m.image_url),
+  ].filter(Boolean);
+
+  // 1) Soft delete v DB (aby FK integrity ostala)
   await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE id = ?`).bind(id).run();
-  return c.json({ ok: true });
+
+  // 2) Zmazať riadky post_media (aby ich URL neblokovali R2 cleanup)
+  await c.env.DB.prepare(`DELETE FROM post_media WHERE post_id = ?`).bind(id).run();
+
+  // 3) Zmazať prílohy (hashtags, mentions, bookmarks môžu ostať pre audit)
+  await c.env.DB.prepare(`DELETE FROM post_hashtags WHERE post_id = ?`).bind(id).run();
+
+  // 4) Zmazať súbory z R2 OKAMŽITE
+  await deletePostMediaFromR2(c.env, allUrls);
+
+  return c.json({ ok: true, deleted_media: allUrls.length });
 });
 
 feedRoutes.delete('/comment/:id', async (c) => {
@@ -548,7 +598,6 @@ feedRoutes.post('/:id/comment', async (c) => {
     } catch (err) { console.warn('[comment] notif/push zlyhal:', err.message); }
   }
 
-  // Reply notifikácia — OPRAVA: entity_type='post', entity_id=postId (aby sa dala otvoriť)
   if (parentComment && parentComment.user_id !== user.sub && parentComment.user_id !== post.user_id) {
     try {
       await c.env.DB.prepare(
@@ -582,14 +631,12 @@ feedRoutes.post('/:id/report', async (c) => {
   const newCount = (post.report_count || 0) + 1;
   await c.env.DB.prepare('UPDATE posts SET report_count = ? WHERE id = ?').bind(newCount, postId).run();
 
-  // Auto-hide pri 5+ reportoch
   const HIDE_THRESHOLD = 5;
   if (newCount >= HIDE_THRESHOLD && !post.hidden_by_reports) {
     await c.env.DB.prepare(
       `UPDATE posts SET status = 'hidden_by_reports', hidden_by_reports = 1 WHERE id = ?`
     ).bind(postId).run();
 
-    // DSA: notifikuj autora
     try {
       await c.env.DB.prepare(
         `INSERT INTO notifications (id, user_id, type, entity_type, entity_id, text)
@@ -609,4 +656,4 @@ feedRoutes.post('/:id/report', async (c) => {
   return c.json({ id, ok: true, report_count: newCount }, 201);
 });
 
-export { saveHashtags };
+export { saveHashtags, deletePostMediaFromR2 };
