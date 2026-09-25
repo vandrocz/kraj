@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kontakt — Náš kraj</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #F6FAF7; color: #10201A; margin: 0; padding: 24px; line-height: 1.65; }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  a.back { display: inline-block; margin-bottom: 16px; color: #1B8F52; text-decoration: none; font-weight: 600; font-size: 14px; }
+  h1 { font-size: 26px; margin: 0 0 8px; }
+  .lead { color: #64766D; margin-bottom: 28px; font-size: 15px; }
+  .cards { display: grid; gap: 12px; }
+  .card {
+    background: #fff; border: 1px solid #E4ECE6; border-radius: 16px;
+    padding: 20px; display: flex; align-items: center; gap: 16px;
+    text-decoration: none; color: inherit;
+    transition: border-color .15s, transform .15s;
+  }
+  .card:hover { border-color: #2FBF71; transform: translateY(-2px); }
+  .card-icon {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: #E4F8EC; color: #1B8F52;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; flex-shrink: 0;
+  }
+  .card-title { font-weight: 800; font-size: 15.5px; }
+  .card-value { color: #64766D; font-size: 14px; }
+  .footer { text-align: center; margin-top: 40px; color: #64766D; font-size: 13px; }
+  .footer a { color: #1B8F52; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">← Zpět do aplikace</a>
+  <h1>Kontakt</h1>
+  <p class="lead">Máš dotaz, nápad na vylepšení, nebo jsi narazil na chybu? Napiš nám.</p>
+
+  <div class="cards">
+    <a class="card" href="mailto:vandrocz.contact@gmail.com">
+      <div class="card-icon">✉️</div>
+      <div>
+        <div class="card-title">E-mail</div>
+        <div class="card-value">vandrocz.contact@gmail.com</div>
+      </div>
+    </a>
+
+    <a class="card" href="https://naskraj.vandro.cz">
+      <div class="card-icon">🌐</div>
+      <div>
+        <div class="card-title">Webová aplikace</div>
+        <div class="card-value">naskraj.vandro.cz</div>
+      </div>
+    </a>
+
+    <a class="card" href="/faq.html">
+      <div class="card-icon">❓</div>
+      <div>
+        <div class="card-title">Časté dotazy</div>
+        <div class="card-value">Odpovědi na nejčastější otázky</div>
+      </div>
+    </a>
+
+    <a class="card" href="/ochrana-osobnich-udaju.html">
+      <div class="card-icon">🔒</div>
+      <div>
+        <div class="card-title">Ochrana osobních údajů</div>
+        <div class="card-value">GDPR informace</div>
+      </div>
+    </a>
+  </div>
+
+  <p style="margin-top:32px;color:#64766D;font-size:13px">
+    Odpovídáme obvykle do 2 pracovních dnů. Provozovatel platformy Náš kraj.
+  </p>
+
+  <div class="footer">
+    <p><a href="/">Aplikace</a> · <a href="/faq.html">FAQ</a> · <a href="/obchodni-podminky.html">Obchodní podmínky</a></p>
+  </div>
+</div>
+</body>
+</html>

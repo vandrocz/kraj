@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Časté dotazy — Náš kraj</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #F6FAF7; color: #10201A; margin: 0; padding: 24px; line-height: 1.65; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  a.back { display: inline-block; margin-bottom: 16px; color: #1B8F52; text-decoration: none; font-weight: 600; font-size: 14px; }
+  h1 { font-size: 26px; margin: 0 0 8px; }
+  .lead { color: #64766D; margin-bottom: 28px; font-size: 15px; }
+  details {
+    background: #fff; border: 1px solid #E4ECE6; border-radius: 16px;
+    margin-bottom: 10px; overflow: hidden;
+    transition: border-color .15s;
+  }
+  details[open] { border-color: #2FBF71; }
+  summary {
+    padding: 16px 20px; cursor: pointer; font-weight: 700; font-size: 15px;
+    list-style: none; display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::after {
+    content: '+'; font-size: 22px; color: #2FBF71; font-weight: 300;
+    transition: transform .2s; flex-shrink: 0;
+  }
+  details[open] summary::after { content: '−'; }
+  .answer { padding: 0 20px 18px; color: #10201A; font-size: 14.5px; line-height: 1.7; }
+  .answer a { color: #1B8F52; }
+  .footer { text-align: center; margin-top: 40px; color: #64766D; font-size: 13px; }
+  .footer a { color: #1B8F52; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">← Zpět do aplikace</a>
+  <h1>Časté dotazy</h1>
+  <p class="lead">Vše, co potřebuješ vědět o platformě Náš kraj.</p>
+
+  <details open>
+    <summary>Co je Náš kraj?</summary>
+    <div class="answer">
+      Náš kraj je regionální platforma, která propojuje turisty, organizace (hrady, zámky, muzea, ZOO…) a poskytovatele služeb (ubytování, gastro). Můžeš zde objevovat místa, sledovat své oblíbené podniky, psát recenze, checkovat se na navštívených místech a sbírat odznaky.
+    </div>
+  </details>
+
+  <details>
+    <summary>Jak se zaregistruji?</summary>
+    <div class="answer">
+      Klikni na <strong>Profil → Registrace</strong>. Vyplň e-mail, heslo a zvol roli (turista / organizace / podnik). Registrace je zdarma a zabere jen pár sekund.
+    </div>
+  </details>
+
+  <details>
+    <summary>Co je to sbírka? Jak funguje?</summary>
+    <div class="answer">
+      Sbírka je crowdfundingový projekt, který vytváří organizace (např. na opravu střechy hradu). Každý uživatel má v platformě kredit, ze kterého se denně strhne <strong>1 Kč</strong> a přerozdělí se mezi sbírky. O pořadí rozhodují lajky komunity — čím více lajků, tím dříve se sbírka dostane na řadu.
+    </div>
+  </details>
+
+  <details>
+    <summary>Jak dobit kredit?</summary>
+    <div class="answer">
+      V sekci <strong>Profil → Peňaženka</strong> klikni na jedno z tlačítek pro dobití (50, 150, 400, 1000 Kč). Kredit se připíše okamžitě.
+    </div>
+  </details>
+
+  <details>
+    <summary>Jak fungují odznaky?</summary>
+    <div class="answer">
+      Odznaky získáváš za aktivitu — za počet navštívených míst, hradů, zámků, muzeí, restaurací, napsaných recenzí, nahraných fotek a objevených krajů. Čím víc aktivity, tím vyšší úroveň odznaku.
+    </div>
+  </details>
+
+  <details>
+    <summary>Jak přidat podnik nebo organizaci?</summary>
+    <div class="answer">
+      Při registraci zvol roli <strong>Organizace</strong> nebo <strong>Podnik</strong>. Vyplň název, typ, kraj, okres a obec. Po registraci můžeš ihned přidávat příspěvky a akce. Ověřený odznak (modrá fajfka) uděluje administrátor po doložení dokumentu — v sekci <strong>Profil → Tvůj podnik → Ověřit účet firmy</strong>.
+    </div>
+  </details>
+
+  <details>
+    <summary>Jak nahlásit nevhodný obsah?</summary>
+    <div class="answer">
+      U každého příspěvku je v pravém horním rohu tlačítko <strong>„…"</strong>. Klikni na něj a vyber <strong>Nahlásit</strong>. Nahlášení uvidí administrátor v admin panelu.
+    </div>
+  </details>
+
+  <details>
+    <summary>Jak smazat účet?</summary>
+    <div class="answer">
+      V <strong>Profil → Nastavení → Smazat účet</strong>. Účet bude anonymizován, veškerá osobní data vymazána. Akce je nevratná.
+    </div>
+  </details>
+
+  <details>
+    <summary>Jsou moje data v bezpečí?</summary>
+    <div class="answer">
+      Ano. Hesla ukládáme v podobě PBKDF2 hashů, komunikace je šifrovaná přes HTTPS. Nepoužíváme žádné reklamní ani analytické cookies třetích stran. Můžeš si kdykoli stáhnout všechna svá data (Nastavení → Stáhnout moje data) nebo účet smazat.
+    </div>
+  </details>
+
+  <details>
+    <summary>Jak se stát ověřeným podnikem?</summary>
+    <div class="answer">
+      V sekci <strong>Profil → Tvůj podnik → Ověřit účet firmy</strong> nahraj dokument prokazující oprávnění (živnostenský list, výpis z rejstříku, faktura s IČO). Administrátor obvykle rozhodne do 48 hodin.
+    </div>
+  </details>
+
+  <details>
+    <summary>Kontakt</summary>
+    <div class="answer">
+      Máš další dotaz? Napiš nám na <a href="mailto:vandrocz.contact@gmail.com">vandrocz.contact@gmail.com</a>.
+    </div>
+  </details>
+
+  <div class="footer">
+    <p><a href="/">Aplikace</a> · <a href="/kontakt.html">Kontakt</a> · <a href="/obchodni-podminky.html">Obchodní podmínky</a> · <a href="/ochrana-osobnich-udaju.html">Ochrana osobních údajů</a></p>
+  </div>
+</div>
+</body>
+</html>
