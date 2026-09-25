@@ -79,6 +79,12 @@ const state = {
   _mapNavCollapsed: true,
 };
 
+// ------------------------------------------------------------------
+// Cache pre iframe mapy. Uchováva iframe element mimo DOM medzi
+// renderApp() volaniami, aby sa neznovu-načítaval pri každom re-renderi.
+// ------------------------------------------------------------------
+let _mapIframeCache = null;
+
 function fmt(n) { return Number(n || 0).toLocaleString('cs-CZ'); }
 
 function timeAgo(iso) {
@@ -316,6 +322,19 @@ function renderApp() {
   }
 
   const root = document.getElementById('root');
+
+  // ------------------------------------------------------------------
+  // KĽÚČOVÁ OPRAVA: Pred prepísaním innerHTML odpojíme iframe mapy
+  // (ak existuje) a odložíme ho do cache. Po renderi ho vložíme späť.
+  // Presun existujúceho iframe elementu NEspôsobuje reload, na rozdiel
+  // od opätovného vytvorenia.
+  // ------------------------------------------------------------------
+  const liveMapIframe = document.getElementById('vandro-map-iframe');
+  if (liveMapIframe) {
+    liveMapIframe.remove();
+    _mapIframeCache = liveMapIframe;
+  }
+
   let pageHtml = '';
 
   if (state.overlay?.type === 'profile') pageHtml = renderProfileOverlay();
@@ -370,12 +389,25 @@ function renderApp() {
     </div>
     ${renderModal()}`;
 
+  // ------------------------------------------------------------------
+  // Vloženie iframe mapy späť do wrappera (ak sme na mape a nie je overlay).
+  // Využívame cached iframe, aby sa neznovu-načítal.
+  // ------------------------------------------------------------------
+  if (state.tab === 'map' && !state.overlay && !hideAll) {
+    const wrap = document.querySelector('[data-map-wrap]');
+    if (wrap) {
+      let iframe = _mapIframeCache;
+      if (!iframe) {
+        iframe = createMapIframe();
+        _mapIframeCache = iframe;
+      }
+      wrap.appendChild(iframe);
+    }
+  }
+
   applySeo();
 
-  // ------------------------------------------------------------------
-  // DÔLEŽITÉ: Ak bol lightbox otvorený pred renderom, obnov ho.
-  // Bez tohto by sa lightbox zatváral pri každom renderApp().
-  // ------------------------------------------------------------------
+  // Obnov lightbox, ak bol otvorený pred renderom
   if (state.lightbox && state.lightbox.images && state.lightbox.images.length > 0 && !hideLightbox) {
     const lbEl = document.getElementById('lightbox');
     if (lbEl) {
@@ -436,9 +468,6 @@ async function applySeo() {
   } catch {}
 }
 
-// ------------------------------------------------------------------
-// openProfile — zatvorí lightbox ak je otvorený (aby sa profil zobrazil)
-// ------------------------------------------------------------------
 function openProfile(kind, id) {
   if (state.lightbox) closeLightbox();
   let k = kind; if (kind === 'organization') k = 'organizations'; if (kind === 'gastro') k = 'restaurants';
@@ -578,7 +607,6 @@ function updateLightboxDOM() {
       const commentsReady = post.__comments != null;
       const commentsList = post.__comments || [];
 
-      // Avatary v komentároch
       const commentsHtml = commentsList.map((c) => {
         const cInitial = (c.user_name || '?').charAt(0).toUpperCase();
         const avatarInner = c.user_avatar
@@ -684,14 +712,12 @@ async function openNotification(notifId) {
   const n = (state.notifications || []).find((x) => x.id === notifId);
   if (!n) return;
 
-  // Označ ako prečítané
   if (!n.read_at) {
     try { await apiPost(`/api/profile/me/notifications/${notifId}/read`, {}); } catch {}
     n.read_at = new Date().toISOString();
     state.unreadNotifications = Math.max(0, (state.unreadNotifications || 0) - 1);
   }
 
-  // Zatvor overlay notifikácií
   if (state.overlay?.type === 'notifications') {
     state.overlay = state.overlayStack.pop() || null;
   }
@@ -700,7 +726,6 @@ async function openNotification(notifId) {
   const entType = n.entity_type;
   const entId = n.entity_id;
 
-  // Lajk / komentár / odpoveď / zmienka → otvor post v lightboxe
   if ((t === 'like' || t === 'comment' || t === 'reply' || t === 'mention') && entType === 'post' && entId) {
     try {
       const data = await apiGet(`/api/feed/post-by-id/${encodeURIComponent(entId)}`);
@@ -722,7 +747,6 @@ async function openNotification(notifId) {
         return;
       }
 
-      // Najprv renderApp (aby existoval lightbox DOM), potom otvor lightbox
       renderApp();
       openLightbox(post.media, 0, post.text || '', post);
     } catch (err) {
@@ -732,28 +756,24 @@ async function openNotification(notifId) {
     return;
   }
 
-  // DM → otvor konverzáciu
   if (t === 'dm' && entType === 'thread' && entId) {
     renderApp();
     openThreadById(entId);
     return;
   }
 
-  // Follow / story_reply → otvor profil autora
   if ((t === 'follow' || t === 'story_reply') && n.actor_id) {
     renderApp();
     openProfile('user', n.actor_id);
     return;
   }
 
-  // Verifikácia → karta Profil
   if (t === 'verification_approved' || t === 'verification_rejected') {
     renderApp();
     switchTab('account');
     return;
   }
 
-  // Predvolené: len re-render (mark as read)
   renderApp();
 }
 
