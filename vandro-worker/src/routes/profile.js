@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { newId, normalizeHandle, validateHandle } from '../auth.js';
 import { escapeLike } from '../moderation.js';
+import { validateUpload } from '../moderation.js';
 import { getUserBadges } from '../badges.js';
 
 export const profileRoutes = new Hono();
@@ -227,9 +228,7 @@ profileRoutes.patch('/me/user', async (c) => {
   return c.json({ user: updated });
 });
 
-// ------------------------------------------------------------------
-// NOVÉ: Pridať ďalší podnik k existujúcemu účtu (organizácia / podnik)
-// ------------------------------------------------------------------
+// Pridať ďalší podnik
 profileRoutes.post('/me/business', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -238,7 +237,6 @@ profileRoutes.post('/me/business', async (c) => {
   const validKinds = ['organizations', 'accommodation', 'restaurants'];
   if (!validKinds.includes(kind)) return c.json({ error: 'Neplatný typ podniku.' }, 400);
 
-  // Role check
   if (kind === 'organizations' && user.role !== 'organization' && user.role !== 'admin') {
     return c.json({ error: 'Iba organizácie môžu pridať organizáciu.' }, 403);
   }
@@ -284,10 +282,7 @@ profileRoutes.post('/me/business', async (c) => {
   }
 
   const businessKind = kind === 'organizations' ? 'organization' : kind === 'accommodation' ? 'accommodation' : 'gastro';
-
-  return c.json({
-    business: { id, kind: businessKind, name, is_verified: 0 },
-  }, 201);
+  return c.json({ business: { id, kind: businessKind, name, is_verified: 0 } }, 201);
 });
 
 profileRoutes.patch('/me/:type/:id', async (c) => {
@@ -316,6 +311,7 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
   return c.json({ business: updated });
 });
 
+// Upload obrázka (avatar/cover/foto) — s MIME validáciou
 profileRoutes.post('/me/upload', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -325,6 +321,19 @@ profileRoutes.post('/me/upload', async (c) => {
   const field = (form.field || 'avatar').toString();
   if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
   if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
+
+  // MIME + size + magic bytes validácia
+  const v = await validateUpload(file, 'image');
+  if (!v.ok) {
+    const msgs = {
+      bad_type: 'Povolené sú len JPG, PNG, WebP alebo GIF.',
+      too_large: 'Fotka je príliš veľká (max 10 MB).',
+      bad_magic: 'Súbor nie je platná fotka.',
+      empty: 'Súbor je prázdny.',
+      no_file: 'Chýba súbor.',
+    };
+    return c.json({ error: msgs[v.reason] || 'Neplatný súbor.' }, 400);
+  }
 
   const publicBase = c.env.R2_PUBLIC_BASE || '';
   const ext = ((file.name || 'x.jpg').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -346,16 +355,26 @@ profileRoutes.post('/me/upload', async (c) => {
   return c.json({ url, field: col });
 });
 
+// Upload verifikačného dokumentu — s MIME validáciou
 profileRoutes.post('/me/upload-verification-doc', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
   const file = form.file;
   if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
   if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
-  if (file.size > 10 * 1024 * 1024) return c.json({ error: 'Soubor je příliš velký (max 10 MB).' }, 400);
 
-  const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-  if (!allowedTypes.includes(file.type)) return c.json({ error: 'Povolené formáty: PDF, JPG, PNG, WebP.' }, 400);
+  // MIME + size + magic bytes validácia (PDF/JPG/PNG/WebP)
+  const v = await validateUpload(file, 'document');
+  if (!v.ok) {
+    const msgs = {
+      bad_type: 'Povolené formáty: PDF, JPG, PNG, WebP.',
+      too_large: 'Soubor je příliš velký (max 10 MB).',
+      bad_magic: 'Súbor nie je platný dokument.',
+      empty: 'Súbor je prázdny.',
+      no_file: 'Chýba súbor.',
+    };
+    return c.json({ error: msgs[v.reason] || 'Neplatný súbor.' }, 400);
+  }
 
   const publicBase = c.env.R2_PUBLIC_BASE || '';
   const ext = ((file.name || 'doc.pdf').split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -561,28 +580,22 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
       return c.json({ error: 'Nemáš oprávnění.' }, 403);
     }
 
-    // Základné počty
     let posts = 0, events = 0, followers = 0, likes = 0, comments = 0, views = 0;
 
     try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).first(); posts = r?.n || 0; } catch {}
     try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM events WHERE business_id = ? AND status = 'published'`).bind(id).first(); events = r?.n || 0; } catch {}
     try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first(); followers = r?.n || 0; } catch {}
 
-    // Post IDs pre ďalšie agregácie
     const { results: postRows } = await c.env.DB.prepare(
       `SELECT id, created_at, view_count FROM posts WHERE business_id = ? AND status = 'published'`,
     ).bind(id).all();
 
-    // Likes + comments + views súčty
     for (const p of postRows) {
       try { const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`); likes += raw ? parseInt(raw, 10) : 0; } catch {}
       try { const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first(); comments += cc?.n || 0; } catch {}
       views += p.view_count || 0;
     }
 
-    // ------------------------------------------------------------------
-    // Denné agregácie pre graf — posts, likes, comments, views
-    // ------------------------------------------------------------------
     const days = 30;
     const dayList = [];
     const today = new Date();
@@ -592,7 +605,6 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
       dayList.push(d.toISOString().slice(0, 10));
     }
 
-    // Posts podľa dňa
     const postsByDay = {};
     for (const p of postRows) {
       const day = (p.created_at || '').slice(0, 10);
@@ -600,7 +612,6 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
       postsByDay[day] = (postsByDay[day] || 0) + 1;
     }
 
-    // Comments podľa dňa
     const commentsByDay = {};
     try {
       const { results: cRows } = await c.env.DB.prepare(
@@ -612,7 +623,6 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
       for (const r of cRows) commentsByDay[r.day] = r.n;
     } catch {}
 
-    // Events podľa dňa (created_at)
     const eventsByDay = {};
     try {
       const { results: eRows } = await c.env.DB.prepare(
@@ -623,8 +633,6 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
       for (const r of eRows) eventsByDay[r.day] = r.n;
     } catch {}
 
-    // Likes podľa dňa — odhad: rovnaký ako deň vytvorenia postu (KV neuchováva čas)
-    // Pre lepšiu presnosť by bolo treba log, ale toto stačí na vizualizáciu
     const likesByDay = {};
     for (const p of postRows) {
       const day = (p.created_at || '').slice(0, 10);
@@ -636,7 +644,6 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
       } catch {}
     }
 
-    // Views podľa dňa — rovnaký princíp
     const viewsByDay = {};
     for (const p of postRows) {
       const day = (p.created_at || '').slice(0, 10);
@@ -644,7 +651,6 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
       viewsByDay[day] = (viewsByDay[day] || 0) + (p.view_count || 0);
     }
 
-    // Poskladaj série (30 dní)
     const dailySeries = {
       posts: dayList.map((d) => ({ day: d, n: postsByDay[d] || 0 })),
       likes: dayList.map((d) => ({ day: d, n: likesByDay[d] || 0 })),
@@ -656,7 +662,6 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
     return c.json({
       posts, events, followers, likes, comments, views,
       daily: dailySeries,
-      // zachovaj starý formát pre spätnú kompatibilitu
       last_30_days: dailySeries.posts,
     });
   } catch (err) {
