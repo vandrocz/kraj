@@ -2,12 +2,12 @@ import { Hono } from 'hono';
 import { newId } from '../auth.js';
 import { checkText } from '../moderation.js';
 import { rateLimit } from '../ratelimit.js';
+import { sendPushToUser } from '../push.js';
 
 export const messagesRoutes = new Hono();
 
 function threadPairKey(a, b) { return a < b ? [a, b] : [b, a]; }
 
-// GET /api/messages/threads
 messagesRoutes.get('/threads', async (c) => {
   const user = c.get('user');
   const { results } = await c.env.DB.prepare(
@@ -31,14 +31,12 @@ messagesRoutes.get('/threads', async (c) => {
   return c.json({ threads: withUsers });
 });
 
-// POST /api/messages/start  { user_id }
 messagesRoutes.post('/start', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
   const other = (body.user_id || '').toString();
   if (!other || other === user.sub) return c.json({ error: 'Neplatný uživatel.' }, 400);
 
-  // Blok kontrola
   const blocked = await c.env.DB.prepare(`SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)`)
     .bind(user.sub, other, other, user.sub).first();
   if (blocked) return c.json({ error: 'Nelze zahájit konverzaci.' }, 403);
@@ -52,7 +50,6 @@ messagesRoutes.post('/start', async (c) => {
   return c.json({ thread_id: id }, 201);
 });
 
-// GET /api/messages/thread/:id
 messagesRoutes.get('/thread/:id', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -68,7 +65,6 @@ messagesRoutes.get('/thread/:id', async (c) => {
      WHERE thread_id = ? ORDER BY created_at ASC LIMIT 200`,
   ).bind(id).all();
 
-  // Označ ako prečítané (moje prijaté)
   await c.env.DB.prepare(
     `UPDATE dm_messages SET read_at = datetime('now') WHERE thread_id = ? AND sender_id != ? AND read_at IS NULL`,
   ).bind(id, user.sub).run();
@@ -76,7 +72,9 @@ messagesRoutes.get('/thread/:id', async (c) => {
   return c.json({ thread, other, messages: results });
 });
 
-// POST /api/messages/thread/:id/send  { text }
+// ------------------------------------------------------------------
+// C1: DM → push notifikácia
+// ------------------------------------------------------------------
 messagesRoutes.post('/thread/:id/send', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -105,12 +103,24 @@ messagesRoutes.post('/thread/:id/send', async (c) => {
     `UPDATE dm_threads SET last_message_at = datetime('now'), last_message_preview = ? WHERE id = ?`,
   ).bind(text.slice(0, 100), id).run();
 
+  // C1: notifikácia + push
   try {
+    const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
+    const actorName = actor?.display_name || 'Někdo';
+    const preview = text.length > 80 ? text.slice(0, 77) + '…' : text;
+
     await c.env.DB.prepare(
       `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
        VALUES (?, ?, 'dm', ?, 'thread', ?, 'ti poslal(a) zprávu')`,
     ).bind(newId('notif'), otherId, user.sub, id).run();
-  } catch {}
+
+    await sendPushToUser(c.env, otherId, {
+      title: actorName,
+      body: preview,
+      url: `/?thread=${id}`,
+      tag: `dm-${id}`,
+    });
+  } catch (err) { console.warn('[dm] notif/push zlyhal:', err.message); }
 
   return c.json({ id: msgId, text, created_at: new Date().toISOString() }, 201);
 });
