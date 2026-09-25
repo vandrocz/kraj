@@ -572,12 +572,41 @@ feedRoutes.post('/:id/report', async (c) => {
   const user = c.get('user');
   const postId = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
-  const post = await c.env.DB.prepare('SELECT id FROM posts WHERE id = ?').bind(postId).first();
+  const post = await c.env.DB.prepare('SELECT id, user_id, report_count, hidden_by_reports FROM posts WHERE id = ?').bind(postId).first();
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
+
   const id = newId('report');
   await c.env.DB.prepare('INSERT INTO reports (id, post_id, reporter_id, reason) VALUES (?, ?, ?, ?)')
     .bind(id, postId, user.sub, body.reason || null).run();
-  return c.json({ id, ok: true }, 201);
+
+  const newCount = (post.report_count || 0) + 1;
+  await c.env.DB.prepare('UPDATE posts SET report_count = ? WHERE id = ?').bind(newCount, postId).run();
+
+  // Auto-hide pri 5+ reportoch
+  const HIDE_THRESHOLD = 5;
+  if (newCount >= HIDE_THRESHOLD && !post.hidden_by_reports) {
+    await c.env.DB.prepare(
+      `UPDATE posts SET status = 'hidden_by_reports', hidden_by_reports = 1 WHERE id = ?`
+    ).bind(postId).run();
+
+    // DSA: notifikuj autora
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO notifications (id, user_id, type, entity_type, entity_id, text)
+         VALUES (?, ?, 'moderation_hidden', 'post', ?, ?)`,
+      ).bind(newId('notif'), post.user_id, postId,
+        'Tvůj příspěvek byl dočasně skryt kvůli vyššímu počtu nahlášení. Provozovatel jej posoudí.').run();
+
+      const { sendPushToUser } = await import('../push.js');
+      await sendPushToUser(c.env, post.user_id, {
+        title: 'Příspěvek dočasně skryt',
+        body: 'Tvůj příspěvek byl dočasně skryt kvůli nahlášením.',
+        url: '/',
+      });
+    } catch (err) { console.warn('auto-hide notif failed:', err); }
+  }
+
+  return c.json({ id, ok: true, report_count: newCount }, 201);
 });
 
 export { saveHashtags };
