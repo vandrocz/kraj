@@ -3307,3 +3307,186 @@ body.no-scroll { overflow: hidden; }
 @media (max-width: 719px) {
   .bottom-nav--collapsed { bottom: 20px; }
 }
+
+/* ============================================================
+   LIGHTBOX — 3-stavový panel (compact / expanded / fullscreen)
+   ============================================================ */
+
+.lightbox-info-pane {
+  position: relative;
+  background: var(--c-surface);
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Drag handle — vždy hore v paneli */
+.lightbox-drag-handle {
+  position: sticky;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 44px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--c-border);
+  margin: 0 auto 8px;
+  cursor: grab;
+  z-index: 5;
+  transition: background .15s;
+  touch-action: none;
+  padding: 8px 0; /* zväčší touch target bez zmeny vizuálu */
+  background-clip: content-box;
+}
+.lightbox-drag-handle:hover,
+.lightbox-drag-handle.is-dragging {
+  background: var(--c-text-muted);
+  background-clip: content-box;
+}
+
+@media (min-width: 900px) {
+  /* Desktop: drag handle skrytý, panel fixný vpravo */
+  .lightbox-drag-handle { display: none; }
+}
+
+/* --- 3 stavy panelu --- */
+@media (max-width: 899px) {
+  .lightbox.is-open { padding: 0; }
+  .lightbox-inner {
+    flex-direction: column;
+    border-radius: 0;
+    height: 100vh;
+    max-height: 100vh;
+    max-width: 100%;
+    background: #0e1713;
+  }
+
+  .lightbox-image-pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    background: #0e1713;
+    transition: max-height .28s cubic-bezier(.32,.72,0,1), opacity .2s;
+    overflow: hidden;
+  }
+
+  .lightbox-img {
+    max-height: 100%;
+    max-width: 100%;
+    width: auto;
+    height: auto;
+  }
+
+  .lightbox-info-pane {
+    background: var(--c-surface);
+    border-radius: 20px 20px 0 0;
+    padding: 14px 16px 18px;
+    box-shadow: 0 -12px 30px rgba(0,0,0,0.35);
+    z-index: 2;
+    transition: max-height .28s cubic-bezier(.32,.72,0,1), transform .28s cubic-bezier(.32,.72,0,1);
+    margin-top: -16px;
+  }
+
+  /* Stav 0: compact (default) — 45vh */
+  .lightbox-inner.lb-panel-0 .lightbox-info-pane {
+    max-height: 45vh;
+  }
+  .lightbox-inner.lb-panel-0 .lightbox-image-pane {
+    max-height: calc(55vh + 16px);
+  }
+
+  /* Stav 1: expanded — 72vh (obrázok zmenšený) */
+  .lightbox-inner.lb-panel-1 .lightbox-info-pane {
+    max-height: 72vh;
+  }
+  .lightbox-inner.lb-panel-1 .lightbox-image-pane {
+    max-height: calc(28vh + 16px);
+  }
+
+  /* Stav 2: fullscreen — komentáre na celú obrazovku, obrázok skrytý */
+  .lightbox-inner.lb-panel-2 .lightbox-info-pane {
+    max-height: calc(100vh - 8px);
+    margin-top: 0;
+    padding-top: 20px;
+  }
+  .lightbox-inner.lb-panel-2 .lightbox-image-pane {
+    max-height: 0;
+    opacity: 0;
+    min-height: 0;
+    pointer-events: none;
+  }
+  .lightbox-inner.lb-panel-2 .lightbox-close {
+    top: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.55);
+  }
+  .lightbox-inner.lb-panel-2 .lightbox-nav {
+    display: none;
+  }
+  .lightbox-inner.lb-panel-2 .lightbox-counter {
+    display: none;
+  }
+}
+
+/* Desktop: klasický layout, panel fixný */
+@media (min-width: 900px) {
+  .lightbox-inner {
+    flex-direction: row;
+    max-height: 85vh;
+  }
+  .lightbox-image-pane { flex: 1.4; }
+  .lightbox-info-pane {
+    width: 400px;
+    max-height: 85vh;
+    overflow-y: auto;
+    border-left: 1px solid var(--c-border);
+    border-radius: 0;
+    margin-top: 0;
+    padding: 20px;
+  }
+  /* Panel states na desktope ignorujeme — všetko je vždy viditeľné */
+}
+@media (min-width: 1200px) {
+  .lightbox-info-pane { width: 460px; }
+}
+
+/* Komentárová sekcia — scrollovateľná, aby sa formulár nezasekol */
+.lightbox-comments-section {
+  display: flex;
+  flex-direction: column;
+}
+.lightbox-comments-list {
+  max-height: none;
+  overflow-y: visible;
+  flex: 1;
+}
+
+/* Komentárový formulár musí byť vždy dosiahnuteľný (sticky dole) */
+.lightbox-comment-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--c-border);
+  margin-top: 10px;
+  position: sticky;
+  bottom: 0;
+  background: var(--c-surface);
+  padding-bottom: 4px;
+}
+
+/* --- Story context chip (pri vytváraní story pre podnik) --- */
+.story-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--c-primary-light);
+  color: var(--c-primary-dark);
+  border-radius: var(--radius-round);
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.story-context-chip strong {
+  font-weight: 800;
+}
