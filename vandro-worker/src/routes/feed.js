@@ -82,22 +82,6 @@ async function saveHashtags(env, postId, text) {
   return tags;
 }
 
-// ------------------------------------------------------------------
-// F2 + C2: Načíta liked a bookmarked stav pre daný post a viewera
-// ------------------------------------------------------------------
-async function enrichPostState(env, post, viewerId) {
-  if (!viewerId) return { ...post, __liked: false, __bookmarked: false };
-  let liked = false, bookmarked = false;
-  try {
-    liked = !!(await env.NASKRAJ_LAJKY.get(`like:post:${post.id}:${viewerId}`));
-  } catch {}
-  try {
-    const row = await env.DB.prepare(`SELECT 1 FROM bookmarks WHERE user_id = ? AND post_id = ?`).bind(viewerId, post.id).first();
-    bookmarked = !!row;
-  } catch {}
-  return { ...post, __liked: liked, __bookmarked: bookmarked };
-}
-
 feedRoutes.get('/collections', async (c) => {
   await ensureActiveProjectRotation(c.env);
   const active = await c.env.DB.prepare(
@@ -224,7 +208,6 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
     } catch {}
   }
 
-  // F2: pre každý post zisti liked + bookmarked
   let bookmarkedSet = new Set();
   if (viewerId && results.length > 0) {
     try {
@@ -360,9 +343,6 @@ feedRoutes.post('/:id/view', async (c) => {
   return c.json({ ok: true });
 });
 
-// ------------------------------------------------------------------
-// C1 + C2: Toggle lajku + push notifikácia autorovi
-// ------------------------------------------------------------------
 feedRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const postId = c.req.param('id');
@@ -374,7 +354,6 @@ feedRoutes.post('/:id/like', async (c) => {
   const curRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${postId}`);
   let cur = curRaw ? parseInt(curRaw, 10) : 0;
 
-  // C2: toggle — ak už lajknuté, odober
   if (existing) {
     await c.env.NASKRAJ_LAJKY.delete(likeKey);
     cur = Math.max(0, cur - 1);
@@ -382,12 +361,10 @@ feedRoutes.post('/:id/like', async (c) => {
     return c.json({ liked: false, likes: cur });
   }
 
-  // Pridaj lajk
   await c.env.NASKRAJ_LAJKY.put(likeKey, '1');
   cur = cur + 1;
   await c.env.NASKRAJ_LAJKY.put(`likecount:post:${postId}`, String(cur));
 
-  // C1: notifikácia + push
   if (post.user_id && post.user_id !== user.sub) {
     try {
       const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
@@ -521,9 +498,6 @@ feedRoutes.get('/:id/comments', async (c) => {
   return c.json({ comments: roots, total: filtered.length });
 });
 
-// ------------------------------------------------------------------
-// C1: Komentár + odpoveď → push notifikácia
-// ------------------------------------------------------------------
 feedRoutes.post('/:id/comment', async (c) => {
   const user = c.get('user');
   const postId = c.req.param('id');
@@ -558,7 +532,6 @@ feedRoutes.post('/:id/comment', async (c) => {
   const actorName = actor?.display_name || 'Někdo';
   const preview = text.length > 80 ? text.slice(0, 77) + '…' : text;
 
-  // C1: notifikácia pre autora postu
   if (post.user_id && post.user_id !== user.sub) {
     try {
       await c.env.DB.prepare(
@@ -575,13 +548,13 @@ feedRoutes.post('/:id/comment', async (c) => {
     } catch (err) { console.warn('[comment] notif/push zlyhal:', err.message); }
   }
 
-  // C1: notifikácia pre autora rodičovského komentára (ak je iný ako autor postu)
+  // Reply notifikácia — OPRAVA: entity_type='post', entity_id=postId (aby sa dala otvoriť)
   if (parentComment && parentComment.user_id !== user.sub && parentComment.user_id !== post.user_id) {
     try {
       await c.env.DB.prepare(
         `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
-         VALUES (?, ?, 'reply', ?, 'comment', ?, 'odpověděl(a) na tvůj komentář')`,
-      ).bind(newId('notif'), parentComment.user_id, user.sub, id).run();
+         VALUES (?, ?, 'reply', ?, 'post', ?, 'odpověděl(a) na tvůj komentář')`,
+      ).bind(newId('notif'), parentComment.user_id, user.sub, postId).run();
 
       await sendPushToUser(c.env, parentComment.user_id, {
         title: 'Odpověď na komentář',
