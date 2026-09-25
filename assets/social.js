@@ -107,12 +107,6 @@ function renderBusinessAvatar(business, feedKey, size = 38) {
     </button>`;
 }
 
-// ------------------------------------------------------------------
-// A1: Odstránený inline komentárový formulár a náhľad. Zostáva iba
-// ikona komentára s badge. Všetky komentáre sa zobrazujú v lightboxe.
-// A3: Ikona lajku je "spark" (iskra).
-// A4: Text "Páči sa mi" s počtom.
-// ------------------------------------------------------------------
 function renderSocialPostCard(post, feedKey) {
   const isMinePost = isLoggedIn() && state.businesses.some((b) => b.id === post.business.id);
   const isVerified = Number(post.business.is_verified) === 1 || post.business.is_verified === true;
@@ -129,7 +123,6 @@ function renderSocialPostCard(post, feedKey) {
        </div>`
     : '';
 
-  // A4: text lajku
   const likeText = post.likes > 0 ? `${fmt(post.likes)} Páči sa mi` : 'Páči sa mi';
 
   return `
@@ -171,9 +164,6 @@ function renderSocialPostCard(post, feedKey) {
     </article>`;
 }
 
-// ------------------------------------------------------------------
-// C2: Toggle lajku — prvý klik pridá, druhý odoberie. Funguje s API.
-// ------------------------------------------------------------------
 async function togglePostLike(postId, feedKey, btnEl) {
   if (!isLoggedIn()) { showToast('Pro iskru se musíš přihlásit.'); switchTab('account'); return; }
 
@@ -189,7 +179,6 @@ async function togglePostLike(postId, feedKey, btnEl) {
   }
   if (!post) return;
 
-  // Optimistická aktualizácia
   const wasLiked = !!post.__liked;
   post.__liked = !wasLiked;
   post.likes = Math.max(0, (post.likes || 0) + (wasLiked ? -1 : 1));
@@ -211,7 +200,6 @@ async function togglePostLike(postId, feedKey, btnEl) {
     }
     if (likesEl) likesEl.textContent = data.likes > 0 ? `${fmt(data.likes)} Páči sa mi` : 'Páči sa mi';
   } catch (err) {
-    // Rollback
     post.__liked = wasLiked;
     post.likes = Math.max(0, (post.likes || 0) + (wasLiked ? 1 : -1));
     if (btnEl) {
@@ -323,10 +311,14 @@ function deletePost(postId, feedKey) {
 async function deleteComment(commentId, feedKey, postId) {
   try {
     await apiDelete(`/api/feed/comment/${commentId}`);
-    const post = state.socialFeeds[feedKey]?.items.find((p) => p.id === postId);
-    if (post) {
-      post.comment_count = Math.max(0, (post.comment_count || 1) - 1);
-      post.__comments = (post.__comments || []).filter((c) => c.id !== commentId);
+    // Refresh lightbox komentárov
+    if (state.lightbox?.post?.id === postId) {
+      try {
+        const c = await apiGet(`/api/feed/${postId}/comments`);
+        state.lightbox.post.__comments = c.comments || [];
+        state.lightbox.post.comment_count = c.total || 0;
+        updateLightboxDOM();
+      } catch {}
     }
     showToast('Komentář smazán.');
   } catch (err) { showToast(err.message); }
@@ -413,39 +405,61 @@ async function handleEditPostSubmit(form) {
   }
 }
 
-// A2 + C1: Komentár sa posiela z lightboxu
+// ------------------------------------------------------------------
+// OPRAVA: submitLightboxComment
+// - NEVOLÁ renderApp() (nezatvára lightbox)
+// - Počet komentárov berie priamo zo servera (žiadne +1 navyše)
+// - Aktualizuje badge na kartách vo feede cez DOM
+// ------------------------------------------------------------------
 async function submitLightboxComment(postId, feedKey, text) {
   if (!text.trim()) return;
   if (!isLoggedIn()) { showToast('Pro komentování se musíš přihlásit.'); return; }
+
   try {
     await apiPost(`/api/feed/${postId}/comment`, { text: text.trim() });
-    // Reload komentárov do lightboxu bez zatvorenia
+
+    // Získaj presný stav zo servera
+    let newComments = null;
+    let newTotal = null;
     try {
       const c = await apiGet(`/api/feed/${postId}/comments`);
-      if (state.lightbox && state.lightbox.post) {
-        state.lightbox.post.__comments = c.comments || [];
-        state.lightbox.post.comment_count = c.total || 0;
-      }
+      newComments = c.comments || [];
+      newTotal = (c.total != null) ? c.total : newComments.length;
     } catch {}
-    // Refresh feed itemov (počet komentárov v badge)
+
+    // Aktualizuj lightbox bez plného re-renderu
+    if (state.lightbox && state.lightbox.post && state.lightbox.post.id === postId) {
+      if (newComments) state.lightbox.post.__comments = newComments;
+      if (newTotal != null) state.lightbox.post.comment_count = newTotal;
+      updateLightboxDOM();
+    }
+
+    // Aktualizuj komentáre v in-memory feedoch
+    const applyToPost = (p) => {
+      if (newTotal != null) p.comment_count = newTotal;
+      if (newComments) p.__comments = newComments;
+    };
     for (const k of Object.keys(state.socialFeeds)) {
       const p = state.socialFeeds[k].items.find((x) => x.id === postId);
-      if (p) {
-        p.comment_count = (p.comment_count || 0) + 1;
-        p.__comments = state.lightbox?.post?.__comments || p.__comments;
-      }
+      if (p) applyToPost(p);
     }
     for (const k of Object.keys(state.profiles)) {
       const d = state.profiles[k];
       if (d?.posts) {
         const p = d.posts.find((x) => x.id === postId);
-        if (p) p.comment_count = (p.comment_count || 0) + 1;
+        if (p) applyToPost(p);
       }
     }
-    // Re-render lightbox info panel
-    updateLightboxDOM();
-    // Re-render feed pre aktualizáciu badge
-    renderApp();
+
+    // Aktualizuj badge v existujúcom DOM (bez renderApp)
+    if (newTotal != null) {
+      document.querySelectorAll(`.post-card[data-post-id="${postId}"] .post-action-badge`).forEach((badge) => {
+        badge.textContent = newTotal > 99 ? '99+' : String(newTotal);
+      });
+    }
+
     showToast('Komentář přidán.');
-  } catch (err) { showToast(err.message); }
+  } catch (err) {
+    showToast(err.message);
+  }
 }
