@@ -24,6 +24,15 @@ import { rateLimit } from './ratelimit.js';
 
 const app = new Hono();
 
+// Bezpečnostné hlavičky pre API
+app.use('*', async (c, next) => {
+  await next();
+  c.res.headers.set('X-Content-Type-Options', 'nosniff');
+  c.res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  c.res.headers.set('X-Frame-Options', 'DENY');
+  c.res.headers.set('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+});
+
 app.use('*', async (c, next) => {
   const allowed = (c.env.ALLOWED_ORIGIN || 'https://naskraj.vandro.cz').split(',').map((s) => s.trim());
   return cors({
