@@ -72,6 +72,8 @@ const state = {
   _modal: null,
   _modalLoading: false,
 
+  _navCollapsed: true,
+
   lightbox: null,
   loading: {},
 };
@@ -80,22 +82,12 @@ let _prevRouteKey = '';
 
 function fmt(n) { return Number(n || 0).toLocaleString('cs-CZ'); }
 
-// ============================================================
-// SKLOŇOVANIE PRE "ISKRA" (SK) — používa sa v UI
-// ============================================================
-// 1 iskra, 2-4 iskry, 5+ iskier
 function getLikeCountLabel(n) {
   const num = Number(n || 0);
-  if (num === 1) return '1 super';
-  if (num >= 2 && num <= 4) return `${num} super`;
-  return `${num} super`;
+  if (num === 0) return 'Páči sa mi';
+  return `${num} Páči sa mi`;
 }
 
-// ============================================================
-// NORMALIZÁCIA POSTU Z API
-// Backend môže vracať "liked", "is_liked", "user_liked"...
-// Frontend interne používa __liked a __bookmarked.
-// ============================================================
 function normalizePost(p) {
   if (!p) return p;
   if (p.__liked === undefined) {
@@ -230,7 +222,13 @@ const TABS = [
 
 const VALID_TABS = ['organizations', 'accommodation', 'gastro', 'map', 'events', 'account'];
 
+// ============================================================
+// BOTTOM NAV — s collapsible variantom pre mapu
+// ============================================================
 function renderBottomNav() {
+  const isMapTab = state.tab === 'map' && !state.overlay;
+  const collapsed = state._navCollapsed !== false;
+
   const btns = TABS.map((t) => {
     const active = state.tab === t.key && !state.overlay;
     let badge = '';
@@ -244,6 +242,16 @@ function renderBottomNav() {
         <span class="visually-hidden">${t.label}</span>
       </button>`;
   }).join('');
+
+  if (isMapTab) {
+    return `
+      <nav class="bottom-nav bottom-nav--map ${collapsed ? 'is-collapsed' : 'is-expanded'}">${btns}</nav>
+      <button class="nav-collapse-toggle" data-action="toggle-nav-collapse" aria-label="${collapsed ? 'Zobrazit menu' : 'Skrýt menu'}">
+        ${icon(collapsed ? 'chevronUp' : 'chevronDown', { size: 22 })}
+      </button>
+    `;
+  }
+
   return `<nav class="bottom-nav">${btns}</nav>`;
 }
 
@@ -290,15 +298,8 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
 // ============================================================
 // MODAL
 // ============================================================
-function openModal(opts) {
-  state._modal = opts || {};
-  renderApp();
-}
-function closeModal() {
-  state._modal = null;
-  state._modalLoading = false;
-  renderApp();
-}
+function openModal(opts) { state._modal = opts || {}; renderApp(); }
+function closeModal() { state._modal = null; state._modalLoading = false; renderApp(); }
 function renderModal() {
   const m = state._modal;
   if (!m) return '';
@@ -327,12 +328,19 @@ function renderModal() {
 // ============================================================
 function renderApp() {
   const _active = document.activeElement;
+  // Rozšírené o search-global, location-search, event-search, admin-user-search
+  const FOCUSABLE_ACTIONS = ['search-change', 'search-global', 'location-search', 'event-search', 'admin-user-search', 'route-search'];
   let _searchFocus = null;
-  if (_active && _active.dataset && _active.dataset.action === 'search-change') {
-    _searchFocus = { feed: _active.dataset.feed, selStart: _active.selectionStart || 0, selEnd: _active.selectionEnd || 0 };
+  if (_active && _active.dataset && FOCUSABLE_ACTIONS.includes(_active.dataset.action)) {
+    _searchFocus = {
+      action: _active.dataset.action,
+      feed: _active.dataset.feed || null,
+      selStart: _active.selectionStart || 0,
+      selEnd: _active.selectionEnd || 0,
+    };
   }
   let _otherFocus = null;
-  if (_active && _active.dataset && _active.dataset.action && _active.dataset.action !== 'search-change') {
+  if (_active && _active.dataset && _active.dataset.action && !FOCUSABLE_ACTIONS.includes(_active.dataset.action)) {
     if (['INPUT', 'TEXTAREA'].includes(_active.tagName)) {
       _otherFocus = {
         action: _active.dataset.action,
@@ -417,7 +425,9 @@ function renderApp() {
   applySeo();
 
   if (_searchFocus) {
-    const newInput = document.querySelector(`[data-action="search-change"][data-feed="${_searchFocus.feed}"]`);
+    let sel = `[data-action="${_searchFocus.action}"]`;
+    if (_searchFocus.feed) sel += `[data-feed="${_searchFocus.feed}"]`;
+    const newInput = document.querySelector(sel);
     if (newInput) {
       newInput.focus({ preventScroll: true });
       try { newInput.setSelectionRange(_searchFocus.selStart, _searchFocus.selEnd); } catch {}
@@ -509,6 +519,7 @@ function switchTab(tab) {
   state.tab = tab;
   persistTab(tab);
   getFeedTitle(tab);
+  if (tab !== 'map') state._navCollapsed = false;
   renderApp();
   if (tab === 'events' && state.events.items.length === 0) loadEvents();
   if (tab === 'organizations' && state.socialFeeds.organization.items.length === 0) loadSocialFeed('organization');
@@ -521,7 +532,6 @@ function switchTab(tab) {
 // LIGHTBOX
 // ============================================================
 function openLightbox(images, index = 0, caption = '', post = null) {
-  // Normalizuj post, ak prišiel z API (mapuje liked → __liked atď.)
   if (post) normalizePost(post);
 
   state.lightbox = {
@@ -543,9 +553,7 @@ function openLightbox(images, index = 0, caption = '', post = null) {
         post.__comments = data.comments || [];
         if (data.total != null) post.comment_count = data.total;
       })
-      .catch(() => {
-        post.__comments = [];
-      })
+      .catch(() => { post.__comments = []; })
       .finally(() => {
         post.__commentsLoading = false;
         if (state.lightbox && state.lightbox.post === post) updateLightboxDOM();
@@ -662,10 +670,7 @@ function updateLightboxDOM() {
   }
 }
 
-function getPostText(post) {
-  return post.text || post.text_content || '';
-}
-
+function getPostText(post) { return post.text || post.text_content || ''; }
 function htmlToPlain(html) {
   if (!html) return '';
   return String(html).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -692,7 +697,6 @@ function renderCookieBanner() {
   try {
     const stored = localStorage.getItem('naskraj_cookies');
     if (stored === '1' || stored === '0') { state._cookieConsent = true; return ''; }
-    // Ak existuje zdieľaná cookie z inej subdomény, rešpektuj ju
     if (document.cookie.split(';').some((c) => c.trim().startsWith('naskraj_cookies='))) {
       state._cookieConsent = true;
       return '';
@@ -740,14 +744,9 @@ function renderCookieBanner() {
     </div>`;
 }
 
-// ============================================================
-// ZDIEĽANIE COOKIE SÚHLASU MEDZI SUBDOMÉNAMI
-// ============================================================
-// Nastaví cookie na doméne .vandro.cz, aby ju videli všetky subdomény
 function setSharedCookieConsent(value) {
-  const maxAge = 60 * 60 * 24 * 365; // 1 rok
+  const maxAge = 60 * 60 * 24 * 365;
   const cookieValue = value ? '1' : '0';
-  // domain=.vandro.cz → dostupné pre všetky *.vandro.cz
   document.cookie = `naskraj_cookies=${cookieValue}; domain=.vandro.cz; path=/; max-age=${maxAge}; SameSite=Lax`;
 }
 
