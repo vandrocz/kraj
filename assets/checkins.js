@@ -1,5 +1,5 @@
 // ============================================================
-// CHECK-INS + ODZNAKY
+// CHECK-INS + ODZNAKY — i18n verzia
 // ============================================================
 
 async function loadUserCheckins(userId) {
@@ -18,25 +18,6 @@ async function loadUserBadges(userId) {
   if (state.overlay?.type === 'badges') renderApp();
 }
 
-
-function renderCreateCheckinOverlay() {
-  const { kind, id, name } = state.overlay;
-  return `
-    <div class="page-scroll">
-      ${renderBackHeader('Byl jsem tady')}
-      <div class="profile-section">
-        <p style="font-size:14px;margin-bottom:16px;color:var(--c-text-muted)">Přidat návštěvu: <strong style="color:var(--c-text)">${escapeHtml(name || '')}</strong></p>
-        <form data-action="submit-checkin" data-kind="${kind}" data-id="${id}">
-          <div class="form-field">
-            <label class="form-label">Poznámka (nepovinné)</label>
-            <textarea class="form-textarea" name="note" maxlength="500" rows="4" placeholder="Co tě zaujalo?"></textarea>
-          </div>
-          <button class="form-submit-btn" type="submit">${icon('check', { size: 16 })} Zaznamenat návštěvu</button>
-        </form>
-      </div>
-    </div>`;
-}
-
 async function handleCheckinSubmit(form) {
   const kind = form.dataset.kind;
   const id = form.dataset.id;
@@ -48,15 +29,14 @@ async function handleCheckinSubmit(form) {
       note: fd.get('note') || null,
     });
     if (res.new_badges && res.new_badges.length > 0) {
-      const list = res.new_badges.map((b) => `${b.name} L${b.level}`).join(', ');
-      showToast(`Získáno: ${list}! 🎉`);
+      const list = res.new_badges.map((b) => `${tBadge(b.key, b.name)} L${b.level}`).join(', ');
+      showToast(t('checkins.newBadge', { list }));
     } else if (res.already) {
-      showToast(res.message || 'Už jsi tu byl(a).');
+      showToast(res.message || t('checkins.already'));
     } else {
-      showToast('Návštěva zaznamenána!');
+      showToast(t('checkins.added'));
     }
     state.overlay = null;
-    // Invaliduj cache profilu
     if (state.overlayStack.length > 0) {
       const prev = state.overlayStack.pop();
       state.overlay = prev;
@@ -75,24 +55,25 @@ function renderBadgesOverlay() {
   const badges = state._userBadges;
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Moje odznaky')}
+      ${renderBackHeader(t('checkins.badgesTitle'))}
       <div class="profile-section">
-        ${badges == null ? '<p class="empty-state">Načítám…</p>'
-          : badges.length === 0 ? '<p class="empty-state">Zatím žádné odznaky. Navštiv nějaké místo!</p>'
+        ${badges == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
+          : badges.length === 0 ? `<p class="empty-state">${escapeHtml(t('checkins.noBadges'))}</p>`
           : `<div class="badges-grid">${badges.map(renderBadgeCard).join('')}</div>`}
       </div>
     </div>`;
 }
 
 function renderBadgeCard(b) {
+  const name = tBadge(b.key, b.name);
   return `
     <div class="badge-card">
       <div class="badge-icon-wrap">
         ${icon(b.icon, { size: 26 })}
         ${b.level > 1 ? `<span class="badge-level">L${b.level}</span>` : ''}
       </div>
-      <p class="badge-name">${escapeHtml(b.name)}</p>
-      <p class="badge-desc">${escapeHtml(b.description)}</p>
+      <p class="badge-name">${escapeHtml(name)}</p>
+      <p class="badge-desc">${escapeHtml(b.description || '')}</p>
       <div class="badge-progress">
         <span>${b.progress}${b.next_tier ? ` / ${b.next_tier}` : ''}</span>
         <span class="badge-levels">${'★'.repeat(b.level)}${'☆'.repeat(b.max_level - b.level)}</span>
@@ -104,10 +85,10 @@ function renderUserCheckinsOverlay() {
   const list = state._userCheckins;
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Navštívená místa')}
+      ${renderBackHeader(t('checkins.visitedTitle'))}
       <div class="profile-section">
-        ${list == null ? '<p class="empty-state">Načítám…</p>'
-          : list.length === 0 ? '<p class="empty-state">Zatím žádné návštěvy.</p>'
+        ${list == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
+          : list.length === 0 ? `<p class="empty-state">${escapeHtml(t('checkins.noVisits'))}</p>`
           : list.map((ci) => `
             <button class="user-list-item" data-action="open-profile" data-kind="${ci.business_kind}" data-id="${ci.business_id}">
               ${ci.business_logo ? `<img src="${ci.business_logo}" class="user-list-avatar" alt="" />`
@@ -135,6 +116,7 @@ function openBusinessCheckins(kind, id) {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'business-checkins', kind, id };
   state._businessCheckins = null;
+  pushHistoryState('overlay');
   renderApp();
   loadBusinessCheckins(kind, id);
 }
@@ -143,13 +125,13 @@ function renderBusinessCheckinsOverlay() {
   const d = state._businessCheckins;
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Kdo tu byl')}
+      ${renderBackHeader(t('checkins.whoWasHere'))}
       <div class="profile-section">
-        ${d === null ? '<p class="empty-state">Načítám…</p>' : `
+        ${d === null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>` : `
           <p style="font-size:14px;color:var(--c-text-muted);margin-bottom:14px">
-            <strong style="color:var(--c-text);font-size:20px">${d.unique_visitors}</strong> návštěvníků
+            <strong style="color:var(--c-text);font-size:20px">${d.unique_visitors}</strong> ${escapeHtml(t('checkins.visitors'))}
           </p>
-          ${d.checkins.length === 0 ? '<p class="empty-state">Zatím nikdo.</p>'
+          ${d.checkins.length === 0 ? `<p class="empty-state">${escapeHtml(t('checkins.noVisitors'))}</p>`
             : d.checkins.map((ci) => `
               <button class="user-list-item" data-action="open-profile" data-kind="user" data-id="${ci.user_id}">
                 ${ci.avatar_url ? `<img src="${ci.avatar_url}" class="user-list-avatar" alt="" />`
