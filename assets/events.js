@@ -195,7 +195,13 @@ document.addEventListener('click', (e) => {
       })();
       break;
     case 'open-story-viewer': openStoryViewer(el.dataset.groupKey); break;
-    case 'open-create-story': openCreateStory(); break;
+    case 'open-create-story': {
+      // Ak máme business kontext (klik z business dashboardu), použijeme ho
+      const bizId = el.dataset.businessId || null;
+      const bizName = el.dataset.businessName || null;
+      openCreateStory(bizId, bizName);
+      break;
+    }
     case 'close-story-viewer': closeStoryViewer(); break;
     case 'story-next': storyNext(); break;
     case 'story-prev': storyPrev(); break;
