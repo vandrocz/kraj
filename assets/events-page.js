@@ -1,5 +1,5 @@
 // ============================================================
-// PODUJATIA (Events)
+// PODUJATIA (Events) — i18n verzia
 // ============================================================
 
 async function loadEvents(loadMore = false) {
@@ -23,7 +23,7 @@ async function loadEvents(loadMore = false) {
     e.next_cursor = data.next_cursor || null;
   } catch (err) {
     console.error('Events load failed:', err);
-    showToast('Akce se nepodařilo načíst.');
+    showToast(t('errors.loadFailed'));
   } finally {
     state.loading.events = false;
     e.loading_more = false;
@@ -48,9 +48,9 @@ function renderEventsPage() {
   return `
     <div class="page-scroll">
       ${renderHeader(title, `
-        <button class="header-icon-btn" data-action="open-search" aria-label="Hledat">${icon('search', { size: 19 })}</button>
-        ${isLoggedIn() ? `<button class="header-icon-btn" data-action="open-threads" aria-label="Zprávy">${icon('chat', { size: 19 })}</button>` : ''}
-        ${canCreate ? `<button class="header-icon-btn" data-action="open-event-create" aria-label="Přidat akci">${icon('plus', { size: 20 })}</button>` : ''}
+        <button class="header-icon-btn" data-action="open-search" aria-label="${escapeAttr(t('search.title'))}">${icon('search', { size: 19 })}</button>
+        ${isLoggedIn() ? `<button class="header-icon-btn" data-action="open-threads" aria-label="${escapeAttr(t('messages.title'))}">${icon('chat', { size: 19 })}</button>` : ''}
+        ${canCreate ? `<button class="header-icon-btn" data-action="open-event-create" aria-label="${escapeAttr(t('events.create'))}">${icon('plus', { size: 20 })}</button>` : ''}
       `)}
       ${renderEventsFilterBar()}
       ${renderEventsList()}
@@ -61,27 +61,27 @@ function renderEventsFilterBar() {
   const e = state.events;
   const regionSelect = `
     <select class="filter-select ${e.region ? 'is-active' : ''}" data-action="event-filter" data-field="region">
-      <option value="">Všechny kraje</option>
+      <option value="">${escapeHtml(t('feed.allRegions'))}</option>
       ${Object.keys(REGIONS).map((r) => `<option value="${r}" ${e.region === r ? 'selected' : ''}>${r}</option>`).join('')}
     </select>`;
   const kindSelect = `
     <select class="filter-select ${e.kind ? 'is-active' : ''}" data-action="event-filter" data-field="kind">
-      <option value="">Všechny typy</option>
-      <option value="organizations" ${e.kind === 'organizations' ? 'selected' : ''}>Organizace</option>
-      <option value="accommodation" ${e.kind === 'accommodation' ? 'selected' : ''}>Ubytování</option>
-      <option value="restaurants" ${e.kind === 'restaurants' ? 'selected' : ''}>Gastro</option>
+      <option value="">${escapeHtml(t('events.allTypes'))}</option>
+      <option value="organizations" ${e.kind === 'organizations' ? 'selected' : ''}>${escapeHtml(t('events.typeOrg'))}</option>
+      <option value="accommodation" ${e.kind === 'accommodation' ? 'selected' : ''}>${escapeHtml(t('events.typeAcc'))}</option>
+      <option value="restaurants" ${e.kind === 'restaurants' ? 'selected' : ''}>${escapeHtml(t('events.typeGastro'))}</option>
     </select>`;
   const whenSelect = `
     <select class="filter-select ${e.when !== 'upcoming' ? 'is-active' : ''}" data-action="event-filter" data-field="when">
-      <option value="upcoming" ${e.when === 'upcoming' ? 'selected' : ''}>Nadcházející</option>
-      <option value="past" ${e.when === 'past' ? 'selected' : ''}>Proběhlé</option>
-      <option value="all" ${e.when === 'all' ? 'selected' : ''}>Všechny</option>
+      <option value="upcoming" ${e.when === 'upcoming' ? 'selected' : ''}>${escapeHtml(t('events.upcoming'))}</option>
+      <option value="past" ${e.when === 'past' ? 'selected' : ''}>${escapeHtml(t('events.past'))}</option>
+      <option value="all" ${e.when === 'all' ? 'selected' : ''}>${escapeHtml(t('events.all'))}</option>
     </select>`;
   return `
     <div class="filter-bar">
       <div class="search-input-wrap">
         ${icon('search', { size: 17 })}
-        <input class="search-input" type="search" placeholder="Hledat akci…" value="${escapeAttr(e.search)}" data-action="event-search" />
+        <input class="search-input" type="search" placeholder="${escapeAttr(t('events.searchPlaceholder'))}" value="${escapeAttr(e.search)}" data-action="event-search" />
       </div>
       <div class="filter-row">${regionSelect}${kindSelect}${whenSelect}</div>
     </div>`;
@@ -89,11 +89,11 @@ function renderEventsFilterBar() {
 
 function renderEventsList() {
   const e = state.events;
-  if (state.loading.events && e.items.length === 0) return '<p class="empty-state">Načítám akce…</p>';
-  if (e.items.length === 0) return '<p class="empty-state">Žádné akce neodpovídají filtrům.</p>';
+  if (state.loading.events && e.items.length === 0) return `<p class="empty-state">${escapeHtml(t('events.loadingEvents'))}</p>`;
+  if (e.items.length === 0) return `<p class="empty-state">${escapeHtml(t('events.noEvents'))}</p>`;
   return `
     <div class="events-list">${e.items.map(renderEventCard).join('')}</div>
-    ${e.loading_more ? '<p class="empty-state">Načítám další…</p>' : ''}
+    ${e.loading_more ? `<p class="empty-state">${escapeHtml(t('common.loadingMore'))}</p>` : ''}
     ${e.next_cursor ? `<div data-load-more style="height:1px"></div>` : ''}
   `;
 }
@@ -104,12 +104,12 @@ function renderEventCard(ev) {
   const logoHtml = logo
     ? `<img src="${logo}" alt="" class="event-card-logo" />`
     : `<span class="event-card-logo event-card-logo-init">${(ev.business_name || '?').charAt(0).toUpperCase()}</span>`;
-  const kindLabel = { organizations: 'Organizace', accommodation: 'Ubytování', restaurants: 'Gastro' }[ev.business_kind] || '';
+  const kindLabel = { organizations: t('events.typeOrg'), accommodation: t('events.typeAcc'), restaurants: t('events.typeGastro') }[ev.business_kind] || t('events.typeEvent');
 
   return `
     <article class="event-card" data-action="open-event" data-id="${ev.id}">
       <div class="event-card-cover" style="background-image:url('${escapeAttr(cover)}')">
-        <span class="event-card-kind">${kindLabel}</span>
+        <span class="event-card-kind">${escapeHtml(kindLabel)}</span>
       </div>
       <div class="event-card-body">
         <div class="event-card-date">
@@ -129,6 +129,7 @@ async function openEventDetail(id) {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'event-detail', id };
   state._eventDetail = null;
+  pushHistoryState('overlay');
   renderApp();
   try {
     const data = await apiGet(`/api/events/${id}`);
@@ -142,7 +143,7 @@ async function openEventDetail(id) {
 
 function renderEventDetailOverlay() {
   const ev = state._eventDetail;
-  if (!ev) return `<div class="page-scroll">${renderBackHeader('Akce')}<p class="empty-state">Načítám…</p></div>`;
+  if (!ev) return `<div class="page-scroll">${renderBackHeader(t('events.title'))}<p class="empty-state">${escapeHtml(t('common.loading'))}</p></div>`;
   const isOwner = isLoggedIn() && state.user.id === ev.user_id;
   const gallery = Array.isArray(ev.gallery) && ev.gallery.length > 0 ? ev.gallery : (ev.cover_image_url ? [ev.cover_image_url] : []);
   const cover = gallery[0] || null;
@@ -152,8 +153,8 @@ function renderEventDetailOverlay() {
 
   const dateBlock = startDate && !isNaN(startDate.getTime()) ? {
     day: startDate.getDate(),
-    month: startDate.toLocaleDateString('cs-CZ', { month: 'short' }).toUpperCase(),
-    weekday: startDate.toLocaleDateString('cs-CZ', { weekday: 'long' }),
+    month: startDate.toLocaleDateString(getLanguage() === 'en' ? 'en' : getLanguage() === 'sk' ? 'sk' : 'cs', { month: 'short' }).toUpperCase(),
+    weekday: startDate.toLocaleDateString(getLanguage() === 'en' ? 'en' : getLanguage() === 'sk' ? 'sk' : 'cs', { weekday: 'long' }),
     time: `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`,
     year: startDate.getFullYear(),
   } : null;
@@ -163,10 +164,10 @@ function renderEventDetailOverlay() {
     : null;
 
   const kindLabel = {
-    organizations: 'Organizace',
-    accommodation: 'Ubytování',
-    restaurants: 'Gastro',
-  }[ev.business_kind] || 'Akce';
+    organizations: t('events.typeOrg'),
+    accommodation: t('events.typeAcc'),
+    restaurants: t('events.typeGastro'),
+  }[ev.business_kind] || t('events.typeEvent');
 
   return `
     <div class="page-scroll event-detail-page">
@@ -180,7 +181,7 @@ function renderEventDetailOverlay() {
           </button>
         ` : ''}
         <div class="event-detail-cover-content">
-          <span class="event-detail-kind">${kindLabel}</span>
+          <span class="event-detail-kind">${escapeHtml(kindLabel)}</span>
           <h1 class="event-detail-title">${escapeHtml(ev.title)}</h1>
         </div>
       </div>
@@ -208,14 +209,14 @@ function renderEventDetailOverlay() {
               <p class="event-detail-weekday">${dateBlock.weekday}</p>
               <p class="event-detail-time">${dateBlock.time}${endTime ? ` – ${endTime}` : ''}</p>
             </div>
-          ` : '<p style="color:var(--c-text-muted)">Datum neuvedeno</p>'}
+          ` : `<p style="color:var(--c-text-muted)">${escapeHtml(t('events.dateNotSpecified'))}</p>`}
         </div>
 
         ${ev.location_name || ev.city ? `
           <div class="event-detail-info-row">
             <span class="event-detail-info-icon">${icon('location', { size: 20 })}</span>
             <div class="event-detail-info-text">
-              <span class="event-detail-info-label">Místo konání</span>
+              <span class="event-detail-info-label">${escapeHtml(t('events.eventLocation'))}</span>
               <span class="event-detail-info-value">${escapeHtml(ev.location_name || '')}</span>
               ${ev.city ? `<span class="event-detail-info-sub">${escapeHtml(ev.city)}${ev.region ? ', ' + escapeHtml(ev.region) : ''}</span>` : ''}
             </div>
@@ -224,18 +225,18 @@ function renderEventDetailOverlay() {
 
         ${ev.content_html || ev.description ? `
           <div class="event-detail-description">
-            <h3 class="event-detail-section-title">O akci</h3>
+            <h3 class="event-detail-section-title">${escapeHtml(t('events.aboutEvent'))}</h3>
             <div class="rich-text">${linkifyHashtags(htmlToPlain(ev.content_html || ev.description || ''))}</div>
           </div>
         ` : ''}
 
         <div class="event-detail-organizer">
-          <h3 class="event-detail-section-title">Pořadatel</h3>
+          <h3 class="event-detail-section-title">${escapeHtml(t('events.organizer'))}</h3>
           <button class="event-detail-organizer-card" data-action="open-profile" data-kind="${ev.business_kind}" data-id="${ev.business_id}">
             <span class="event-detail-organizer-avatar">${(ev.business_name || '?').charAt(0).toUpperCase()}</span>
             <div class="event-detail-organizer-info">
               <p class="event-detail-organizer-name">${escapeHtml(ev.business_name || '')}</p>
-              <p class="event-detail-organizer-meta">${kindLabel}</p>
+              <p class="event-detail-organizer-meta">${escapeHtml(kindLabel)}</p>
             </div>
             ${icon('chevronRight', { size: 18 })}
           </button>
@@ -244,10 +245,10 @@ function renderEventDetailOverlay() {
         ${isLoggedIn() ? `
           <div class="event-detail-actions">
             <button class="event-detail-action-btn event-detail-action-primary" data-action="add-to-calendar" data-id="${ev.id}">
-              ${icon('calendar', { size: 18 })} Přidat do kalendáře
+              ${icon('calendar', { size: 18 })} ${escapeHtml(t('events.addToCalendar'))}
             </button>
             <button class="event-detail-action-btn" data-action="share-event" data-id="${ev.id}">
-              ${icon('share', { size: 18 })} Sdílet
+              ${icon('share', { size: 18 })} ${escapeHtml(t('events.share'))}
             </button>
           </div>
         ` : ''}
@@ -256,13 +257,11 @@ function renderEventDetailOverlay() {
     </div>`;
 }
 
-// Otvorí lightbox s galériou podujatia
 function openEventGallery(eventId, startIndex = 0) {
   const ev = state._eventDetail;
   if (!ev || ev.id !== eventId) return;
   const gallery = Array.isArray(ev.gallery) && ev.gallery.length > 0 ? ev.gallery : (ev.cover_image_url ? [ev.cover_image_url] : []);
   if (gallery.length === 0) return;
-  // Vytvor fake "post" pre lightbox
   const fakePost = {
     id: `event-${ev.id}`,
     text: ev.title,
@@ -278,7 +277,6 @@ function openEventGallery(eventId, startIndex = 0) {
   openLightbox(gallery, startIndex, ev.title, fakePost);
 }
 
-// Share handler pre event
 async function shareEvent(id) {
   const ev = state._eventDetail;
   if (!ev) return;
@@ -287,11 +285,10 @@ async function shareEvent(id) {
   if (navigator.share) {
     try { await navigator.share({ title: ev.title, text, url }); return; } catch { return; }
   }
-  try { await navigator.clipboard.writeText(url); showToast('Odkaz zkopírován.'); }
-  catch { showToast('Sdílení se nepodařilo.'); }
+  try { await navigator.clipboard.writeText(url); showToast(t('toasts.copied')); }
+  catch { showToast(t('toasts.shareFailed')); }
 }
 
-// Add to calendar (ICS download)
 function addEventToCalendar(id) {
   const ev = state._eventDetail;
   if (!ev) return;
@@ -320,22 +317,23 @@ function addEventToCalendar(id) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${(ev.title || 'akce').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`;
+  a.download = `${(ev.title || 'event').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`;
   a.click();
   URL.revokeObjectURL(url);
-  showToast('Uloženo do kalendáře.');
+  showToast(t('events.savedToCalendar'));
 }
 
 function openCreateEvent() {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'create-event', file: null, previewUrl: null, uploading: false, businessId: null };
+  pushHistoryState('overlay');
   renderApp();
 }
 
 function renderCreateEventOverlay() {
   const businesses = state.businesses || [];
   if (businesses.length === 0) {
-    return `<div class="page-scroll">${renderBackHeader('Přidat akci')}<p class="empty-state">Nemáš žádný podnik.</p></div>`;
+    return `<div class="page-scroll">${renderBackHeader(t('events.create'))}<p class="empty-state">${escapeHtml(t('profile.noBusiness'))}</p></div>`;
   }
   if (!state.overlay.businessId) state.overlay.businessId = businesses[0].id;
   const selected = businesses.find((b) => b.id === state.overlay.businessId) || businesses[0];
@@ -344,42 +342,42 @@ function renderCreateEventOverlay() {
 
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Přidat akci')}
+      ${renderBackHeader(t('events.create'))}
       <div class="profile-section">
         <form data-action="submit-create-event" data-business-id="${selected.id}" data-business-kind="${KIND_MAP[selected.kind]}">
           <div class="form-field">
-            <label class="form-label">Podnik</label>
+            <label class="form-label">${escapeHtml(t('profile.businessPicker'))}</label>
             <select class="form-select" data-action="event-business-select">
               ${businesses.map((b) => `<option value="${b.id}" ${b.id === selected.id ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}
             </select>
           </div>
 
-          <div class="form-field"><label class="form-label">Název akce</label><input class="form-input" name="title" required maxlength="200" /></div>
-          <div class="form-field"><label class="form-label">Začátek</label><input class="form-input" type="datetime-local" name="start_at" required /></div>
-          <div class="form-field"><label class="form-label">Konec (nepovinné)</label><input class="form-input" type="datetime-local" name="end_at" /></div>
-          <div class="form-field"><label class="form-label">Místo konání</label><input class="form-input" name="location_name" placeholder="např. Hrad Křivoklát, hlavní nádvoří" /></div>
-          <div class="form-field"><label class="form-label">Kraj</label>
+          <div class="form-field"><label class="form-label">${escapeHtml(t('events.title2'))}</label><input class="form-input" name="title" required maxlength="200" /></div>
+          <div class="form-field"><label class="form-label">${escapeHtml(t('events.startDate'))}</label><input class="form-input" type="datetime-local" name="start_at" required /></div>
+          <div class="form-field"><label class="form-label">${escapeHtml(t('events.endDate'))}</label><input class="form-input" type="datetime-local" name="end_at" /></div>
+          <div class="form-field"><label class="form-label">${escapeHtml(t('events.locationName'))}</label><input class="form-input" name="location_name" placeholder="${escapeAttr(t('events.locationPh'))}" /></div>
+          <div class="form-field"><label class="form-label">${escapeHtml(t('events.region'))}</label>
             <select class="form-select" name="region">
-              <option value="">Vyberte kraj…</option>
+              <option value="">${escapeHtml(t('auth.registerSelectRegion'))}</option>
               ${Object.keys(REGIONS).map((r) => `<option value="${r}">${r}</option>`).join('')}
             </select>
           </div>
-          <div class="form-field"><label class="form-label">Obec</label><input class="form-input" name="city" /></div>
+          <div class="form-field"><label class="form-label">${escapeHtml(t('events.city'))}</label><input class="form-input" name="city" /></div>
 
           <div class="file-drop ${eventFiles.length > 0 ? 'has-file' : ''}" data-action="trigger-event-file">
             <input type="file" accept="image/*" multiple id="event-file-input" data-action="event-files-selected" style="display:none" />
             ${eventFiles.length === 0
-              ? `${icon('image', { size: 24 })}<br/>Klikni pro výběr 1–4 fotek`
-              : `✓ Připraveno ${eventFiles.length} fotek`}
+              ? `${icon('image', { size: 24 })}<br/>${escapeHtml(t('events.pickPhotos'))}`
+              : `✓ ${escapeHtml(t('events.photosReady', { n: eventFiles.length }))}`}
           </div>
           <div id="event-file-preview" class="file-preview-grid">
             ${eventFiles.map((f) => `<div class="file-preview-item"><img src="${URL.createObjectURL(f)}" /><button type="button" class="file-preview-remove" data-action="remove-event-file" data-name="${escapeAttr(f.name)}">${icon('close', { size: 14 })}</button></div>`).join('')}
           </div>
 
-          <div class="form-field"><label class="form-label">Popis</label><textarea class="form-textarea" name="description" rows="5" placeholder="Co se bude dít?"></textarea></div>
+          <div class="form-field"><label class="form-label">${escapeHtml(t('events.description'))}</label><textarea class="form-textarea" name="description" rows="5" placeholder="${escapeAttr(t('events.descriptionPh'))}"></textarea></div>
 
           <button class="form-submit-btn" type="submit" ${state.overlay.uploading ? 'disabled' : ''}>
-            ${state.overlay.uploading ? 'Vytvářím…' : 'Zveřejnit akci'}
+            ${state.overlay.uploading ? escapeHtml(t('events.creating')) : escapeHtml(t('events.publishEvent'))}
           </button>
         </form>
       </div>
@@ -419,7 +417,7 @@ async function handleCreateEventSubmit(form) {
     if (endEl?.value) fd.set('end_at', endEl.value.replace('T', ' ') + ':00');
 
     await apiPost('/api/events', fd);
-    showToast('Akce zveřejněna!');
+    showToast(t('events.published'));
     state.overlayStack.pop();
     state.overlay = null;
     state.events.items = [];
@@ -441,41 +439,11 @@ async function onEventFileSelected(inputEl) {
   renderApp();
 }
 
-async function handleCreateEventSubmit(form) {
-  state.overlay.uploading = true;
-  renderApp();
-
-  try {
-    const fd = new FormData(form);
-    fd.set('business_id', form.dataset.businessId);
-    fd.set('business_kind', form.dataset.businessKind);
-    if (state.overlay.file) fd.append('file', state.overlay.file, state.overlay.file.name);
-
-    const startEl = form.querySelector('input[name="start_at"]');
-    const endEl = form.querySelector('input[name="end_at"]');
-    if (startEl?.value) fd.set('start_at', startEl.value.replace('T', ' ') + ':00');
-    if (endEl?.value) fd.set('end_at', endEl.value.replace('T', ' ') + ':00');
-
-    await apiPost('/api/events', fd);
-    showToast('Akce zveřejněna!');
-    state.overlayStack.pop();
-    state.overlay = null;
-    state.events.items = [];
-    state.events.next_cursor = null;
-    if (state.tab === 'events') loadEvents();
-    renderApp();
-  } catch (err) {
-    showToast(err.message);
-    state.overlay.uploading = false;
-    renderApp();
-  }
-}
-
 async function deleteEvent(id) {
-  if (!confirm('Smazat tuto akci?')) return;
+  if (!confirm(t('events.deleteConfirm'))) return;
   try {
     await apiDelete(`/api/events/${id}`);
-    showToast('Akce smazána.');
+    showToast(t('events.deleted'));
     state.events.items = state.events.items.filter((e) => e.id !== id);
     closeOverlay();
   } catch (err) {
