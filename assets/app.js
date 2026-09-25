@@ -76,7 +76,6 @@ const state = {
   lightbox: null,
   loading: {},
 
-  // D7: stav zbalenia spodnej lišty na mape
   _mapNavCollapsed: true,
 };
 
@@ -158,26 +157,10 @@ function renderBackHeader(title, rightHtml) {
 }
 
 const FEED_TITLES = {
-  events: [
-    'Co se děje?', 'Kam dnes vyrazit?', 'Kulturní program', 'Akce v okolí',
-    'Dnes, zítra, o víkendu', 'Nezmeškej!', 'Tipy na akce', 'Zábava v kraji',
-    'Naplánuj si víkend', 'Kde se potkáme?',
-  ],
-  organization: [
-    'Kam na výlet?', 'Dnešní dobrodružství', 'Objevuj Česko', 'Za památkami',
-    'Příroda a historie', 'Tipy na trip', 'Co navštívit?', 'Toulky krajem',
-    'Za kulturou a zábavou', 'Výlety, které nadchnou',
-  ],
-  accommodation: [
-    'Kde se vyspat?', 'Útulné noclehy', 'Ubytování na cestách', 'Přespání v přírodě',
-    'Tipy na přenocování', 'Wellness a klid', 'Víkendový pobyt', 'Nocleh se srdcem',
-    'Hotely, penziony, chaty', 'Kde složit hlavu?',
-  ],
-  gastro: [
-    'Kam na jídlo?', 'Dobroty a chutě', 'Gurmánské tipy', 'Hladový cestovatel',
-    'Mňam!', 'Restaurace, kavárny, hospody', 'Co si dnes dáme?', 'Ochutnej kraj',
-    'Skvělá jídla', 'Za dobrým jídlem',
-  ],
+  events: ['Co se děje?', 'Kam dnes vyrazit?', 'Kulturní program', 'Akce v okolí', 'Dnes, zítra, o víkendu', 'Nezmeškej!', 'Tipy na akce', 'Zábava v kraji', 'Naplánuj si víkend', 'Kde se potkáme?'],
+  organization: ['Kam na výlet?', 'Dnešní dobrodružství', 'Objevuj Česko', 'Za památkami', 'Příroda a historie', 'Tipy na trip', 'Co navštívit?', 'Toulky krajem', 'Za kulturou a zábavou', 'Výlety, které nadchnou'],
+  accommodation: ['Kde se vyspat?', 'Útulné noclehy', 'Ubytování na cestách', 'Přespání v přírodě', 'Tipy na přenocování', 'Wellness a klid', 'Víkendový pobyt', 'Nocleh se srdcem', 'Hotely, penziony, chaty', 'Kde složit hlavu?'],
+  gastro: ['Kam na jídlo?', 'Dobroty a chutě', 'Gurmánské tipy', 'Hladový cestovatel', 'Mňam!', 'Restaurace, kavárny, hospody', 'Co si dnes dáme?', 'Ochutnej kraj', 'Skvělá jídla', 'Za dobrým jídlem'],
 };
 
 function pickRandomTitle(key) {
@@ -201,10 +184,6 @@ const TABS = [
 
 const VALID_TABS = ['organizations', 'accommodation', 'gastro', 'map', 'events', 'account'];
 
-// ------------------------------------------------------------------
-// D7: Na mapovej záložke je spodná lišta defaultne zbalená do malého
-// tlačidla so šípkou. Po prepnutí na inú kartu sa automaticky rozbalí.
-// ------------------------------------------------------------------
 function renderBottomNav() {
   const isMapTab = state.tab === 'map' && !state.overlay;
   const collapsed = isMapTab && state._mapNavCollapsed;
@@ -378,7 +357,6 @@ function renderApp() {
   else if (state.tab === 'events') pageHtml = renderEventsPage();
   else if (state.tab === 'account') pageHtml = renderAccountPage();
 
-  const isMapTab = state.tab === 'map' && !state.overlay;
   const hideAll = state.overlay?.type === 'story-viewer' || state.overlay?.type === 'onboarding';
   const hideCookieBanner = hideAll;
   const hideLightbox = hideAll;
@@ -393,6 +371,19 @@ function renderApp() {
     ${renderModal()}`;
 
   applySeo();
+
+  // ------------------------------------------------------------------
+  // DÔLEŽITÉ: Ak bol lightbox otvorený pred renderom, obnov ho.
+  // Bez tohto by sa lightbox zatváral pri každom renderApp().
+  // ------------------------------------------------------------------
+  if (state.lightbox && state.lightbox.images && state.lightbox.images.length > 0 && !hideLightbox) {
+    const lbEl = document.getElementById('lightbox');
+    if (lbEl) {
+      lbEl.classList.add('is-open');
+      document.body.style.overflow = 'hidden';
+      updateLightboxDOM();
+    }
+  }
 
   if (_searchFocus) {
     const newInput = document.querySelector(`[data-action="search-change"][data-feed="${_searchFocus.feed}"]`);
@@ -445,7 +436,11 @@ async function applySeo() {
   } catch {}
 }
 
+// ------------------------------------------------------------------
+// openProfile — zatvorí lightbox ak je otvorený (aby sa profil zobrazil)
+// ------------------------------------------------------------------
 function openProfile(kind, id) {
+  if (state.lightbox) closeLightbox();
   let k = kind; if (kind === 'organization') k = 'organizations'; if (kind === 'gastro') k = 'restaurants';
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'profile', kind: k, id };
@@ -485,8 +480,8 @@ function restoreTab() {
 function switchTab(tab) {
   state.overlay = null;
   state.overlayStack = [];
+  if (state.lightbox) closeLightbox();
   state.tab = tab;
-  // D7: pri prepnutí na mapu defaultne zbalená lišta
   if (tab === 'map') state._mapNavCollapsed = true;
   persistTab(tab);
   getFeedTitle(tab);
@@ -499,7 +494,7 @@ function switchTab(tab) {
 }
 
 // ============================================================
-// LIGHTBOX — A2, A3, A5 opravy
+// LIGHTBOX
 // ============================================================
 function openLightbox(images, index = 0, caption = '', post = null) {
   state.lightbox = {
@@ -512,7 +507,6 @@ function openLightbox(images, index = 0, caption = '', post = null) {
   document.getElementById('lightbox')?.classList.add('is-open');
   document.body.style.overflow = 'hidden';
 
-  // A2: Ak sú komentáre označené ako neznáme (null), načítaj ich
   if (post && post.id && post.__comments == null) {
     loadLightboxComments(post.id);
   }
@@ -581,16 +575,28 @@ function updateLightboxDOM() {
         ? `<img src="${escapeAttr(logo)}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--c-primary-light);" />`
         : `<span style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:var(--c-primary-light);color:var(--c-primary-dark);font-weight:800;font-size:17px;flex-shrink:0;border:2px solid var(--c-primary-light);">${initial}</span>`;
 
-      // A2: komentáre — bud načítané, prázdne, alebo ešte neznáme
       const commentsReady = post.__comments != null;
       const commentsList = post.__comments || [];
-      const commentsHtml = commentsList.map((c) => `
-        <div class="lightbox-comment">
-          <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}">${escapeHtml(c.user_name || 'Uživatel')}</strong>
-          <span>${escapeHtml(c.comment_text)}</span>
-          <span class="lightbox-comment-time">${timeAgo(c.created_at)}</span>
-        </div>
-      `).join('');
+
+      // Avatary v komentároch
+      const commentsHtml = commentsList.map((c) => {
+        const cInitial = (c.user_name || '?').charAt(0).toUpperCase();
+        const avatarInner = c.user_avatar
+          ? `<img src="${escapeAttr(c.user_avatar)}" alt="" class="lightbox-comment-avatar" />`
+          : `<span class="lightbox-comment-avatar lightbox-comment-avatar-init">${cInitial}</span>`;
+        return `
+          <div class="lightbox-comment">
+            <button type="button" class="lightbox-comment-avatar-btn" data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}" aria-label="Profil">
+              ${avatarInner}
+            </button>
+            <div class="lightbox-comment-body">
+              <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}">${escapeHtml(c.user_name || 'Uživatel')}</strong>
+              <span>${escapeHtml(c.comment_text)}</span>
+              <span class="lightbox-comment-time">${timeAgo(c.created_at)}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
 
       let commentsSection;
       if (!commentsReady) {
@@ -671,6 +677,150 @@ function renderLightbox() {
     </div>`;
 }
 
+// ============================================================
+// NOTIFIKÁCIE — navigácia po kliknutí
+// ============================================================
+async function openNotification(notifId) {
+  const n = (state.notifications || []).find((x) => x.id === notifId);
+  if (!n) return;
+
+  // Označ ako prečítané
+  if (!n.read_at) {
+    try { await apiPost(`/api/profile/me/notifications/${notifId}/read`, {}); } catch {}
+    n.read_at = new Date().toISOString();
+    state.unreadNotifications = Math.max(0, (state.unreadNotifications || 0) - 1);
+  }
+
+  // Zatvor overlay notifikácií
+  if (state.overlay?.type === 'notifications') {
+    state.overlay = state.overlayStack.pop() || null;
+  }
+
+  const t = n.type;
+  const entType = n.entity_type;
+  const entId = n.entity_id;
+
+  // Lajk / komentár / odpoveď / zmienka → otvor post v lightboxe
+  if ((t === 'like' || t === 'comment' || t === 'reply' || t === 'mention') && entType === 'post' && entId) {
+    try {
+      const data = await apiGet(`/api/feed/post-by-id/${encodeURIComponent(entId)}`);
+      if (!data.post) {
+        showToast('Příspěvek nebyl nalezen.');
+        renderApp();
+        return;
+      }
+      const post = data.post;
+      try {
+        const c = await apiGet(`/api/feed/${post.id}/comments`);
+        post.__comments = c.comments || [];
+        post.comment_count = c.total || 0;
+      } catch {}
+
+      if (!post.media || post.media.length === 0) {
+        showToast('Příspěvek nemá fotku.');
+        renderApp();
+        return;
+      }
+
+      // Najprv renderApp (aby existoval lightbox DOM), potom otvor lightbox
+      renderApp();
+      openLightbox(post.media, 0, post.text || '', post);
+    } catch (err) {
+      showToast('Nepodařilo se otevřít příspěvek.');
+      renderApp();
+    }
+    return;
+  }
+
+  // DM → otvor konverzáciu
+  if (t === 'dm' && entType === 'thread' && entId) {
+    renderApp();
+    openThreadById(entId);
+    return;
+  }
+
+  // Follow / story_reply → otvor profil autora
+  if ((t === 'follow' || t === 'story_reply') && n.actor_id) {
+    renderApp();
+    openProfile('user', n.actor_id);
+    return;
+  }
+
+  // Verifikácia → karta Profil
+  if (t === 'verification_approved' || t === 'verification_rejected') {
+    renderApp();
+    switchTab('account');
+    return;
+  }
+
+  // Predvolené: len re-render (mark as read)
+  renderApp();
+}
+
+// ============================================================
+// COOKIES
+// ============================================================
+function setCookieConsentShared(value, settings) {
+  try {
+    localStorage.setItem('naskraj_cookies', value);
+    localStorage.setItem('naskraj_cookie_settings', JSON.stringify(settings || {}));
+  } catch {}
+  try {
+    const maxAge = 365 * 24 * 60 * 60;
+    document.cookie = `naskraj_cookies=${value}; path=/; max-age=${maxAge}; domain=.vandro.cz; SameSite=Lax; Secure`;
+  } catch {}
+  try {
+    document.cookie = `naskraj_cookies=${value}; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax`;
+  } catch {}
+}
+
+function getCookieConsentShared() {
+  try {
+    const m = document.cookie.match(/(?:^|; )naskraj_cookies=([^;]+)/);
+    if (m && (m[1] === '1' || m[1] === '0')) return m[1];
+  } catch {}
+  try {
+    const v = localStorage.getItem('naskraj_cookies');
+    if (v === '1' || v === '0') return v;
+  } catch {}
+  return null;
+}
+
+function acceptCookies() {
+  setCookieConsentShared('1', { necessary: true, analytics: true, marketing: true });
+  state._cookieConsent = true;
+  state._cookieSettingsOpen = false;
+  document.getElementById('cookie-banner')?.remove();
+}
+
+function rejectCookies() {
+  setCookieConsentShared('0', { necessary: true, analytics: false, marketing: false });
+  state._cookieConsent = true;
+  state._cookieSettingsOpen = false;
+  document.getElementById('cookie-banner')?.remove();
+}
+
+function openCookieSettings() {
+  state._cookieSettingsOpen = true;
+  try {
+    const stored = localStorage.getItem('naskraj_cookie_settings');
+    if (stored) state._cookieSettings = JSON.parse(stored);
+    else state._cookieSettings = { necessary: true, analytics: false, marketing: false };
+  } catch {}
+  renderApp();
+}
+
+function toggleCookieSetting(key, value) {
+  state._cookieSettings = { ...(state._cookieSettings || {}), [key]: value };
+}
+
+function saveCookieSettings() {
+  setCookieConsentShared('1', state._cookieSettings || { necessary: true });
+  state._cookieConsent = true;
+  state._cookieSettingsOpen = false;
+  document.getElementById('cookie-banner')?.remove();
+}
+
 function renderCookieBanner() {
   if (state._cookieConsent) return '';
   try {
@@ -719,74 +869,6 @@ function renderCookieBanner() {
     </div>`;
 }
 
-// ------------------------------------------------------------------
-// E1: Zdieľanie cookie súhlasu medzi subdoménami (.vandro.cz)
-// Cookie sa nastaví s domain=.vandro.cz, aby ju videl aj maps.vandro.cz
-// ------------------------------------------------------------------
-function setCookieConsentShared(value, settings) {
-  try {
-    localStorage.setItem('naskraj_cookies', value);
-    localStorage.setItem('naskraj_cookie_settings', JSON.stringify(settings || {}));
-  } catch {}
-  // Zdieľaná cookie s domain=.vandro.cz
-  try {
-    const maxAge = 365 * 24 * 60 * 60;
-    document.cookie = `naskraj_cookies=${value}; path=/; max-age=${maxAge}; domain=.vandro.cz; SameSite=Lax; Secure`;
-  } catch {}
-  // Fallback bez domain pre localhost
-  try {
-    document.cookie = `naskraj_cookies=${value}; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax`;
-  } catch {}
-}
-
-function getCookieConsentShared() {
-  // Najprv skús shared cookie s .vandro.cz
-  try {
-    const m = document.cookie.match(/(?:^|; )naskraj_cookies=([^;]+)/);
-    if (m && (m[1] === '1' || m[1] === '0')) return m[1];
-  } catch {}
-  try {
-    const v = localStorage.getItem('naskraj_cookies');
-    if (v === '1' || v === '0') return v;
-  } catch {}
-  return null;
-}
-
-function acceptCookies() {
-  setCookieConsentShared('1', { necessary: true, analytics: true, marketing: true });
-  state._cookieConsent = true;
-  state._cookieSettingsOpen = false;
-  document.getElementById('cookie-banner')?.remove();
-}
-
-function rejectCookies() {
-  setCookieConsentShared('0', { necessary: true, analytics: false, marketing: false });
-  state._cookieConsent = true;
-  state._cookieSettingsOpen = false;
-  document.getElementById('cookie-banner')?.remove();
-}
-
-function openCookieSettings() {
-  state._cookieSettingsOpen = true;
-  try {
-    const stored = localStorage.getItem('naskraj_cookie_settings');
-    if (stored) state._cookieSettings = JSON.parse(stored);
-    else state._cookieSettings = { necessary: true, analytics: false, marketing: false };
-  } catch {}
-  renderApp();
-}
-
-function toggleCookieSetting(key, value) {
-  state._cookieSettings = { ...(state._cookieSettings || {}), [key]: value };
-}
-
-function saveCookieSettings() {
-  setCookieConsentShared('1', state._cookieSettings || { necessary: true });
-  state._cookieConsent = true;
-  state._cookieSettingsOpen = false;
-  document.getElementById('cookie-banner')?.remove();
-}
-
 (function setupLightboxSwipe() {
   let startX = 0, startY = 0;
   document.addEventListener('touchstart', (e) => {
@@ -811,10 +893,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') lightboxPrev();
 });
 
-// ------------------------------------------------------------------
-// C3: Po prihlásení s krátkym oneskorením vyžiadaj push povolenie
-// (len ak ešte nebolo povolené a nebolo odmietnuté)
-// ------------------------------------------------------------------
+// C3: push permisia
 function maybeRequestPushPermission() {
   if (!isLoggedIn()) return;
   if (state._pushPrompted) return;
