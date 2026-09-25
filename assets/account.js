@@ -16,57 +16,43 @@ function renderAccountPage() {
   if (!isLoggedIn()) {
     const html = `
       <div class="page-scroll">
-        ${renderHeader('Můj profil', `
-          <button class="header-icon-btn" data-action="open-settings" aria-label="Nastavení">${icon('settings', { size: 19 })}</button>
+        ${renderHeader(t('auth.myProfile'), `
+          <button class="header-icon-btn" data-action="open-settings" aria-label="${escapeAttr(t('settings.title'))}">${icon('settings', { size: 19 })}</button>
         `)}
         <div class="welcome-hero">
-          <img src="https://cdn.vandro.cz/Untitled18_20260523111243.png" alt="Náš kraj" class="welcome-logo" />
-          <h1 class="welcome-title">Vítej v Náš kraj</h1>
-          <p class="welcome-lead">Objevuj hrady, zámky, ubytování a gastro v Česku. Sdílej zážitky, sbírej odznaky a podporuj regionální projekty.</p>
+          <img src="https://cdn.vandro.cz/Untitled15_20260522160351.png" alt="Náš kraj" class="welcome-logo" />
+          <h1 class="welcome-title">${escapeHtml(t('auth.welcomeTitle'))}</h1>
+          <p class="welcome-lead">${escapeHtml(t('auth.welcomeLead'))}</p>
           <div class="welcome-features">
-            <div class="welcome-feature"><span class="welcome-feature-icon">🏰</span><span>Objevuj památky</span></div>
-            <div class="welcome-feature"><span class="welcome-feature-icon">🏨</span><span>Najdi ubytování</span></div>
-            <div class="welcome-feature"><span class="welcome-feature-icon">🍽️</span><span>Objevuj gastro</span></div>
-            <div class="welcome-feature"><span class="welcome-feature-icon">👥</span><span>Sleduj oblíbené</span></div>
+            <div class="welcome-feature"><span class="welcome-feature-icon">🏰</span><span>${escapeHtml(t('auth.welcomeFeature1'))}</span></div>
+            <div class="welcome-feature"><span class="welcome-feature-icon">🏨</span><span>${escapeHtml(t('auth.welcomeFeature2'))}</span></div>
+            <div class="welcome-feature"><span class="welcome-feature-icon">🍽️</span><span>${escapeHtml(t('auth.welcomeFeature3'))}</span></div>
+            <div class="welcome-feature"><span class="welcome-feature-icon">👥</span><span>${escapeHtml(t('auth.welcomeFeature4'))}</span></div>
           </div>
         </div>
         ${renderAuthCard()}
       </div>`;
+    // Google Sign-In inicializácia s retry
     setTimeout(() => {
       const el = document.getElementById('google-signin-container');
-      if (el && el.children.length === 0) renderGoogleButton(el, handleGoogleCredential);
-    }, 80);
+      if (el && el.children.length === 0 && typeof renderGoogleButton === 'function') {
+        try { renderGoogleButton(el, handleGoogleCredential); } catch (e) { console.warn('Google init failed:', e); }
+      }
+    }, 100);
     return html;
   }
 
   const headerActions = `
-    <button class="header-icon-btn" data-action="open-notifications" style="position:relative" aria-label="Notifikace">
+    <button class="header-icon-btn" data-action="open-notifications" style="position:relative" aria-label="${escapeAttr(t('notifications.title'))}">
       ${icon('bell', { size: 19 })}
       ${state.unreadNotifications > 0 ? `<span class="nav-badge">${state.unreadNotifications > 9 ? '9+' : state.unreadNotifications}</span>` : ''}
     </button>
-    <button class="header-icon-btn" data-action="open-settings" aria-label="Nastavení">${icon('settings', { size: 19 })}</button>
+    <button class="header-icon-btn" data-action="open-settings" aria-label="${escapeAttr(t('settings.title'))}">${icon('settings', { size: 19 })}</button>
   `;
 
   return `
     <div class="page-scroll">
-      ${renderHeader('Můj profil', headerActions)}
-      ${renderVerifyBanner()}
-      ${renderAccountHeaderCard()}
-      ${renderRoleSpecificContent()}
-    </div>`;
-}
-
-  const headerActions = `
-    <button class="header-icon-btn" data-action="open-notifications" style="position:relative" aria-label="Notifikace">
-      ${icon('bell', { size: 19 })}
-      ${state.unreadNotifications > 0 ? `<span class="nav-badge">${state.unreadNotifications > 9 ? '9+' : state.unreadNotifications}</span>` : ''}
-    </button>
-    <button class="header-icon-btn" data-action="open-settings" aria-label="Nastavení">${icon('settings', { size: 19 })}</button>
-  `;
-
-  return `
-    <div class="page-scroll">
-      ${renderHeader('Můj profil', headerActions)}
+      ${renderHeader(t('auth.myProfile'), headerActions)}
       ${renderVerifyBanner()}
       ${renderAccountHeaderCard()}
       ${renderRoleSpecificContent()}
@@ -90,64 +76,23 @@ function renderAuthCard() {
   return `
     <div class="auth-card">
       <div class="auth-tabs">
-        <button class="auth-tab ${state.authView === 'login' ? 'is-active' : ''}" data-action="set-auth-view" data-view="login">Přihlásit se</button>
-        <button class="auth-tab ${state.authView === 'register' ? 'is-active' : ''}" data-action="set-auth-view" data-view="register">Registrace</button>
+        <button class="auth-tab ${state.authView === 'login' ? 'is-active' : ''}" data-action="set-auth-view" data-view="login">${escapeHtml(t('auth.loginTab'))}</button>
+        <button class="auth-tab ${state.authView === 'register' ? 'is-active' : ''}" data-action="set-auth-view" data-view="register">${escapeHtml(t('auth.registerTab'))}</button>
       </div>
-      ${accountFormState.formError ? `<div class="form-error">${accountFormState.formError}</div>` : ''}
+      ${accountFormState.formError ? `<div class="form-error">${escapeHtml(accountFormState.formError)}</div>` : ''}
       <div id="google-signin-container" style="display:flex;justify-content:center;margin-bottom:18px;max-width:100%;overflow:hidden;"></div>
-      <div class="auth-divider"><span>nebo</span></div>
+      <div class="auth-divider"><span>${escapeHtml(t('common.or'))}</span></div>
       ${state.authView === 'login' ? renderLoginForm() : renderRegisterForm()}
-      ${state.authView === 'login' ? `<p style="text-align:center;margin-top:14px;font-size:12.5px"><button type="button" data-action="open-forgot" style="color:var(--c-primary-dark);font-weight:600">Zapomněl jsi heslo?</button></p>` : ''}
+      ${state.authView === 'login' ? `<p style="text-align:center;margin-top:14px;font-size:12.5px"><button type="button" data-action="open-forgot" style="color:var(--c-primary-dark);font-weight:600">${escapeHtml(t('auth.forgotPassword'))}</button></p>` : ''}
     </div>`;
-}
-
-function openCheckinCreate(kind, id, name) {
-  if (!isLoggedIn()) { showToast('Pro přidání návštěvy se musíš přihlásit.'); switchTab('account'); return; }
-  openModal({
-    title: 'Byl jsem tady',
-    body: `
-      <p style="font-size:14px;margin-bottom:16px;color:var(--c-text-muted)">Přidat návštěvu: <strong style="color:var(--c-text)">${escapeHtml(name || '')}</strong></p>
-      <div class="form-field">
-        <label class="form-label">Poznámka (nepovinné)</label>
-        <textarea class="form-textarea" name="note" maxlength="500" rows="4" placeholder="Co tě zaujalo?"></textarea>
-      </div>`,
-    submitLabel: 'Zaznamenat návštěvu',
-    onSubmit: async (data) => {
-      state._modalLoading = true; renderApp();
-      try {
-        const res = await apiPost('/api/checkins', {
-          business_id: id,
-          business_kind: kind,
-          note: data.note || null,
-        });
-        closeModal();
-        if (res.new_badges && res.new_badges.length > 0) {
-          const list = res.new_badges.map((b) => `${b.name} L${b.level}`).join(', ');
-          showToast(`Získáno: ${list}! 🎉`);
-        } else if (res.already) {
-          showToast(res.message || 'Už jsi tu byl(a).');
-        } else {
-          showToast('Návštěva zaznamenána!');
-        }
-        if (state.overlay?.type === 'profile') {
-          delete state.profiles[`${state.overlay.kind}:${state.overlay.id}`];
-          loadProfile(state.overlay.kind, state.overlay.id);
-        }
-      } catch (err) {
-        showToast(err.message);
-        state._modalLoading = false;
-        renderApp();
-      }
-    },
-  });
 }
 
 function renderLoginForm() {
   return `
     <form data-action="submit-login">
-      <div class="form-field"><label class="form-label">E-mail</label><input class="form-input" type="email" name="email" required autocomplete="email" /></div>
-      <div class="form-field"><label class="form-label">Heslo</label><input class="form-input" type="password" name="password" required autocomplete="current-password" /></div>
-      <button class="form-submit-btn" type="submit">Přihlásit se</button>
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.email'))}</label><input class="form-input" type="email" name="email" required autocomplete="email" /></div>
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.password'))}</label><input class="form-input" type="password" name="password" required autocomplete="current-password" /></div>
+      <button class="form-submit-btn" type="submit">${escapeHtml(t('auth.loginBtn'))}</button>
     </form>`;
 }
 
@@ -156,43 +101,43 @@ function renderRegisterForm() {
   const kind = accountFormState.registerBusinessKind;
 
   const orgTypeOptions = [
-    { value: 'hrad', label: 'Hrad' },
-    { value: 'zamek', label: 'Zámek' },
-    { value: 'muzeum', label: 'Muzeum' },
-    { value: 'lyzarske_stredisko', label: 'Lyžařské středisko' },
-    { value: 'galerie', label: 'Galerie' },
-    { value: 'zoo', label: 'ZOO' },
-    { value: 'prirodni_pamatka', label: 'Přírodní památka' },
-    { value: 'rozhledna', label: 'Rozhledna' },
-    { value: 'zricenina', label: 'Zřícenina' },
-    { value: 'kostel', label: 'Kostel / klášter' },
-    { value: 'technicka_pamatka', label: 'Technická památka' },
-    { value: 'jine', label: 'Jiné' },
+    { value: 'hrad', label: tType('hrad') },
+    { value: 'zamek', label: tType('zamek') },
+    { value: 'muzeum', label: tType('muzeum') },
+    { value: 'lyzarske_stredisko', label: tType('lyzarske_stredisko') },
+    { value: 'galerie', label: tType('galerie') },
+    { value: 'zoo', label: tType('zoo') },
+    { value: 'prirodni_pamatka', label: tType('prirodni_pamatka') },
+    { value: 'rozhledna', label: tType('rozhledna') },
+    { value: 'zricenina', label: tType('zricenina') },
+    { value: 'kostel', label: tType('kostel') },
+    { value: 'technicka_pamatka', label: tType('technicka_pamatka') },
+    { value: 'jine', label: tType('jine') },
   ];
 
   const accTypeOptions = [
-    { value: 'hotel', label: 'Hotel' },
-    { value: 'penzion', label: 'Penzion' },
-    { value: 'chata', label: 'Chata' },
-    { value: 'chalupa', label: 'Chalupa' },
-    { value: 'kemp', label: 'Kemp' },
-    { value: 'apartman', label: 'Apartmán' },
-    { value: 'glamping', label: 'Glamping' },
-    { value: 'hostel', label: 'Hostel' },
-    { value: 'ubytovna', label: 'Ubytovna' },
-    { value: 'jine', label: 'Jiné' },
+    { value: 'hotel', label: tType('hotel') },
+    { value: 'penzion', label: tType('penzion') },
+    { value: 'chata', label: tType('chata') },
+    { value: 'chalupa', label: tType('chalupa') },
+    { value: 'kemp', label: tType('kemp') },
+    { value: 'apartman', label: tType('apartman') },
+    { value: 'glamping', label: tType('glamping') },
+    { value: 'hostel', label: tType('hostel') },
+    { value: 'ubytovna', label: tType('ubytovna') },
+    { value: 'jine', label: tType('jine') },
   ];
 
   const restTypeOptions = [
-    { value: 'restaurace', label: 'Restaurace' },
-    { value: 'kavarna', label: 'Kavárna' },
-    { value: 'hospoda', label: 'Hospoda' },
-    { value: 'pivovar', label: 'Pivovar' },
-    { value: 'bistro', label: 'Bistro' },
-    { value: 'cukrarna', label: 'Cukrárna' },
-    { value: 'vinarna', label: 'Vinárna' },
-    { value: 'food_truck', label: 'Food truck' },
-    { value: 'jine', label: 'Jiné' },
+    { value: 'restaurace', label: tType('restaurace') },
+    { value: 'kavarna', label: tType('kavarna') },
+    { value: 'hospoda', label: tType('hospoda') },
+    { value: 'pivovar', label: tType('pivovar') },
+    { value: 'bistro', label: tType('bistro') },
+    { value: 'cukrarna', label: tType('cukrarna') },
+    { value: 'vinarna', label: tType('vinarna') },
+    { value: 'food_truck', label: tType('food_truck') },
+    { value: 'jine', label: tType('jine') },
   ];
 
   const roleFields = role === 'organization' ? `
@@ -203,15 +148,15 @@ function renderRegisterForm() {
     <div class="form-field">
       <label class="form-label">Druh</label>
       <select class="form-select" name="orgType" required>
-        ${orgTypeOptions.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
+        ${orgTypeOptions.map((t) => `<option value="${t.value}">${escapeHtml(t.label)}</option>`).join('')}
       </select>
     </div>
     ${renderRegionDistrictCityFields('reg')}
     <div class="form-field"><label class="form-label">Popis</label><textarea class="form-textarea" name="description"></textarea></div>
   ` : role === 'hotelier' ? `
     <div class="form-role-grid" style="grid-template-columns:repeat(2,1fr)">
-      <button type="button" class="form-role-btn ${kind === 'accommodation' ? 'is-selected' : ''}" data-action="set-business-kind" data-kind="accommodation">Ubytování</button>
-      <button type="button" class="form-role-btn ${kind === 'gastro' ? 'is-selected' : ''}" data-action="set-business-kind" data-kind="gastro">Gastro</button>
+      <button type="button" class="form-role-btn ${kind === 'accommodation' ? 'is-selected' : ''}" data-action="set-business-kind" data-kind="accommodation">${escapeHtml(t('nav.accommodation'))}</button>
+      <button type="button" class="form-role-btn ${kind === 'gastro' ? 'is-selected' : ''}" data-action="set-business-kind" data-kind="gastro">${escapeHtml(t('nav.gastro'))}</button>
     </div>
     <input type="hidden" name="businessKind" value="${kind}" />
     <div class="form-field">
@@ -221,48 +166,53 @@ function renderRegisterForm() {
     <div class="form-field">
       <label class="form-label">Typ</label>
       <select class="form-select" name="businessType" required>
-        ${(kind === 'accommodation' ? accTypeOptions : restTypeOptions).map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
+        ${(kind === 'accommodation' ? accTypeOptions : restTypeOptions).map((t) => `<option value="${t.value}">${escapeHtml(t.label)}</option>`).join('')}
       </select>
     </div>
-    ${kind === 'gastro' ? `<div class="form-field"><label class="form-label">Kuchyně</label>
-      <select class="form-select" name="cuisineType">${TYPES.cuisine.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}</select></div>`
-      : `<div class="form-field"><label class="form-label">Kapacita</label><input class="form-input" type="number" name="capacity" min="1" /></div>`}
+    ${kind === 'gastro' ? `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.cuisine'))}</label>
+      <select class="form-select" name="cuisineType">
+        <option value="ceska">${escapeHtml(tType('ceska'))}</option>
+        <option value="italska">${escapeHtml(tType('italska'))}</option>
+        <option value="asijska">${escapeHtml(tType('asijska'))}</option>
+        <option value="vegan">${escapeHtml(tType('vegan'))}</option>
+      </select></div>`
+      : `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.capacity'))}</label><input class="form-input" type="number" name="capacity" min="1" /></div>`}
     ${renderRegionDistrictCityFields('reg')}
     <div class="form-field"><label class="form-label">Popis</label><textarea class="form-textarea" name="description"></textarea></div>
   ` : '';
 
   return `
     <form data-action="submit-register">
-      <label class="form-label">Typ účtu</label>
+      <label class="form-label">${escapeHtml(t('auth.registerRole'))}</label>
       <div class="form-role-grid">
-        <button type="button" class="form-role-btn ${role === 'user' ? 'is-selected' : ''}" data-action="set-register-role" data-role="user">Turista</button>
-        <button type="button" class="form-role-btn ${role === 'organization' ? 'is-selected' : ''}" data-action="set-register-role" data-role="organization">Organizace</button>
-        <button type="button" class="form-role-btn ${role === 'hotelier' ? 'is-selected' : ''}" data-action="set-register-role" data-role="hotelier">Podnik</button>
+        <button type="button" class="form-role-btn ${role === 'user' ? 'is-selected' : ''}" data-action="set-register-role" data-role="user">${escapeHtml(t('auth.roleUser'))}</button>
+        <button type="button" class="form-role-btn ${role === 'organization' ? 'is-selected' : ''}" data-action="set-register-role" data-role="organization">${escapeHtml(t('auth.roleOrg'))}</button>
+        <button type="button" class="form-role-btn ${role === 'hotelier' ? 'is-selected' : ''}" data-action="set-register-role" data-role="hotelier">${escapeHtml(t('auth.roleHotelier'))}</button>
       </div>
       <input type="hidden" name="role" value="${role}" />
       ${role === 'user' ? `
         <div class="form-field">
-          <label class="form-label">Zobrazované jméno</label>
+          <label class="form-label">${escapeHtml(t('auth.displayName'))}</label>
           <input class="form-input" name="displayName" required placeholder="např. Jan Novák" />
         </div>
       ` : `
         <div class="form-field">
-          <label class="form-label">Zobrazované jméno (názov podniku)</label>
+          <label class="form-label">${escapeHtml(t('auth.displayNameBusiness'))}</label>
           <input class="form-input" name="displayName" required placeholder="např. Hrad Tematín, Hospoda pod Lipou" />
-          <p class="form-hint">Toto jméno sa zobrazí v aplikácii. Pri podnikoch/organizáciách zadajte názov podniku.</p>
+          <p class="form-hint">${escapeHtml(t('auth.displayNameBusinessHint'))}</p>
         </div>
       `}
-      <div class="form-field"><label class="form-label">E-mail</label><input class="form-input" type="email" name="email" required /></div>
-      <div class="form-field"><label class="form-label">Heslo</label><input class="form-input" type="password" name="password" required minlength="8" /><p class="form-hint">Alespoň 8 znaků.</p></div>
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.email'))}</label><input class="form-input" type="email" name="email" required /></div>
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.password'))}</label><input class="form-input" type="password" name="password" required minlength="8" /><p class="form-hint">${escapeHtml(t('auth.passwordHint'))}</p></div>
       ${roleFields}
       <div class="form-field" style="display:flex;align-items:flex-start;gap:10px;">
         <input type="checkbox" name="termsAccepted" id="terms-checkbox" required style="margin-top:3px;width:16px;height:16px;flex-shrink:0;" />
         <label for="terms-checkbox" class="form-hint" style="margin-top:0;font-size:12.5px;line-height:1.5;">
-          Souhlasím s <a href="/obchodni-podminky" target="_blank" rel="noopener" style="color:var(--c-primary-dark);text-decoration:underline;">obchodními podmínkami</a>
-          a se <a href="/ochrana-osobnich-udaju" target="_blank" rel="noopener" style="color:var(--c-primary-dark);text-decoration:underline;">zpracováním osobních údajů</a> (GDPR).
+          ${escapeHtml(t('auth.termsText'))} <a href="/obchodni-podminky" target="_blank" rel="noopener" style="color:var(--c-primary-dark);text-decoration:underline;">${escapeHtml(t('auth.termsLink'))}</a>
+          ${escapeHtml(t('auth.termsAnd'))} <a href="/ochrana-osobnich-udaju" target="_blank" rel="noopener" style="color:var(--c-primary-dark);text-decoration:underline;">${escapeHtml(t('auth.gdprLink'))}</a> ${escapeHtml(t('auth.gdprSuffix'))}
         </label>
       </div>
-      <button class="form-submit-btn" type="submit">Vytvořit účet</button>
+      <button class="form-submit-btn" type="submit">${escapeHtml(t('auth.registerBtn'))}</button>
     </form>`;
 }
 
@@ -308,7 +258,7 @@ async function handleLoginSubmit(form) {
   accountFormState.formError = '';
   const btn = form.querySelector('button[type="submit"]');
   const orig = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Přihlašuji…'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('common.sending'); }
   try {
     const recaptcha_token = await getRecaptchaToken('login');
     const data = await apiPost('/api/auth/login', { email: fd.get('email'), password: fd.get('password'), recaptcha_token });
@@ -322,7 +272,7 @@ async function handleLoginSubmit(form) {
   } catch (err) {
     accountFormState.formError = err.message;
     showFormErrorInPlace(form, err.message);
-    if (btn) { btn.disabled = false; btn.textContent = orig || 'Přihlásit se'; }
+    if (btn) { btn.disabled = false; btn.textContent = orig || t('auth.loginBtn'); }
   }
 }
 
@@ -335,7 +285,7 @@ function finishLogin(data) {
   state.businesses = data.businesses || [];
   state._twofaStage = null;
   state._twofaToken = null;
-  showToast(`Vítej zpět, ${data.user.display_name}!`);
+  showToast(t('toasts.loginSuccess', { name: data.user.display_name }));
   loadNotifications();
   if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(data.user);
   if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
@@ -346,18 +296,18 @@ async function handleRegisterSubmit(form) {
   const fd = new FormData(form);
   const body = Object.fromEntries(fd.entries());
   const btn = form.querySelector('button[type="submit"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Vytvářím účet…'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('common.sending'); }
   try {
     body.recaptcha_token = await getRecaptchaToken('register');
     await apiPost('/api/auth/register', body);
-    showToast('Účet vytvořen! Můžeš se přihlásit.');
+    showToast(t('toasts.accountCreated'));
     state.authView = 'login';
     accountFormState.formError = '';
     renderApp();
   } catch (err) {
     accountFormState.formError = err.message;
     showFormErrorInPlace(form, err.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Vytvořit účet'; }
+    if (btn) { btn.disabled = false; btn.textContent = t('auth.registerBtn'); }
   }
 }
 
@@ -376,14 +326,14 @@ function handleLogout() {
   state.unreadNotifications = 0;
   state._pushSubscribed = false;
   state._pushPrompted = false;
-  if (state.lightbox) closeLightbox();
-  showToast('Byl jsi odhlášen.');
+  if (state.lightbox) closeLightbox(true);
+  showToast(t('toasts.logoutSuccess'));
   renderApp();
 }
 
 function renderAccountHeaderCard() {
   const initial = (state.user.display_name || state.user.email || '?').charAt(0).toUpperCase();
-  const roleLabel = { user: 'Turista', organization: 'Organizace', hotelier: 'Podnik', admin: 'Administrátor' }[state.user.role] || state.user.role;
+  const roleLabel = { user: t('auth.roleUser'), organization: t('auth.roleOrg'), hotelier: t('auth.roleHotelier'), admin: 'Admin' }[state.user.role] || state.user.role;
   const avatar = state.user.avatar_url
     ? `<img src="${state.user.avatar_url}" alt="" class="account-avatar" style="object-fit:cover" />`
     : `<div class="account-avatar">${initial}</div>`;
@@ -394,7 +344,7 @@ function renderAccountHeaderCard() {
       <div style="flex:1">
         <p class="account-name">${escapeHtml(state.user.display_name)}</p>
         ${handleHtml}
-        <span class="account-role-chip">${roleLabel}</span>
+        <span class="account-role-chip">${escapeHtml(roleLabel)}</span>
       </div>
       ${icon('chevronRight', { size: 18 })}
     </div>`;
@@ -411,45 +361,41 @@ function renderUserAboutSection() {
   const u = state.user;
   return `
     <div class="profile-section">
-      <h3 class="profile-section-title">O mně</h3>
+      <h3 class="profile-section-title">${escapeHtml(t('profile.oMe'))}</h3>
       <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:16px;">
         ${u.handle ? `<p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:8px">@${escapeHtml(u.handle)}</p>` : ''}
         ${u.bio
           ? `<p style="font-size:14px;line-height:1.6">${escapeHtml(u.bio)}</p>`
-          : '<p style="color:var(--c-text-muted);font-size:13.5px">Zatím žádné bio. Klikni na „Upravit profil".</p>'}
+          : `<p style="color:var(--c-text-muted);font-size:13.5px">${escapeHtml(t('profile.noBio'))}</p>`}
         <div style="margin-top:14px">
-          <button class="profile-action-btn" data-action="edit-profile" data-kind="user" data-id="${u.id}">${icon('edit', { size: 15 })} Upravit profil</button>
+          <button class="profile-action-btn" data-action="edit-profile" data-kind="user" data-id="${u.id}">${icon('edit', { size: 15 })} ${escapeHtml(t('profile.editProfile'))}</button>
         </div>
       </div>
     </div>
 
     <div class="profile-section">
-      <h3 class="profile-section-title">Moje aktivita</h3>
+      <h3 class="profile-section-title">${escapeHtml(t('profile.myActivity'))}</h3>
       <div class="stat-cards">
         <button class="stat-card" data-action="open-badges" style="cursor:pointer;text-align:left">
           <div class="stat-card-value">${icon('chart', { size: 20 })}</div>
-          <div class="stat-card-label">Moje odznaky</div>
+          <div class="stat-card-label">${escapeHtml(t('profile.myBadges'))}</div>
         </button>
         <button class="stat-card" data-action="open-user-checkins" data-id="${u.id}" style="cursor:pointer;text-align:left">
           <div class="stat-card-value">${icon('location', { size: 20 })}</div>
-          <div class="stat-card-label">Navštívená místa</div>
+          <div class="stat-card-label">${escapeHtml(t('profile.visitedPlaces'))}</div>
         </button>
         <button class="stat-card" data-action="open-wishlist" style="cursor:pointer;text-align:left">
           <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
-          <div class="stat-card-label">Chci navštívit</div>
+          <div class="stat-card-label">${escapeHtml(t('profile.wantVisit'))}</div>
         </button>
         <button class="stat-card" data-action="open-bookmarks" style="cursor:pointer;text-align:left">
           <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
-          <div class="stat-card-label">Uložené příspěvky</div>
+          <div class="stat-card-label">${escapeHtml(t('profile.savedPosts'))}</div>
         </button>
       </div>
     </div>`;
 }
 
-// ------------------------------------------------------------------
-// BUSINESS DASHBOARD
-// Pridané: tlačidlo "Přidat další podnik" (organizácia/podnik môže mať viac)
-// ------------------------------------------------------------------
 function renderBusinessDashboard() {
   const businesses = state.businesses || [];
   if (businesses.length === 0) return '<p class="empty-state">K účtu není přiřazen žádný podnik.</p>';
@@ -469,13 +415,11 @@ function renderBusinessDashboard() {
   const isVerified = Number(selected.is_verified);
   const postFormOpen = accountFormState._postFormOpen || false;
 
-  // Aký ďalší podnik môže user pridať?
   const canAddMore = state.user.role === 'organization' || state.user.role === 'hotelier' || state.user.role === 'admin';
-  const addKind = state.user.role === 'organization' ? 'organizations' : 'accommodation';
 
   return `
     <div class="profile-section">
-      <h3 class="profile-section-title">Tvůj podnik</h3>
+      <h3 class="profile-section-title">${escapeHtml(t('profile.yourBusiness'))}</h3>
 
       ${businesses.length > 1 ? `
         <div class="business-picker">
@@ -484,43 +428,40 @@ function renderBusinessDashboard() {
       ` : ''}
 
       <div style="padding:0 16px 10px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="profile-action-btn" data-action="open-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('user', { size: 15 })} Profil</button>
-        <button class="profile-action-btn" data-action="edit-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('edit', { size: 15 })} Upravit</button>
-        <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">${icon('chart', { size: 15 })} Statistiky</button>
-        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} Přidat akci</button>
-        <button class="profile-action-btn" data-action="toggle-post-form" data-id="${selected.id}">${icon('image', { size: 15 })} Přidat příspěvek</button>
+        <button class="profile-action-btn" data-action="open-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('user', { size: 15 })} ${escapeHtml(t('profile.profileBtn'))}</button>
+        <button class="profile-action-btn" data-action="edit-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('edit', { size: 15 })} ${escapeHtml(t('profile.editBtn'))}</button>
+        <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">${icon('chart', { size: 15 })} ${escapeHtml(t('profile.statsBtn'))}</button>
+        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} ${escapeHtml(t('profile.addEventBtn'))}</button>
+        <button class="profile-action-btn" data-action="toggle-post-form" data-id="${selected.id}">${icon('image', { size: 15 })} ${escapeHtml(t('profile.addPostBtn'))}</button>
         ${!isVerified && !isPending ? `
           <button class="profile-action-btn" data-action="open-verification-request" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
-            ${icon('shield', { size: 15 })} Ověřit
+            ${icon('shield', { size: 15 })} ${escapeHtml(t('profile.verifyBtn'))}
           </button>
         ` : ''}
         ${canAddMore ? `
           <button class="profile-action-btn" data-action="open-add-business" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
-            ${icon('plus', { size: 15 })} Přidat další podnik
+            ${icon('plus', { size: 15 })} ${escapeHtml(t('profile.addBusiness'))}
           </button>
         ` : ''}
       </div>
 
-      ${!isVerified && isPending ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">⏳ Žádost o ověření čeká na schválení.</p>` : ''}
-      ${isVerified ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">✓ Profil je ověřený</p>` : ''}
+      ${!isVerified && isPending ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">⏳ ${escapeHtml(t('profile.verificationPending'))}</p>` : ''}
+      ${isVerified ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">✓ ${escapeHtml(t('profile.verified'))}</p>` : ''}
     </div>
 
     ${postFormOpen ? renderInlineBusinessPostForm(selected, targetFeed) : ''}`;
 }
 
-// ------------------------------------------------------------------
-// Nové: modal pre pridanie ďalšieho podniku
-// ------------------------------------------------------------------
 function openAddBusinessModal() {
   const role = state.user.role;
   const isOrg = role === 'organization' || role === 'admin';
   const isHotelier = role === 'hotelier' || role === 'admin';
 
   const kindOptions = [];
-  if (isOrg) kindOptions.push({ value: 'organizations', label: 'Organizace (hrad, zámek, muzeum…)' });
+  if (isOrg) kindOptions.push({ value: 'organizations', label: t('auth.roleOrg') });
   if (isHotelier) {
-    kindOptions.push({ value: 'accommodation', label: 'Ubytování' });
-    kindOptions.push({ value: 'restaurants', label: 'Gastro' });
+    kindOptions.push({ value: 'accommodation', label: t('nav.accommodation') });
+    kindOptions.push({ value: 'restaurants', label: t('nav.gastro') });
   }
 
   const initialKind = kindOptions[0]?.value || 'organizations';
@@ -529,13 +470,13 @@ function openAddBusinessModal() {
     : TYPES.restaurant;
 
   openModal({
-    title: 'Přidat další podnik',
+    title: t('profile.addBusinessTitle'),
     body: `
       ${kindOptions.length > 1 ? `
         <div class="form-field">
-          <label class="form-label">Typ podniku</label>
+          <label class="form-label">${escapeHtml(t('profile.type'))}</label>
           <select class="form-select" name="kind" data-action="add-business-kind-change">
-            ${kindOptions.map((o) => `<option value="${o.value}">${o.label}</option>`).join('')}
+            ${kindOptions.map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}
           </select>
         </div>
       ` : `<input type="hidden" name="kind" value="${initialKind}" />`}
@@ -543,9 +484,9 @@ function openAddBusinessModal() {
       <div class="form-field"><label class="form-label">Název</label><input class="form-input" name="name" required maxlength="200" /></div>
 
       <div class="form-field">
-        <label class="form-label">Typ / druh</label>
+        <label class="form-label">${escapeHtml(t('profile.type'))}</label>
         <select class="form-select" name="type" id="add-business-type-select" required>
-          ${initialTypeOptions.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}
+          ${initialTypeOptions.map((t) => `<option value="${t.value}">${escapeHtml(tType(t.value))}</option>`).join('')}
         </select>
       </div>
 
@@ -573,7 +514,7 @@ function openAddBusinessModal() {
 
       <div class="form-field"><label class="form-label">Popis (nepovinné)</label><textarea class="form-textarea" name="description" maxlength="500"></textarea></div>
     `,
-    submitLabel: 'Vytvořit podnik',
+    submitLabel: t('profile.createBusiness'),
     onSubmit: async (data) => {
       state._modalLoading = true; renderApp();
       try {
@@ -586,7 +527,6 @@ function openAddBusinessModal() {
           city: data.city || null,
           description: data.description || '',
         });
-        // Pridaj do state a vyber nový podnik
         state.businesses = [...(state.businesses || []), res.business];
         setStoredBusinesses(state.businesses);
         accountFormState.postTargetBusiness = res.business.id;
@@ -602,20 +542,19 @@ function openAddBusinessModal() {
   });
 }
 
-// Aktualizácia typu pri zmene kind v add-business modáli
 function updateAddBusinessTypeOptions(kind) {
   const sel = document.getElementById('add-business-type-select');
   if (!sel) return;
   const typeOptions = kind === 'organizations' ? TYPES.organization
     : kind === 'accommodation' ? TYPES.accommodation
     : TYPES.restaurant;
-  sel.innerHTML = typeOptions.map((t) => `<option value="${t.value}">${t.label}</option>`).join('');
+  sel.innerHTML = typeOptions.map((t) => `<option value="${t.value}">${escapeHtml(tType(t.value))}</option>`).join('');
 }
 
 function renderInlineBusinessPostForm(selected, targetFeed) {
   return `
     <div class="profile-section" id="inline-post-form">
-      <h3 class="profile-section-title">Přidat příspěvek (max. 4 fotky)</h3>
+      <h3 class="profile-section-title">${escapeHtml(t('profile.addPostBtn'))} (max. 4)</h3>
       <form data-action="submit-business-post" data-business-id="${selected.id}" data-target-feed="${targetFeed}">
         <div class="file-drop" data-action="trigger-file-input">
           <input type="file" name="file" accept="image/*" multiple style="display:none" id="post-file-input" data-action="files-selected" />
@@ -636,7 +575,6 @@ function renderInlineBusinessPostForm(selected, targetFeed) {
           <button type="button" class="profile-action-btn" data-action="attach-geo" data-geo-label>${icon('location', { size: 15 })} Přidat polohu</button>
         </div>
         <button class="form-submit-btn" type="submit">Zveřejnit</button>
-        <p class="form-hint">Fotky se automaticky zmenší. Zveřejní se ihned.</p>
       </form>
     </div>`;
 }
@@ -723,11 +661,11 @@ async function handleBusinessPostSubmit(form) {
   if (geoPlace) fd.set('geo_place', geoPlace);
 
   const btn = form.querySelector('button[type="submit"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Nahrávám…'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('common.uploading'); }
 
   try {
     await apiPost('/api/posts', fd);
-    showToast('Příspěvek zveřejněn!');
+    showToast(t('toasts.postPublished'));
     if (state.socialFeeds[targetFeed]) state.socialFeeds[targetFeed].items = [];
     accountFormState.postFiles = [];
     accountFormState._postFormOpen = false;
@@ -738,10 +676,56 @@ async function handleBusinessPostSubmit(form) {
   }
 }
 
+function openCheckinCreate(kind, id, name) {
+  if (!isLoggedIn()) { showToast('Pro přidání návštěvy se musíš přihlásit.'); switchTab('account'); return; }
+  openModal({
+    title: t('profile.beenHere'),
+    body: `
+      <p style="font-size:14px;margin-bottom:16px;color:var(--c-text-muted)">${escapeHtml(name || '')}</p>
+      <div class="form-field">
+        <label class="form-label">Poznámka (nepovinné)</label>
+        <textarea class="form-textarea" name="note" maxlength="500" rows="4" placeholder="Co tě zaujalo?"></textarea>
+      </div>`,
+    submitLabel: t('profile.beenHere'),
+    onSubmit: async (data) => {
+      state._modalLoading = true; renderApp();
+      try {
+        const res = await apiPost('/api/checkins', {
+          business_id: id,
+          business_kind: kind,
+          note: data.note || null,
+        });
+        closeModal();
+        if (res.new_badges && res.new_badges.length > 0) {
+          const list = res.new_badges.map((b) => `${b.name} L${b.level}`).join(', ');
+          showToast(`Získáno: ${list}! 🎉`);
+        } else if (res.already) {
+          showToast(res.message || 'Už jsi tu byl(a).');
+        } else {
+          showToast('Návštěva zaznamenána!');
+        }
+        if (state.overlay?.type === 'profile') {
+          delete state.profiles[`${state.overlay.kind}:${state.overlay.id}`];
+          loadProfile(state.overlay.kind, state.overlay.id);
+        }
+      } catch (err) {
+        showToast(err.message);
+        state._modalLoading = false;
+        renderApp();
+      }
+    },
+  });
+}
+
 async function openProfileStats(kind, id) {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'profile-stats', kind, id };
   state._profileStats = null;
+  state._profileStatsView = {
+    metric: 'posts',
+    period: 'week',
+  };
+  pushHistoryState('overlay');
   renderApp();
   try {
     const data = await apiGet(`/api/profile/${kind}/${id}/stats`);
@@ -753,44 +737,138 @@ async function openProfileStats(kind, id) {
   }
 }
 
+// ------------------------------------------------------------------
+// STATS OVERLAY — s grafom, prepínačom metriky a obdobia
+// ------------------------------------------------------------------
 function renderProfileStatsOverlay() {
   const s = state._profileStats;
+  const view = state._profileStatsView || { metric: 'posts', period: 'week' };
+
+  if (!s) return `<div class="page-scroll">${renderBackHeader(t('stats.title'))}<p class="empty-state">${escapeHtml(t('common.loading'))}</p></div>`;
+
+  // Priprav série pre graf
+  const daily = s.daily || {};
+  const allDays = daily.posts || s.last_30_days || [];
+
+  // Vyber obdobie
+  const slice = view.period === 'week' ? allDays.slice(-7) : allDays.slice(-30);
+
+  // Vyber metriku
+  const metricKey = view.metric || 'posts';
+  const series = (daily[metricKey] || allDays).slice(-slice.length);
+
+  // Vypočítaj maximum
+  const maxN = Math.max(1, ...series.map((d) => d.n || 0));
+  const totalN = series.reduce((sum, d) => sum + (d.n || 0), 0);
+
+  // SVG bar chart
+  const chartWidth = 640;
+  const chartHeight = 220;
+  const paddingX = 20;
+  const paddingY = 30;
+  const innerW = chartWidth - paddingX * 2;
+  const innerH = chartHeight - paddingY * 2;
+  const barGap = 3;
+  const barW = series.length > 0 ? Math.max(4, (innerW - barGap * (series.length - 1)) / series.length) : 10;
+
+  const barsSvg = series.map((d, i) => {
+    const x = paddingX + i * (barW + barGap);
+    const h = maxN > 0 ? ((d.n || 0) / maxN) * innerH : 0;
+    const y = chartHeight - paddingY - h;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" rx="2" fill="url(#statsGrad)" />`;
+  }).join('');
+
+  // Label days — len niektoré (napr. každý 3. deň pri mesiaci, každý deň pri týždni)
+  const labelStep = view.period === 'week' ? 1 : 5;
+  const labelsSvg = series.map((d, i) => {
+    if (i % labelStep !== 0 && i !== series.length - 1) return '';
+    const x = paddingX + i * (barW + barGap) + barW / 2;
+    const shortDay = (d.day || '').slice(8); // DD
+    const month = (d.day || '').slice(5, 7); // MM
+    return `<text x="${x.toFixed(1)}" y="${chartHeight - 8}" text-anchor="middle" font-size="10" fill="#64766D">${shortDay}.${month}.</text>`;
+  }).join('');
+
+  const metricLabels = {
+    posts: t('stats.posts'),
+    likes: t('stats.likes'),
+    comments: t('stats.comments'),
+    views: t('stats.views'),
+    events: t('stats.events'),
+  };
+
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Statistiky')}
-      ${s === null ? '<p class="empty-state">Načítám…</p>' : `
-        <div class="profile-section">
-          <div class="stat-cards">
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.posts)}</div><div class="stat-card-label">Příspěvků</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.events)}</div><div class="stat-card-label">Akce</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.followers)}</div><div class="stat-card-label">Sledujících</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.likes)}</div><div class="stat-card-label">Isker</div></div>
-            <div class="stat-card"><div class="stat-card-value">${fmt(s.comments)}</div><div class="stat-card-label">Komentářů</div></div>
-          </div>
+      ${renderBackHeader(t('stats.title'))}
+
+      <div class="profile-section">
+        <div class="stat-cards">
+          <div class="stat-card"><div class="stat-card-value">${fmt(s.posts)}</div><div class="stat-card-label">${escapeHtml(t('stats.posts'))}</div></div>
+          <div class="stat-card"><div class="stat-card-value">${fmt(s.events)}</div><div class="stat-card-label">${escapeHtml(t('stats.events'))}</div></div>
+          <div class="stat-card"><div class="stat-card-value">${fmt(s.followers)}</div><div class="stat-card-label">${escapeHtml(t('stats.followers'))}</div></div>
+          <div class="stat-card"><div class="stat-card-value">${fmt(s.likes)}</div><div class="stat-card-label">${escapeHtml(t('stats.likes'))}</div></div>
+          <div class="stat-card"><div class="stat-card-value">${fmt(s.comments)}</div><div class="stat-card-label">${escapeHtml(t('stats.comments'))}</div></div>
+          <div class="stat-card"><div class="stat-card-value">${fmt(s.views || 0)}</div><div class="stat-card-label">${escapeHtml(t('stats.views'))}</div></div>
         </div>
-        ${s.last_30_days?.length ? `
-          <div class="profile-section">
-            <h3 class="profile-section-title">Posledních 30 dní (příspěvky/den)</h3>
-            <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:16px">
-              <div class="stats-bars">
-                ${s.last_30_days.map((d) => `<div class="stats-bar" style="height:${Math.max(4, (d.n || 1) * 8)}px" title="${d.day}: ${d.n}"></div>`).join('')}
-              </div>
+      </div>
+
+      <div class="profile-section">
+        <h3 class="profile-section-title">${escapeHtml(t('stats.chart'))}</h3>
+
+        <div class="stats-controls">
+          <div class="stats-control-group">
+            <label class="stats-control-label">${escapeHtml(t('stats.metric'))}</label>
+            <select class="form-select stats-control-select" data-action="stats-metric">
+              <option value="posts" ${view.metric === 'posts' ? 'selected' : ''}>${escapeHtml(t('stats.posts'))}</option>
+              <option value="likes" ${view.metric === 'likes' ? 'selected' : ''}>${escapeHtml(t('stats.likes'))}</option>
+              <option value="comments" ${view.metric === 'comments' ? 'selected' : ''}>${escapeHtml(t('stats.comments'))}</option>
+              <option value="views" ${view.metric === 'views' ? 'selected' : ''}>${escapeHtml(t('stats.views'))}</option>
+              <option value="events" ${view.metric === 'events' ? 'selected' : ''}>${escapeHtml(t('stats.events'))}</option>
+            </select>
+          </div>
+          <div class="stats-control-group">
+            <label class="stats-control-label">${escapeHtml(t('stats.period'))}</label>
+            <div class="stats-period-toggle">
+              <button class="stats-period-btn ${view.period === 'week' ? 'is-active' : ''}" data-action="stats-period" data-period="week">${escapeHtml(t('stats.week'))}</button>
+              <button class="stats-period-btn ${view.period === 'month' ? 'is-active' : ''}" data-action="stats-period" data-period="month">${escapeHtml(t('stats.month'))}</button>
             </div>
           </div>
-        ` : ''}
-      `}
+        </div>
+
+        <div class="stats-chart-wrap">
+          <div class="stats-chart-head">
+            <span class="stats-chart-title">${escapeHtml(metricLabels[metricKey] || metricKey)} · ${view.period === 'week' ? t('stats.last7days') : t('stats.last30days')}</span>
+            <span class="stats-chart-total"><strong>${fmt(totalN)}</strong> ${escapeHtml(t('stats.total')).toLowerCase()}</span>
+          </div>
+          <svg class="stats-chart-svg" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="none" role="img">
+            <defs>
+              <linearGradient id="statsGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#2FBF71" stop-opacity="1" />
+                <stop offset="100%" stop-color="#1B8F52" stop-opacity="0.85" />
+              </linearGradient>
+            </defs>
+            <!-- horizontálne linky -->
+            ${[0.25, 0.5, 0.75, 1].map((p) => {
+              const y = chartHeight - paddingY - innerH * p;
+              return `<line x1="${paddingX}" y1="${y.toFixed(1)}" x2="${chartWidth - paddingX}" y2="${y.toFixed(1)}" stroke="#E4ECE6" stroke-width="1" stroke-dasharray="3 3" />`;
+            }).join('')}
+            ${barsSvg}
+            ${labelsSvg}
+          </svg>
+          ${series.every((d) => !d.n) ? `<p class="stats-chart-empty">${escapeHtml(t('stats.noData'))}</p>` : ''}
+        </div>
+      </div>
     </div>`;
 }
 
 function renderForgotPasswordOverlay() {
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Zapomenuté heslo')}
+      ${renderBackHeader(t('auth.forgotTitle'))}
       <div class="auth-card">
-        <p style="font-size:13.5px;color:var(--c-text-muted);margin-bottom:16px;">Zadej e-mail, kterým ses registroval.</p>
+        <p style="font-size:13.5px;color:var(--c-text-muted);margin-bottom:16px;">${escapeHtml(t('auth.forgotLead'))}</p>
         <form data-action="submit-forgot">
-          <div class="form-field"><label class="form-label">E-mail</label><input class="form-input" type="email" name="email" required /></div>
-          <button class="form-submit-btn" type="submit">Poslat odkaz</button>
+          <div class="form-field"><label class="form-label">${escapeHtml(t('auth.email'))}</label><input class="form-input" type="email" name="email" required /></div>
+          <button class="form-submit-btn" type="submit">${escapeHtml(t('auth.forgotBtn'))}</button>
         </form>
       </div>
     </div>`;
@@ -799,25 +877,25 @@ function renderForgotPasswordOverlay() {
 async function handleForgotSubmit(form) {
   const fd = new FormData(form);
   const btn = form.querySelector('button[type="submit"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Odesílám…'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('common.sending'); }
   try {
     await apiPost('/api/auth/forgot-password', { email: fd.get('email') });
-    showToast('Pokud e-mail existuje, dorazí odkaz.');
+    showToast(t('toasts.linkSent'));
     closeOverlay();
   } catch (err) {
     showToast(err.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Poslat odkaz'; }
+    if (btn) { btn.disabled = false; btn.textContent = t('auth.forgotBtn'); }
   }
 }
 
 function renderResetPasswordOverlay(token) {
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Nové heslo')}
+      ${renderBackHeader(t('auth.resetTitle'))}
       <div class="auth-card">
         <form data-action="submit-reset" data-token="${token}">
-          <div class="form-field"><label class="form-label">Nové heslo (min. 8 znaků)</label><input class="form-input" type="password" name="password" minlength="8" required /></div>
-          <button class="form-submit-btn" type="submit">Uložit heslo</button>
+          <div class="form-field"><label class="form-label">${escapeHtml(t('auth.resetTitle'))} (min. 8)</label><input class="form-input" type="password" name="password" minlength="8" required /></div>
+          <button class="form-submit-btn" type="submit">${escapeHtml(t('auth.resetBtn'))}</button>
         </form>
       </div>
     </div>`;
@@ -827,7 +905,7 @@ async function handleResetSubmit(form) {
   const fd = new FormData(form);
   try {
     await apiPost('/api/auth/reset-password', { token: form.dataset.token, password: fd.get('password') });
-    showToast('Heslo změněno. Přihlas se.');
+    showToast(t('toasts.passwordChanged'));
     state.overlay = null;
     state.authView = 'login';
     renderApp();
@@ -837,18 +915,18 @@ async function handleResetSubmit(form) {
 async function resendVerification() {
   try {
     await apiPost('/api/auth/resend-verification', {});
-    showToast('Poslali jsme nový odkaz.');
+    showToast(t('toasts.linkSent'));
   } catch (err) { showToast(err.message); }
 }
 
 function renderTwoFAOverlay() {
   return `
     <div class="page-scroll">
-      ${renderBackHeader('Dvoufázové ověření')}
+      ${renderBackHeader(t('auth.twofaTitle'))}
       <div class="auth-card">
         <form data-action="submit-2fa-login">
-          <div class="form-field"><label class="form-label">Kód</label><input class="form-input" name="code" required autofocus autocomplete="one-time-code" /></div>
-          <button class="form-submit-btn" type="submit">Ověřit a přihlásit</button>
+          <div class="form-field"><label class="form-label">${escapeHtml(t('auth.twofaCode'))}</label><input class="form-input" name="code" required autofocus autocomplete="one-time-code" /></div>
+          <button class="form-submit-btn" type="submit">${escapeHtml(t('auth.twofaVerify'))}</button>
         </form>
       </div>
     </div>`;
@@ -860,6 +938,13 @@ async function handleTwoFALogin(form) {
     const data = await apiPost('/api/auth/verify-2fa', { twofa_token: state._twofaToken, code });
     finishLogin(data);
   } catch (err) { showToast(err.message); }
+}
+
+// ADMIN + zvyšok — ponechané z pôvodného súboru (renderAdminPanel a spol.)
+// Pridané: handlePushToggle
+async function handlePushToggle(checked) {
+  if (checked) await enablePushNotifications();
+  else await disablePushNotifications();
 }
 
 // ADMIN
