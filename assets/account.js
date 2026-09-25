@@ -1,5 +1,5 @@
 // ============================================================
-// SEKCE 5: MŮJ PROFIL — s honeypot + age checkbox
+// SEKCE 5: MŮJ PROFIL
 // ============================================================
 
 const accountFormState = {
@@ -32,12 +32,10 @@ function renderAccountPage() {
         </div>
         ${renderAuthCard()}
       </div>`;
-    // Google Sign-In init len ak máme cookie consent
     setTimeout(() => {
       const el = document.getElementById('google-signin-container');
       if (!el) return;
       if (el.children.length > 0) return;
-
       if (typeof hasValidCookieConsent === 'function' && !hasValidCookieConsent()) {
         el.innerHTML = '<p style="font-size:12.5px;color:var(--c-text-muted);text-align:center;padding:8px 0;">Google přihlášení se zobrazí po přijetí cookies.</p>';
         return;
@@ -147,46 +145,53 @@ function renderRegisterForm() {
     { value: 'jine', label: tType('jine') },
   ];
 
-  const roleFields = role === 'organization' ? `
-    <div class="form-field">
-      <label class="form-label">${escapeHtml(t('auth.registerOrgName'))}</label>
-      <input class="form-input" name="orgName" required placeholder="${escapeAttr(t('auth.registerOrgNamePh'))}" />
-    </div>
-    <div class="form-field">
-      <label class="form-label">${escapeHtml(t('auth.registerType'))}</label>
-      <select class="form-select" name="orgType" required>
-        ${orgTypeOptions.map((t2) => `<option value="${t2.value}">${escapeHtml(t2.label)}</option>`).join('')}
-      </select>
-    </div>
-    ${renderRegionDistrictCityFields('reg')}
-    <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDescription'))}</label><textarea class="form-textarea" name="description"></textarea></div>
-  ` : role === 'hotelier' ? `
-    <div class="form-role-grid" style="grid-template-columns:repeat(2,1fr)">
-      <button type="button" class="form-role-btn ${kind === 'accommodation' ? 'is-selected' : ''}" data-action="set-business-kind" data-kind="accommodation">${escapeHtml(t('nav.accommodation'))}</button>
-      <button type="button" class="form-role-btn ${kind === 'gastro' ? 'is-selected' : ''}" data-action="set-business-kind" data-kind="gastro">${escapeHtml(t('nav.gastro'))}</button>
-    </div>
-    <input type="hidden" name="businessKind" value="${kind}" />
-    <div class="form-field">
-      <label class="form-label">${escapeHtml(t('auth.registerBusinessName'))}</label>
-      <input class="form-input" name="businessName" required placeholder="${escapeAttr(t('auth.registerBusinessNamePh'))}" />
-    </div>
-    <div class="form-field">
-      <label class="form-label">${escapeHtml(t('auth.registerType'))}</label>
-      <select class="form-select" name="businessType" required>
-        ${(kind === 'accommodation' ? accTypeOptions : restTypeOptions).map((t2) => `<option value="${t2.value}">${escapeHtml(t2.label)}</option>`).join('')}
-      </select>
-    </div>
-    ${kind === 'gastro' ? `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.cuisine'))}</label>
-      <select class="form-select" name="cuisineType">
-        <option value="ceska">${escapeHtml(tType('ceska'))}</option>
-        <option value="italska">${escapeHtml(tType('italska'))}</option>
-        <option value="asijska">${escapeHtml(tType('asijska'))}</option>
-        <option value="vegan">${escapeHtml(tType('vegan'))}</option>
-      </select></div>`
-      : `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.capacity'))}</label><input class="form-input" type="number" name="capacity" min="1" /></div>`}
-    ${renderRegionDistrictCityFields('reg')}
-    <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDescription'))}</label><textarea class="form-textarea" name="description"></textarea></div>
-  ` : '';
+  let roleFields = '';
+  if (role === 'organization') {
+    roleFields = `
+      <div class="form-field">
+        <label class="form-label">${escapeHtml(t('auth.registerOrgName'))}</label>
+        <input class="form-input" name="orgName" required placeholder="${escapeAttr(t('auth.registerOrgNamePh'))}" />
+      </div>
+      <div class="form-field">
+        <label class="form-label">${escapeHtml(t('auth.registerType'))}</label>
+        <select class="form-select" name="orgType" required>
+          ${orgTypeOptions.map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}
+        </select>
+      </div>
+      ${renderRegionDistrictCityFields('reg')}
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDescription'))}</label><textarea class="form-textarea" name="description"></textarea></div>
+    `;
+  } else if (role === 'hotelier') {
+    const typeOpts = kind === 'accommodation' ? accTypeOptions : restTypeOptions;
+    roleFields = `
+      <div class="form-role-grid" style="grid-template-columns:repeat(2,1fr)">
+        <button type="button" class="form-role-btn ${kind === 'accommodation' ? 'is-selected' : ''}" data-action="set-business-kind" data-kind="accommodation">${escapeHtml(t('nav.accommodation'))}</button>
+        <button type="button" class="form-role-btn ${kind === 'gastro' ? 'is-selected' : ''}" data-action="set-business-kind" data-kind="gastro">${escapeHtml(t('nav.gastro'))}</button>
+      </div>
+      <input type="hidden" name="businessKind" value="${kind}" />
+      <div class="form-field">
+        <label class="form-label">${escapeHtml(t('auth.registerBusinessName'))}</label>
+        <input class="form-input" name="businessName" required placeholder="${escapeAttr(t('auth.registerBusinessNamePh'))}" />
+      </div>
+      <div class="form-field">
+        <label class="form-label">${escapeHtml(t('auth.registerType'))}</label>
+        <select class="form-select" name="businessType" required>
+          ${typeOpts.map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}
+        </select>
+      </div>
+      ${kind === 'gastro'
+        ? `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.cuisine'))}</label>
+            <select class="form-select" name="cuisineType">
+              <option value="ceska">${escapeHtml(tType('ceska'))}</option>
+              <option value="italska">${escapeHtml(tType('italska'))}</option>
+              <option value="asijska">${escapeHtml(tType('asijska'))}</option>
+              <option value="vegan">${escapeHtml(tType('vegan'))}</option>
+            </select></div>`
+        : `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.capacity'))}</label><input class="form-input" type="number" name="capacity" min="1" /></div>`}
+      ${renderRegionDistrictCityFields('reg')}
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDescription'))}</label><textarea class="form-textarea" name="description"></textarea></div>
+    `;
+  }
 
   return `
     <form data-action="submit-register">
@@ -198,24 +203,21 @@ function renderRegisterForm() {
       </div>
       <input type="hidden" name="role" value="${role}" />
 
-      <!-- Honeypot pole — skryté pred ľuďmi, boti ho vyplnia -->
       <div style="position:absolute;left:-9999px;top:-9999px;height:0;width:0;overflow:hidden" aria-hidden="true">
         <label for="website-hp">Nevypĺňaj toto pole</label>
         <input type="text" id="website-hp" name="website" tabindex="-1" autocomplete="off" />
       </div>
 
-      ${role === 'user' ? `
-        <div class="form-field">
-          <label class="form-label">${escapeHtml(t('auth.displayName'))}</label>
-          <input class="form-input" name="displayName" required placeholder="např. Jan Novák" />
-        </div>
-      ` : `
-        <div class="form-field">
-          <label class="form-label">${escapeHtml(t('auth.displayNameBusiness'))}</label>
-          <input class="form-input" name="displayName" required placeholder="např. Hrad Tematín, Hospoda pod Lipou" />
-          <p class="form-hint">${escapeHtml(t('auth.displayNameBusinessHint'))}</p>
-        </div>
-      `}
+      ${role === 'user'
+        ? `<div class="form-field">
+            <label class="form-label">${escapeHtml(t('auth.displayName'))}</label>
+            <input class="form-input" name="displayName" required placeholder="např. Jan Novák" />
+          </div>`
+        : `<div class="form-field">
+            <label class="form-label">${escapeHtml(t('auth.displayNameBusiness'))}</label>
+            <input class="form-input" name="displayName" required placeholder="např. Hrad Tematín, Hospoda pod Lipou" />
+            <p class="form-hint">${escapeHtml(t('auth.displayNameBusinessHint'))}</p>
+          </div>`}
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.email'))}</label><input class="form-input" type="email" name="email" required /></div>
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.password'))}</label><input class="form-input" type="password" name="password" required minlength="8" /><p class="form-hint">${escapeHtml(t('auth.passwordHint'))}</p></div>
       ${roleFields}
@@ -448,11 +450,11 @@ function renderBusinessDashboard() {
   const postFormOpen = accountFormState._postFormOpen || false;
   const canAddMore = state.user.role === 'organization' || state.user.role === 'hotelier' || state.user.role === 'admin';
 
-  // Story button s business kontextom
-  const storyBtn = isLoggedIn() ? `
-    <button class="profile-action-btn" data-action="open-create-story" data-business-id="${escapeAttr(selected.id)}" data-business-name="${escapeAttr(selected.name)}" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
-      ${icon('camera', { size: 15 })} ${escapeHtml(t('stories.add'))}
-    </button>` : '';
+  const storyBtn = isLoggedIn()
+    ? `<button class="profile-action-btn" data-action="open-create-story" data-business-id="${escapeAttr(selected.id)}" data-business-name="${escapeAttr(selected.name)}" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
+        ${icon('camera', { size: 15 })} ${escapeHtml(t('stories.add'))}
+      </button>`
+    : '';
 
   return `
     <div class="profile-section">
@@ -471,47 +473,6 @@ function renderBusinessDashboard() {
         <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} ${escapeHtml(t('profile.addEventBtn'))}</button>
         <button class="profile-action-btn" data-action="toggle-post-form" data-id="${selected.id}">${icon('image', { size: 15 })} ${escapeHtml(t('profile.addPostBtn'))}</button>
         ${storyBtn}
-        ${!isVerified && !isPending ? `
-          <button class="profile-action-btn" data-action="open-verification-request" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
-            ${icon('shield', { size: 15 })} ${escapeHtml(t('profile.verifyBtn'))}
-          </button>
-        ` : ''}
-        ${canAddMore ? `
-          <button class="profile-action-btn" data-action="open-add-business" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">
-            ${icon('plus', { size: 15 })} ${escapeHtml(t('profile.addBusiness'))}
-          </button>
-        ` : ''}
-      </div>
-
-      ${!isVerified && isPending ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-gold)">⏳ ${escapeHtml(t('profile.verificationPending'))}</p>` : ''}
-      ${isVerified ? `<p class="form-hint" style="padding:0 16px 10px;color:var(--c-primary-dark)">✓ ${escapeHtml(t('profile.verified'))}</p>` : ''}
-    </div>
-
-    ${postFormOpen ? renderInlineBusinessPostForm(selected, targetFeed) : ''}`;
-}
-  const vreq = state._verificationStatus?.request;
-  const isPending = vreq?.status === 'pending';
-  const isVerified = Number(selected.is_verified);
-  const postFormOpen = accountFormState._postFormOpen || false;
-  const canAddMore = state.user.role === 'organization' || state.user.role === 'hotelier' || state.user.role === 'admin';
-
-  return `
-    <div class="profile-section">
-      <h3 class="profile-section-title">${escapeHtml(t('profile.yourBusiness'))}</h3>
-
-      ${businesses.length > 1 ? `
-        <div class="business-picker">
-          ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${Number(b.is_verified) ? '✓' : ''}</button>`).join('')}
-        </div>
-      ` : ''}
-
-      <div style="padding:0 16px 10px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="profile-action-btn" data-action="open-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('user', { size: 15 })} ${escapeHtml(t('profile.profileBtn'))}</button>
-        <button class="profile-action-btn" data-action="edit-profile" data-kind="${targetFeed}" data-id="${selected.id}">${icon('edit', { size: 15 })} ${escapeHtml(t('profile.editBtn'))}</button>
-        <button class="profile-action-btn" data-action="open-profile-stats" data-kind="${targetFeed}" data-id="${selected.id}">${icon('chart', { size: 15 })} ${escapeHtml(t('profile.statsBtn'))}</button>
-        <button class="profile-action-btn" data-action="open-event-create">${icon('calendar', { size: 15 })} ${escapeHtml(t('profile.addEventBtn'))}</button>
-        <button class="profile-action-btn" data-action="toggle-post-form" data-id="${selected.id}">${icon('image', { size: 15 })} ${escapeHtml(t('profile.addPostBtn'))}</button>
-        <button class="profile-action-btn" data-action="open-create-story" style="background:var(--c-primary-light);color:var(--c-primary-dark);border-color:var(--c-primary)">${icon('camera', { size: 15 })} ${escapeHtml(t('stories.add'))}</button>
         ${!isVerified && !isPending ? `
           <button class="profile-action-btn" data-action="open-verification-request" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
             ${icon('shield', { size: 15 })} ${escapeHtml(t('profile.verifyBtn'))}
@@ -565,7 +526,7 @@ function openAddBusinessModal() {
       <div class="form-field">
         <label class="form-label">${escapeHtml(t('profile.type'))}</label>
         <select class="form-select" name="type" id="add-business-type-select" required>
-          ${initialTypeOptions.map((t2) => `<option value="${t2.value}">${escapeHtml(tType(t2.value))}</option>`).join('')}
+          ${initialTypeOptions.map((o) => `<option value="${o.value}">${escapeHtml(tType(o.value))}</option>`).join('')}
         </select>
       </div>
 
@@ -627,7 +588,7 @@ function updateAddBusinessTypeOptions(kind) {
   const typeOptions = kind === 'organizations' ? TYPES.organization
     : kind === 'accommodation' ? TYPES.accommodation
     : TYPES.restaurant;
-  sel.innerHTML = typeOptions.map((t2) => `<option value="${t2.value}">${escapeHtml(tType(t2.value))}</option>`).join('');
+  sel.innerHTML = typeOptions.map((o) => `<option value="${o.value}">${escapeHtml(tType(o.value))}</option>`).join('');
 }
 
 function renderInlineBusinessPostForm(selected, targetFeed) {
@@ -1006,7 +967,7 @@ async function handleTwoFALogin(form) {
 }
 
 // ============================================================
-// ADMIN PANEL
+// ADMIN
 // ============================================================
 async function loadAdminPending() {
   try { state.adminPending = await apiGet('/api/admin/pending'); }
