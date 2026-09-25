@@ -214,3 +214,20 @@ export default {
     else ctx.waitUntil(ensureActiveProjectRotation(env));
   },
 };
+
+import { runDailyDistribution, ensureActiveProjectRotation, cleanupOrphanedR2, deleteExpiredStories } from './cron.js';
+
+// ... v export default:
+
+async scheduled(event, env, ctx) {
+  if (event.cron === '0 8 * * *') ctx.waitUntil(runDailyDistribution(env));
+  else if (event.cron === '0 4 * * *') {
+    // Nočný cleanup — najprv stories, potom siroty
+    ctx.waitUntil((async () => {
+      await deleteExpiredStories(env);
+      await cleanupOrphanedR2(env);
+    })());
+  }
+  else if (event.cron === '30 */6 * * *') ctx.waitUntil(deleteExpiredStories(env));
+  else ctx.waitUntil(ensureActiveProjectRotation(env));
+}
