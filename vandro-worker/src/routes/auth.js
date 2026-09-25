@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { sign } from 'hono/jwt';
-import { hashPassword, verifyPassword, newId, publicUser, generateUniqueHandle, normalizeHandle, validateHandle } from '../auth.js';
-import { sendPasswordResetEmail } from '../email.js';
+import { hashPassword, verifyPassword, newId, publicUser, generateUniqueHandle } from '../auth.js';
+import { sendPasswordResetEmail, sendVerificationEmail } from '../email.js';
 import { verifyTotp, generateSecret, otpauthUri, generateRecoveryCodes } from '../totp.js';
 import { rateLimit, clientIp, userAgent } from '../ratelimit.js';
 
@@ -9,6 +9,7 @@ export const authRoutes = new Hono();
 
 const VALID_ROLES = ['user', 'organization', 'hotelier'];
 const RESET_TTL_MS = 60 * 60 * 1000;
+const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const TWOFA_TTL_MS = 5 * 60 * 1000;
 
 async function logLogin(env, { userId, email, ip, ua, success, method }) {
@@ -16,18 +17,14 @@ async function logLogin(env, { userId, email, ip, ua, success, method }) {
     await env.DB.prepare(
       `INSERT INTO login_logs (id, user_id, email, ip, user_agent, success, method) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).bind(newId('log'), userId || null, email || null, ip, ua, success ? 1 : 0, method || 'password').run();
-  } catch (err) {
-    console.warn('logLogin failed:', err.message);
-  }
+  } catch (err) { console.warn('logLogin failed:', err.message); }
 }
 
 async function updateLastLogin(env, userId, ip) {
   try {
     await env.DB.prepare(`UPDATE users SET last_login_at = datetime('now'), last_login_ip = ? WHERE id = ?`)
       .bind(ip, userId).run();
-  } catch (err) {
-    console.warn('updateLastLogin failed:', err.message);
-  }
+  } catch (err) { console.warn('updateLastLogin failed:', err.message); }
 }
 
 authRoutes.post('/register', async (c) => {
@@ -36,13 +33,23 @@ authRoutes.post('/register', async (c) => {
   if (!rl.ok) return c.json({ error: 'Příliš mnoho registrací z této IP. Zkus to za hodinu.' }, 429);
 
   const body = await c.req.json().catch(() => ({}));
-  const { email, password, displayName, role = 'user', termsAccepted } = body;
+  const { email, password, displayName, role = 'user', termsAccepted, ageConfirmed, website } = body;
+
+  // Honeypot — pole "website" je skryté, človek ho nevyplní, bot áno
+  if (website && String(website).trim().length > 0) {
+    console.warn('[register] honeypot triggered, IP:', ip);
+    // Tvári sa ako úspech, aby bot nevedel že bol odhalený
+    return c.json({ id: 'fake_' + Math.random().toString(36).slice(2), email, role, handle: 'fake', business: null }, 201);
+  }
 
   if (!email || !password) return c.json({ error: 'Vyžaduje sa email a heslo.' }, 400);
   if (!VALID_ROLES.includes(role)) return c.json({ error: 'Neplatná rola účtu.' }, 400);
   if (password.length < 8) return c.json({ error: 'Heslo musí mať aspoň 8 znakov.' }, 400);
   if (termsAccepted !== true && termsAccepted !== 'true' && termsAccepted !== 'on') {
     return c.json({ error: 'Je nutné souhlasit s obchodními podmínkami.' }, 400);
+  }
+  if (ageConfirmed !== true && ageConfirmed !== 'true' && ageConfirmed !== 'on') {
+    return c.json({ error: 'Musíš potvrdit, že ti je alespoň 15 let.' }, 400);
   }
 
   const lower = email.toLowerCase();
@@ -52,11 +59,6 @@ authRoutes.post('/register', async (c) => {
   const { hash, salt } = await hashPassword(password);
   const userId = newId('user');
 
-  // ------------------------------------------------------------------
-  // B2: Pri registrácii organizácie alebo podniku nastavíme display_name
-  // (zobrazované meno) aj handle automaticky na názov podniku.
-  // Fallback na zadané displayName pre bežného turistu.
-  // ------------------------------------------------------------------
   let finalDisplayName = displayName || lower.split('@')[0];
   let handleBase = lower.split('@')[0] || displayName || 'user';
 
@@ -70,9 +72,10 @@ authRoutes.post('/register', async (c) => {
 
   const handle = await generateUniqueHandle(c.env, handleBase);
 
+  // email_verified = 0, age_confirmed = 1, terms_version = '1.0'
   await c.env.DB.prepare(
-    `INSERT INTO users (id, email, password_hash, password_salt, display_name, handle, role, credit_balance, terms_accepted_at, email_verified, auth_provider)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), 1, 'password')`,
+    `INSERT INTO users (id, email, password_hash, password_salt, display_name, handle, role, credit_balance, terms_accepted_at, terms_version, age_confirmed, email_verified, auth_provider)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), '1.0', 1, 0, 'password')`,
   ).bind(userId, lower, hash, salt, finalDisplayName, handle, role).run();
 
   let business = null;
@@ -116,11 +119,65 @@ authRoutes.post('/register', async (c) => {
 
   await logLogin(c.env, { userId, email: lower, ip, ua: userAgent(c), success: true, method: 'register' });
 
-  return c.json({ id: userId, email: lower, role, handle, business }, 201);
+  // Vygeneruj verifikačný token a pošli e-mail
+  try {
+    const token = newId('ev') + '_' + crypto.randomUUID().replace(/-/g, '');
+    const exp = new Date(Date.now() + VERIFY_TTL_MS).toISOString();
+    await c.env.DB.prepare(
+      `INSERT INTO email_verifications (token, user_id, expires_at) VALUES (?, ?, ?)`,
+    ).bind(token, userId, exp).run();
+    await sendVerificationEmail(c.env, { to: lower, token, displayName: finalDisplayName });
+  } catch (err) {
+    console.warn('Verification email failed:', err.message);
+  }
+
+  return c.json({ id: userId, email: lower, role, handle, business, email_verification_sent: true }, 201);
 });
 
-// Zvyšok authRoutes je identický s pôvodným — bez zmien.
-// ... (login, logout, forgot-password, reset-password, verify-2fa, 2fa/setup, 2fa/enable, 2fa/disable, /me/login-logs)
+// Overenie e-mailu
+authRoutes.post('/verify-email', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const token = (body.token || '').toString();
+  if (!token) return c.json({ error: 'Chýba token.' }, 400);
+
+  const row = await c.env.DB.prepare(`SELECT * FROM email_verifications WHERE token = ?`).bind(token).first();
+  if (!row) return c.json({ error: 'Neplatný odkaz.' }, 400);
+  if (row.used_at) return c.json({ error: 'Odkaz byl již použit.' }, 400);
+  if (new Date(row.expires_at) < new Date()) return c.json({ error: 'Platnost odkazu vypršela.' }, 400);
+
+  await c.env.DB.prepare(`UPDATE users SET email_verified = 1 WHERE id = ?`).bind(row.user_id).run();
+  await c.env.DB.prepare(`UPDATE email_verifications SET used_at = datetime('now') WHERE token = ?`).bind(token).run();
+  return c.json({ ok: true });
+});
+
+// Znovu-poslanie overovacieho e-mailu
+authRoutes.post('/resend-verification', async (c) => {
+  const h = c.req.header('Authorization') || '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+  if (!token) return c.json({ error: 'Chýba prihlásenie.' }, 401);
+  let payload;
+  try {
+    const { verify } = await import('hono/jwt');
+    payload = await verify(token, c.env.JWT_SECRET, 'HS256');
+  } catch { return c.json({ error: 'Neplatný token.' }, 401); }
+
+  const user = await c.env.DB.prepare('SELECT id, email, display_name, email_verified FROM users WHERE id = ?').bind(payload.sub).first();
+  if (!user) return c.json({ error: 'Nenájdený.' }, 404);
+  if (user.email_verified) return c.json({ ok: true, already: true });
+
+  const ip = clientIp(c);
+  const rl = await rateLimit(c.env, 'resend-verify', ip, 3, 3600);
+  if (!rl.ok) return c.json({ error: 'Príliš mnoho pokusov.' }, 429);
+
+  try {
+    await c.env.DB.prepare(`UPDATE email_verifications SET used_at = datetime('now') WHERE user_id = ? AND used_at IS NULL`).bind(user.id).run();
+    const evToken = newId('ev') + '_' + crypto.randomUUID().replace(/-/g, '');
+    const exp = new Date(Date.now() + VERIFY_TTL_MS).toISOString();
+    await c.env.DB.prepare(`INSERT INTO email_verifications (token, user_id, expires_at) VALUES (?, ?, ?)`).bind(evToken, user.id, exp).run();
+    await sendVerificationEmail(c.env, { to: user.email, token: evToken, displayName: user.display_name });
+  } catch (err) { console.warn('resend-verify:', err.message); }
+  return c.json({ ok: true });
+});
 
 authRoutes.post('/login', async (c) => {
   const ip = clientIp(c);
@@ -213,9 +270,7 @@ authRoutes.post('/forgot-password', async (c) => {
     const exp = new Date(Date.now() + RESET_TTL_MS).toISOString();
     await c.env.DB.prepare(`INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)`).bind(token, user.id, exp).run();
     await sendPasswordResetEmail(c.env, { to: user.email, token, displayName: user.display_name });
-  } catch (err) {
-    console.warn('forgot-password:', err.message);
-  }
+  } catch (err) { console.warn('forgot-password:', err.message); }
   return c.json({ ok: true });
 });
 
@@ -292,7 +347,7 @@ authRoutes.post('/verify-2fa', async (c) => {
     const rest = await c.env.DB.prepare('SELECT id, name, is_verified FROM restaurants WHERE user_id = ?').bind(user.id).all();
     businesses = [
       ...acc.results.map((r) => ({ ...r, kind: 'accommodation' })),
-      ...rest.results.map((r) => ({ ...r, kind: 'gasto' })),
+      ...rest.results.map((r) => ({ ...r, kind: 'gastro' })),
     ];
   }
 
