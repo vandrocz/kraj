@@ -117,6 +117,9 @@ document.addEventListener('click', (e) => {
     case 'share-post': sharePost(el.dataset.id, el.dataset.text); break;
     case 'report-post': reportPost(el.dataset.id); break;
     case 'edit-post': openEditPost(el.dataset.id, el.dataset.feed); break;
+    case 'lightbox-cycle-panel':
+    if (state.lightbox) { cycleLightboxPanelState(); }
+    break;
 
     case 'open-profile': if (el.dataset.id) openProfile(el.dataset.kind, el.dataset.id); break;
     case 'close-overlay': closeOverlay(); break;
