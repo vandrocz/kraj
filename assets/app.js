@@ -51,6 +51,7 @@ const state = {
   _bizEvents: null,
   _bizStats: null,
   _profileStats: null,
+  _profileStatsView: null,
   _bookmarks: null,
   _eventDetail: null,
 
@@ -109,6 +110,7 @@ window.addEventListener('popstate', () => {
   state._historyPushed = false;
   if (state.lightbox) { closeLightbox(true); return; }
   if (state.overlay) { closeOverlay(true); return; }
+  if (state._modal) { closeModal(true); return; }
 });
 
 function fmt(n) { return Number(n || 0).toLocaleString('cs-CZ'); }
@@ -117,19 +119,20 @@ function timeAgo(iso) {
   if (!iso) return '';
   let n = String(iso);
   if (!/[Zz]|[+-]\d{2}:?\d{2}$/.test(n)) n = n.replace(' ', 'T') + 'Z';
-  const t = new Date(n).getTime();
-  if (isNaN(t)) return '';
-  const diff = Date.now() - t;
+  const t2 = new Date(n).getTime();
+  if (isNaN(t2)) return '';
+  const diff = Date.now() - t2;
   const min = Math.floor(diff / 60000);
-  if (min < 1) return 'právě teď';
-  if (min < 60) return `před ${min} min`;
+  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+  if (min < 1) return lang === 'en' ? 'just now' : lang === 'sk' ? 'práve teraz' : 'právě teď';
+  if (min < 60) return lang === 'en' ? `${min} min ago` : lang === 'sk' ? `pred ${min} min` : `před ${min} min`;
   const h = Math.floor(min / 60);
-  if (h < 24) return `před ${h} h`;
+  if (h < 24) return lang === 'en' ? `${h} h ago` : lang === 'sk' ? `pred ${h} h` : `před ${h} h`;
   const d = Math.floor(h / 24);
-  if (d < 7) return `před ${d} d`;
+  if (d < 7) return lang === 'en' ? `${d} d ago` : lang === 'sk' ? `pred ${d} d` : `před ${d} d`;
   const w = Math.floor(d / 7);
-  if (w < 5) return `před ${w} týž.`;
-  return new Date(n).toLocaleDateString('cs-CZ');
+  if (w < 5) return lang === 'en' ? `${w} w ago` : lang === 'sk' ? `pred ${w} týž.` : `před ${w} týž.`;
+  return new Date(n).toLocaleDateString(lang === 'en' ? 'en' : lang === 'sk' ? 'sk' : 'cs-CZ');
 }
 
 function formatEventDate(iso) {
@@ -138,7 +141,8 @@ function formatEventDate(iso) {
   if (!/[Zz]|[+-]\d{2}:?\d{2}$/.test(n)) n = n.replace(' ', 'T') + 'Z';
   const d = new Date(n);
   if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+  return d.toLocaleDateString(lang === 'en' ? 'en-GB' : lang === 'sk' ? 'sk-SK' : 'cs-CZ', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function isLoggedIn() { return !!(state.token && state.user); }
@@ -171,10 +175,15 @@ function setupInfiniteScroll(loadMoreFn) {
   _infiniteObserver.observe(target);
 }
 
+// ------------------------------------------------------------------
+// LOGO — nové logo z CDN
+// ------------------------------------------------------------------
+const APP_LOGO_URL = 'https://cdn.vandro.cz/Untitled15_20260522160351.png';
+
 function renderHeader(title, rightHtml) {
   return `
     <header class="app-header">
-      <img src="https://cdn.vandro.cz/Untitled15_20260522160351.png" alt="" class="app-header-logo" />
+      <img src="${APP_LOGO_URL}" alt="" class="app-header-logo" />
       <h1 class="app-header-title">${title}</h1>
       <div class="app-header-right">${rightHtml || ''}</div>
     </header>`;
@@ -183,7 +192,7 @@ function renderHeader(title, rightHtml) {
 function renderBackHeader(title, rightHtml) {
   return `
     <header class="app-header">
-      <button class="header-icon-btn" data-action="close-overlay" aria-label="Zpět">${icon('arrowLeft', { size: 20 })}</button>
+      <button class="header-icon-btn" data-action="close-overlay" aria-label="${escapeAttr(t('common.back'))}">${icon('arrowLeft', { size: 20 })}</button>
       <h1 class="app-header-title" style="margin-left:4px">${title || ''}</h1>
       <div class="app-header-right">${rightHtml || ''}</div>
     </header>`;
@@ -196,8 +205,24 @@ const FEED_TITLES = {
   gastro: ['Kam na jídlo?', 'Dobroty a chutě', 'Gurmánské tipy', 'Hladový cestovatel', 'Mňam!', 'Restaurace, kavárny, hospody', 'Co si dnes dáme?', 'Ochutnej kraj', 'Skvělá jídla', 'Za dobrým jídlem'],
 };
 
+const FEED_TITLES_SK = {
+  events: ['Čo sa deje?', 'Kam dnes vyraziť?', 'Kultúrny program', 'Podujatia v okolí', 'Dnes, zajtra, cez víkend', 'Nezmeškaj!', 'Tipy na podujatia', 'Zábava v kraji', 'Naplánuj si víkend', 'Kde sa stretneme?'],
+  organization: ['Kam na výlet?', 'Dnešné dobrodružstvo', 'Objavuj Česko', 'Za pamiatkami', 'Príroda a história', 'Tipy na trip', 'Čo navštíviť?', 'Túlanie krajom', 'Za kultúrou a zábavou', 'Výlety, ktoré nadchnú'],
+  accommodation: ['Kde sa vyspať?', 'Útulné nocľahy', 'Ubytovanie na cestách', 'Prespanie v prírode', 'Tipy na prenocovanie', 'Wellness a kľud', 'Víkendový pobyt', 'Nocľah so srdcom', 'Hotely, penzióny, chaty', 'Kde zložiť hlavu?'],
+  gastro: ['Kam na jedlo?', 'Dobroty a chute', 'Gurmánske tipy', 'Hladný cestovateľ', 'Mňam!', 'Reštaurácie, kaviarne, hospody', 'Čo si dnes dáme?', 'Ochutnaj kraj', 'Skvelé jedlá', 'Za dobrým jedlom'],
+};
+
+const FEED_TITLES_EN = {
+  events: ['What\'s happening?', 'Where to go today?', 'Cultural programme', 'Events nearby', 'Today, tomorrow, weekend', 'Don\'t miss it!', 'Event tips', 'Fun in the region', 'Plan your weekend', 'Where shall we meet?'],
+  organization: ['Where to go?', 'Today\'s adventure', 'Discover Czechia', 'For landmarks', 'Nature and history', 'Trip tips', 'What to visit?', 'Wandering the region', 'Culture and fun', 'Trips that inspire'],
+  accommodation: ['Where to sleep?', 'Cozy stays', 'Accommodation on the road', 'Sleeping in nature', 'Overnight tips', 'Wellness and calm', 'Weekend stay', 'Stay with heart', 'Hotels, guesthouses, cabins', 'Where to rest your head?'],
+  gastro: ['Where to eat?', 'Treats and flavors', 'Gourmet tips', 'Hungry traveler', 'Yum!', 'Restaurants, cafés, pubs', 'What shall we have?', 'Taste the region', 'Great food', 'For good food'],
+};
+
 function pickRandomTitle(key) {
-  const arr = FEED_TITLES[key] || ['Náš kraj'];
+  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+  const dict = lang === 'en' ? FEED_TITLES_EN : lang === 'sk' ? FEED_TITLES_SK : FEED_TITLES;
+  const arr = dict[key] || ['Náš kraj'];
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
@@ -207,44 +232,44 @@ function getFeedTitle(key) {
 }
 
 const TABS = [
-  { key: 'organizations', icon: 'landmark', label: 'Organizace' },
-  { key: 'accommodation', icon: 'bed', label: 'Ubytování' },
-  { key: 'gastro', icon: 'coffee', label: 'Gastro' },
-  { key: 'map', icon: 'mapPin', label: 'Mapa' },
-  { key: 'events', icon: 'calendar', label: 'Akce' },
-  { key: 'account', icon: 'user', label: 'Profil' },
+  { key: 'organizations', icon: 'landmark', labelKey: 'nav.organizations' },
+  { key: 'accommodation', icon: 'bed', labelKey: 'nav.accommodation' },
+  { key: 'gastro', icon: 'coffee', labelKey: 'nav.gastro' },
+  { key: 'map', icon: 'mapPin', labelKey: 'nav.map' },
+  { key: 'events', icon: 'calendar', labelKey: 'nav.events' },
+  { key: 'account', icon: 'user', labelKey: 'nav.account' },
 ];
 
 const VALID_TABS = ['organizations', 'accommodation', 'gastro', 'map', 'events', 'account'];
 
 // ------------------------------------------------------------------
-// OPRAVA: Bottom nav — na mape na mobile len šípka späť, na PC plná lišta
+// Bottom nav — na mape na mobile len šípka späť, na PC plná lišta
 // ------------------------------------------------------------------
 function renderBottomNav() {
   const isMapTab = state.tab === 'map' && !state.overlay;
   const isMobile = window.innerWidth < 720;
 
-  // Na mobile + mape: len tlačidlo so šípkou späť
   if (isMapTab && isMobile) {
     return `
       <nav class="bottom-nav bottom-nav--collapsed">
-        <button class="bottom-nav-toggle" data-action="toggle-map-nav" aria-label="Zpět">
+        <button class="bottom-nav-toggle" data-action="toggle-map-nav" aria-label="${escapeAttr(t('common.back'))}">
           ${icon('arrowLeft', { size: 20 })}
         </button>
       </nav>`;
   }
 
-  const btns = TABS.map((t) => {
-    const active = state.tab === t.key && !state.overlay;
+  const btns = TABS.map((tab) => {
+    const active = state.tab === tab.key && !state.overlay;
     let badge = '';
-    if (t.key === 'account' && state.unreadNotifications > 0 && !state.overlay) {
+    if (tab.key === 'account' && state.unreadNotifications > 0 && !state.overlay) {
       badge = `<span class="nav-badge">${state.unreadNotifications > 9 ? '9+' : state.unreadNotifications}</span>`;
     }
+    const label = t(tab.labelKey);
     return `
-      <button class="bottom-nav-btn ${active ? 'is-active' : ''}" data-action="set-tab" data-tab="${t.key}">
-        ${icon(t.icon, { size: active ? 20 : 18 })}
+      <button class="bottom-nav-btn ${active ? 'is-active' : ''}" data-action="set-tab" data-tab="${tab.key}" aria-label="${escapeAttr(label)}">
+        ${icon(tab.icon, { size: active ? 20 : 18 })}
         ${badge}
-        <span class="visually-hidden">${t.label}</span>
+        <span class="visually-hidden">${escapeHtml(label)}</span>
       </button>`;
   }).join('');
 
@@ -255,37 +280,37 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
   const f = state.socialFeeds[feedKey];
   const regionSelect = `
     <select class="filter-select ${f.region ? 'is-active' : ''}" data-action="filter-change" data-feed="${feedKey}" data-field="region">
-      <option value="">Všechny kraje</option>
+      <option value="">${escapeHtml(t('feed.allRegions'))}</option>
       ${Object.keys(REGIONS).map((r) => `<option value="${r}" ${f.region === r ? 'selected' : ''}>${r}</option>`).join('')}
     </select>`;
   const districtOptions = f.region ? (REGIONS[f.region] || []) : [];
   const districtSelect = `
     <select class="filter-select ${f.district ? 'is-active' : ''}" data-action="filter-change" data-feed="${feedKey}" data-field="district" ${!f.region ? 'disabled' : ''}>
-      <option value="">Všechny okresy</option>
+      <option value="">${escapeHtml(t('feed.allDistricts'))}</option>
       ${districtOptions.map((d) => `<option value="${d}" ${f.district === d ? 'selected' : ''}>${d}</option>`).join('')}
     </select>`;
   const typeSelect = `
     <select class="filter-select ${f.type ? 'is-active' : ''}" data-action="filter-change" data-feed="${feedKey}" data-field="type">
-      <option value="">Všechny druhy</option>
-      ${typeOptions.map((t) => `<option value="${t.value}" ${f.type === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}
+      <option value="">${escapeHtml(t('feed.allTypes'))}</option>
+      ${typeOptions.map((ty) => `<option value="${ty.value}" ${f.type === ty.value ? 'selected' : ''}>${escapeHtml(tType(ty.value))}</option>`).join('')}
     </select>`;
   const cuisineSelect = showCuisine ? `
     <select class="filter-select ${f.cuisine ? 'is-active' : ''}" data-action="filter-change" data-feed="${feedKey}" data-field="cuisine">
-      <option value="">Všechny kuchyně</option>
-      ${TYPES.cuisine.map((t) => `<option value="${t.value}" ${f.cuisine === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}
+      <option value="">${escapeHtml(t('feed.allCuisines'))}</option>
+      ${TYPES.cuisine.map((ty) => `<option value="${ty.value}" ${f.cuisine === ty.value ? 'selected' : ''}>${escapeHtml(tType(ty.value))}</option>`).join('')}
     </select>` : '';
   const sortSelect = `
     <select class="filter-select ${f.sort !== 'for_you' ? 'is-active' : ''}" data-action="filter-change" data-feed="${feedKey}" data-field="sort">
-      <option value="for_you" ${f.sort === 'for_you' ? 'selected' : ''}>Pro tebe</option>
-      <option value="recent" ${f.sort === 'recent' ? 'selected' : ''}>Nejnovější</option>
-      <option value="trending" ${f.sort === 'trending' ? 'selected' : ''}>Trendy</option>
+      <option value="for_you" ${f.sort === 'for_you' ? 'selected' : ''}>${escapeHtml(t('feed.sortForYou'))}</option>
+      <option value="recent" ${f.sort === 'recent' ? 'selected' : ''}>${escapeHtml(t('feed.sortRecent'))}</option>
+      <option value="trending" ${f.sort === 'trending' ? 'selected' : ''}>${escapeHtml(t('feed.sortTrending'))}</option>
     </select>`;
 
   return `
     <div class="filter-bar">
       <div class="search-input-wrap">
         ${icon('search', { size: 17 })}
-        <input class="search-input" type="search" placeholder="Hledat podle názvu…" value="${escapeAttr(f.search)}" data-action="search-change" data-feed="${feedKey}" />
+        <input class="search-input" type="search" placeholder="${escapeAttr(t('feed.searchByName'))}" value="${escapeAttr(f.search)}" data-action="search-change" data-feed="${feedKey}" />
       </div>
       <div class="filter-row">${regionSelect}${districtSelect}${typeSelect}${cuisineSelect}${sortSelect}</div>
     </div>`;
@@ -313,14 +338,14 @@ function renderModal() {
       <div class="modal-sheet" data-modal-sheet>
         <div class="modal-head">
           <h3>${escapeHtml(m.title || '')}</h3>
-          <button class="modal-close" type="button" data-action="close-modal" aria-label="Zavřít">${icon('close', { size: 20 })}</button>
+          <button class="modal-close" type="button" data-action="close-modal" aria-label="${escapeAttr(t('common.close'))}">${icon('close', { size: 20 })}</button>
         </div>
         <form class="modal-form" data-action="submit-modal">
           <div class="modal-body">${m.body || ''}</div>
           <div class="modal-actions">
-            <button type="button" class="modal-btn modal-btn-cancel" data-action="close-modal">Zrušit</button>
+            <button type="button" class="modal-btn modal-btn-cancel" data-action="close-modal">${escapeHtml(t('common.cancel'))}</button>
             <button type="submit" class="modal-btn ${m.danger ? 'modal-btn-danger' : 'modal-btn-primary'}" ${state._modalLoading ? 'disabled' : ''}>
-              ${state._modalLoading ? 'Zpracovávám…' : escapeHtml(m.submitLabel || 'Potvrdit')}
+              ${state._modalLoading ? escapeHtml(t('common.processing')) : escapeHtml(m.submitLabel || t('common.confirm'))}
             </button>
           </div>
         </form>
@@ -466,16 +491,16 @@ function renderApp() {
 async function applySeo() {
   try {
     let og = {
-      title: 'Náš kraj — regionální platforma',
-      description: 'Objevuj hrady, zámky, ubytování a gastro v Česku.',
-      image: 'https://naskraj.vandro.cz/assets/og-default.jpg',
+      title: t('auth.welcomeTitle'),
+      description: t('auth.welcomeLead').slice(0, 160),
+      image: APP_LOGO_URL,
       url: 'https://naskraj.vandro.cz/',
     };
     if (state.overlay?.type === 'profile') {
       const d = state.profiles[`${state.overlay.kind}:${state.overlay.id}`];
       if (d?.profile) {
         og.title = `${d.profile.name || d.profile.display_name} — Náš kraj`;
-        og.description = (d.profile.description || d.profile.bio || 'Profil na Náš kraj').slice(0, 160);
+        og.description = (d.profile.description || d.profile.bio || '').slice(0, 160);
         og.image = d.profile.cover_url || d.profile.logo_url || d.profile.image_url || d.profile.avatar_url || og.image;
       }
     }
@@ -490,12 +515,19 @@ async function applySeo() {
 
 function openProfile(kind, id) {
   if (state.lightbox) closeLightbox(true);
-  let k = kind; if (kind === 'organization') k = 'organizations'; if (kind === 'gastro') k = 'restaurants';
+  let k = kind;
+  if (kind === 'organization') k = 'organizations';
+  if (kind === 'gastro') k = 'restaurants';
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'profile', kind: k, id };
-  state._bizProfileTab = 'posts'; state._bizEvents = null; state._bizStats = null;
-  state._reviews = null; state._myReview = null;
-  state._checkinStatus = undefined; state._wishlistStatus = undefined; state._verificationStatus = undefined;
+  state._bizProfileTab = 'posts';
+  state._bizEvents = null;
+  state._bizStats = null;
+  state._reviews = null;
+  state._myReview = null;
+  state._checkinStatus = undefined;
+  state._wishlistStatus = undefined;
+  state._verificationStatus = undefined;
   state._userProfileCheckins = undefined;
   pushHistoryState('overlay');
   renderApp();
@@ -508,7 +540,13 @@ function closeOverlay(fromHistory = false) {
   if (!fromHistory && state._historyPushed) clearHistoryState();
   renderApp();
 }
-function clearOverlay() { state.overlay = null; state.overlayStack = []; renderApp(); }
+
+function clearOverlay() {
+  state.overlay = null;
+  state.overlayStack = [];
+  renderApp();
+}
+
 function openSettings() { state.overlay = { type: 'settings' }; pushHistoryState('overlay'); renderApp(); }
 function openSecurity() { state.overlay = { type: 'security' }; pushHistoryState('overlay'); renderApp(); }
 function openNotifications() { state.overlay = { type: 'notifications' }; pushHistoryState('overlay'); renderApp(); loadNotifications(); }
@@ -526,8 +564,8 @@ function openWishlist() { state.overlay = { type: 'wishlist' }; state._wishlist 
 function persistTab(tab) { try { localStorage.setItem('naskraj_tab', tab); } catch {} }
 function restoreTab() {
   try {
-    const t = localStorage.getItem('naskraj_tab');
-    if (t && VALID_TABS.includes(t)) return t;
+    const t2 = localStorage.getItem('naskraj_tab');
+    if (t2 && VALID_TABS.includes(t2)) return t2;
   } catch {}
   return 'organizations';
 }
@@ -650,11 +688,11 @@ function updateLightboxDOM() {
           : `<span class="lightbox-comment-avatar lightbox-comment-avatar-init">${cInitial}</span>`;
         return `
           <div class="lightbox-comment">
-            <button type="button" class="lightbox-comment-avatar-btn" data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}" aria-label="Profil">
+            <button type="button" class="lightbox-comment-avatar-btn" data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}" aria-label="${escapeAttr(t('common.user'))}">
               ${avatarInner}
             </button>
             <div class="lightbox-comment-body">
-              <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}">${escapeHtml(c.user_name || 'Uživatel')}</strong>
+              <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}">${escapeHtml(c.user_name || t('common.user'))}</strong>
               <span>${escapeHtml(c.comment_text)}</span>
               <span class="lightbox-comment-time">${timeAgo(c.created_at)}</span>
             </div>
@@ -664,9 +702,9 @@ function updateLightboxDOM() {
 
       let commentsSection;
       if (!commentsReady) {
-        commentsSection = '<p class="lightbox-comment-empty">Načítám…</p>';
+        commentsSection = `<p class="lightbox-comment-empty">${escapeHtml(t('common.loading'))}</p>`;
       } else if (commentsList.length === 0) {
-        commentsSection = '<p class="lightbox-comment-empty">Zatím žádné komentáře.</p>';
+        commentsSection = `<p class="lightbox-comment-empty">${escapeHtml(t('post.noComments'))}</p>`;
       } else {
         commentsSection = commentsHtml;
       }
@@ -690,25 +728,25 @@ function updateLightboxDOM() {
           <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
             ${icon('spark', { size: 22, filled: !!post.__liked })}
           </button>
-          <span class="lightbox-stat">${fmt(post.likes || 0)} Páči sa mi</span>
+          <span class="lightbox-stat">${fmt(post.likes || 0)} ${escapeHtml(t('post.like'))}</span>
           <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(getPostText(post))}">
             ${icon('share', { size: 21 })}
           </button>
         </div>
 
         <div class="lightbox-comments-section">
-          <p class="lightbox-comments-title">Komentáře (${post.comment_count || 0})</p>
+          <p class="lightbox-comments-title">${escapeHtml(t('post.comments'))} (${post.comment_count || 0})</p>
           <div class="lightbox-comments-list" id="lightbox-comments-list">
             ${commentsSection}
           </div>
           ${isLoggedIn() ? `
             <form class="lightbox-comment-form" data-action="submit-lightbox-comment" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
-              <input class="lightbox-comment-input" placeholder="Napiš komentář…" data-lightbox-comment-input />
-              <button type="submit" class="lightbox-comment-send">${icon('send', { size: 18 })}</button>
+              <input class="lightbox-comment-input" placeholder="${escapeAttr(t('post.writeComment'))}" data-lightbox-comment-input />
+              <button type="submit" class="lightbox-comment-send" aria-label="${escapeAttr(t('common.submit'))}">${icon('send', { size: 18 })}</button>
             </form>
           ` : `
             <p class="lightbox-comment-empty" style="margin-top:8px">
-              <a href="#" data-action="set-tab" data-tab="account" style="color:var(--c-primary-dark);font-weight:700">Přihlas se</a> pro komentování.
+              <a href="#" data-action="set-tab" data-tab="account" style="color:var(--c-primary-dark);font-weight:700">${escapeHtml(t('auth.loginTab'))}</a> ${escapeHtml(t('post.loginToComment'))}
             </p>
           `}
         </div>
@@ -729,12 +767,12 @@ function htmlToPlain(html) {
 function renderLightbox() {
   return `
     <div class="lightbox" id="lightbox">
-      <button class="lightbox-close" data-action="close-lightbox" aria-label="Zavřít">${icon('close', { size: 22 })}</button>
+      <button class="lightbox-close" data-action="close-lightbox" aria-label="${escapeAttr(t('common.close'))}">${icon('close', { size: 22 })}</button>
       <div class="lightbox-inner">
         <div class="lightbox-image-pane">
           <img src="" alt="" class="lightbox-img" id="lightbox-img" />
-          <button class="lightbox-nav lightbox-prev" data-action="lightbox-prev" aria-label="Předchozí">${icon('chevronRight', { size: 26, className: 'flip-x' })}</button>
-          <button class="lightbox-nav lightbox-next" data-action="lightbox-next" aria-label="Další">${icon('chevronRight', { size: 26 })}</button>
+          <button class="lightbox-nav lightbox-prev" data-action="lightbox-prev" aria-label="${escapeAttr(t('common.prev'))}">${icon('chevronRight', { size: 26, className: 'flip-x' })}</button>
+          <button class="lightbox-nav lightbox-next" data-action="lightbox-next" aria-label="${escapeAttr(t('common.next'))}">${icon('chevronRight', { size: 26 })}</button>
           <p class="lightbox-counter" id="lightbox-counter"></p>
         </div>
         <div class="lightbox-info-pane" id="lightbox-info"></div>
@@ -759,15 +797,15 @@ async function openNotification(notifId) {
     state.overlay = state.overlayStack.pop() || null;
   }
 
-  const t = n.type;
+  const t2 = n.type;
   const entType = n.entity_type;
   const entId = n.entity_id;
 
-  if ((t === 'like' || t === 'comment' || t === 'reply' || t === 'mention') && entType === 'post' && entId) {
+  if ((t2 === 'like' || t2 === 'comment' || t2 === 'reply' || t2 === 'mention') && entType === 'post' && entId) {
     try {
       const data = await apiGet(`/api/feed/post-by-id/${encodeURIComponent(entId)}`);
       if (!data.post) {
-        showToast('Příspěvek nebyl nalezen.');
+        showToast(t('common.notFound'));
         renderApp();
         return;
       }
@@ -779,7 +817,7 @@ async function openNotification(notifId) {
       } catch {}
 
       if (!post.media || post.media.length === 0) {
-        showToast('Příspěvek nemá fotku.');
+        showToast(t('toasts.noPhoto'));
         renderApp();
         return;
       }
@@ -787,25 +825,25 @@ async function openNotification(notifId) {
       renderApp();
       openLightbox(post.media, 0, post.text || '', post);
     } catch (err) {
-      showToast('Nepodařilo se otevřít příspěvek.');
+      showToast(t('errors.loadFailed'));
       renderApp();
     }
     return;
   }
 
-  if (t === 'dm' && entType === 'thread' && entId) {
+  if (t2 === 'dm' && entType === 'thread' && entId) {
     renderApp();
     openThreadById(entId);
     return;
   }
 
-  if ((t === 'follow' || t === 'story_reply' || t === 'story_like') && n.actor_id) {
+  if ((t2 === 'follow' || t2 === 'story_reply' || t2 === 'story_like') && n.actor_id) {
     renderApp();
     openProfile('user', n.actor_id);
     return;
   }
 
-  if (t === 'verification_approved' || t === 'verification_rejected') {
+  if (t2 === 'verification_approved' || t2 === 'verification_rejected') {
     renderApp();
     switchTab('account');
     return;
@@ -892,35 +930,35 @@ function renderCookieBanner() {
     <div class="cookie-banner" id="cookie-banner">
       <div class="cookie-body">
         <p class="cookie-text">
-          <strong>Cookies a soukromí.</strong>
-          Používáme pouze technicky nezbytné cookies a lokální úložiště pro přihlášení.
-          ${!showSettings ? ' Žádné reklamní ani analytické cookies třetích stran.' : ''}
+          <strong>${escapeHtml(t('cookie.title'))}</strong>
+          ${escapeHtml(t('cookie.text'))}
+          ${!showSettings ? ' ' + escapeHtml(t('cookie.noTracking')) : ''}
         </p>
         ${showSettings ? `
           <div class="cookie-settings">
             <label class="cookie-toggle">
-              <span>Nezbytné (vždy zapnuto)</span>
+              <span>${escapeHtml(t('cookie.necessary'))}</span>
               <input type="checkbox" checked disabled />
             </label>
             <label class="cookie-toggle">
-              <span>Analytické (nepoužíváme)</span>
+              <span>${escapeHtml(t('cookie.analytics'))}</span>
               <input type="checkbox" data-action="cookie-setting" data-key="analytics" ${settings.analytics ? 'checked' : ''} />
             </label>
             <label class="cookie-toggle">
-              <span>Marketingové (nepoužíváme)</span>
+              <span>${escapeHtml(t('cookie.marketing'))}</span>
               <input type="checkbox" data-action="cookie-setting" data-key="marketing" ${settings.marketing ? 'checked' : ''} />
             </label>
           </div>
         ` : ''}
         <div class="cookie-actions">
           ${showSettings ? `
-            <button class="cookie-btn cookie-btn-primary" data-action="save-cookie-settings">Uložit nastavení</button>
+            <button class="cookie-btn cookie-btn-primary" data-action="save-cookie-settings">${escapeHtml(t('cookie.save'))}</button>
           ` : `
-            <button class="cookie-btn cookie-btn-primary" data-action="accept-cookies">Přijmout vše</button>
-            <button class="cookie-btn" data-action="reject-cookies">Odmítnout</button>
-            <button class="cookie-btn" data-action="open-cookie-settings">Nastavení</button>
+            <button class="cookie-btn cookie-btn-primary" data-action="accept-cookies">${escapeHtml(t('cookie.acceptAll'))}</button>
+            <button class="cookie-btn" data-action="reject-cookies">${escapeHtml(t('cookie.reject'))}</button>
+            <button class="cookie-btn" data-action="open-cookie-settings">${escapeHtml(t('cookie.settings'))}</button>
           `}
-          <a class="cookie-btn" href="/ochrana-osobnich-udaju.html" target="_blank" rel="noopener">Více info</a>
+          <a class="cookie-btn" href="/ochrana-osobnich-udaju.html" target="_blank" rel="noopener">${escapeHtml(t('cookie.more'))}</a>
         </div>
       </div>
     </div>`;
@@ -930,13 +968,17 @@ function renderCookieBanner() {
   let startX = 0, startY = 0;
   document.addEventListener('touchstart', (e) => {
     if (!e.target.closest('.lightbox.is-open')) return;
-    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
   }, { passive: true });
   document.addEventListener('touchend', (e) => {
     if (!e.target.closest('.lightbox.is-open')) return;
     const dx = e.changedTouches[0].clientX - startX;
     const dy = e.changedTouches[0].clientY - startY;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { if (dx < 0) lightboxNext(); else lightboxPrev(); }
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0) lightboxNext();
+      else lightboxPrev();
+    }
   }, { passive: true });
 })();
 
@@ -950,6 +992,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') lightboxPrev();
 });
 
+// C3: push permisia
 function maybeRequestPushPermission() {
   if (!isLoggedIn()) return;
   if (state._pushPrompted) return;
