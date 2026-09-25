@@ -76,6 +76,8 @@ const TRANSLATIONS = {
       uploadAvatar: 'Nahrát fotku', changeAvatar: 'Změnit fotku',
       clickToVerify: 'Klikni pro ověření',
       checkinsCount: 'návštěv', badgesCount: 'odznaků',
+      verifiedShort: 'Ověřeno',
+      addBusinessShort: 'Nový podnik',
     },
     settings: {
       title: 'Nastavení', notifications: 'Notifikace',
@@ -139,6 +141,8 @@ const TRANSLATIONS = {
       linkUrl: 'https://…', linkText: 'Text odkazu', addLocation: 'Přidat polohu',
       newPost: 'Přidat příspěvek (max. 4 fotky)',
       photoHint: 'Fotky se automaticky zmenší. Zveřejní se ihned.',
+      landscapeHint: 'Formát 4:3 (na šířku)',
+      cropping: 'Ořezávám…',
     },
     notifications: {
       title: 'Notifikace', empty: 'Žádné notifikace.',
@@ -169,6 +173,10 @@ const TRANSLATIONS = {
       replySend: 'Odeslat', replySent: 'Odpověď odeslána.',
       like: 'Iskra', noFeed: 'Zatím žádné stories.',
       title: 'Přidat story',
+      verticalHint: 'Formát 9:16 (na výšku)',
+      cropping: 'Ořezávám…',
+      tooLargeVideo: 'Video je příliš velké (max 30 MB).',
+      publishingAs: 'Publikuješ jako',
     },
     events: {
       title: 'Akce', create: 'Přidat akci', noEvents: 'Žádné akce neodpovídají filtrům.',
@@ -431,6 +439,8 @@ const TRANSLATIONS = {
       uploadAvatar: 'Nahrať fotku', changeAvatar: 'Zmeniť fotku',
       clickToVerify: 'Klikni pre overenie',
       checkinsCount: 'návštev', badgesCount: 'odznakov',
+      verifiedShort: 'Overené',
+      addBusinessShort: 'Nový podnik',
     },
     settings: {
       title: 'Nastavenia', notifications: 'Notifikácie',
@@ -494,6 +504,8 @@ const TRANSLATIONS = {
       linkUrl: 'https://…', linkText: 'Text odkazu', addLocation: 'Pridať polohu',
       newPost: 'Pridať príspevok (max. 4 fotky)',
       photoHint: 'Fotky sa automaticky zmenšia. Zverejnia sa ihneď.',
+      landscapeHint: 'Formát 4:3 (na šírku)',
+      cropping: 'Orezávam…',
     },
     notifications: {
       title: 'Notifikácie', empty: 'Žiadne notifikácie.',
@@ -524,6 +536,10 @@ const TRANSLATIONS = {
       replySend: 'Odoslať', replySent: 'Odpoveď odoslaná.',
       like: 'Iskra', noFeed: 'Zatiaľ žiadne stories.',
       title: 'Pridať story',
+      verticalHint: 'Formát 9:16 (na výšku)',
+      cropping: 'Orezávam…',
+      tooLargeVideo: 'Video je príliš veľké (max 30 MB).',
+      publishingAs: 'Publikuješ ako',
     },
     events: {
       title: 'Podujatia', create: 'Pridať podujatie', noEvents: 'Žiadne podujatia nezodpovedajú filtrom.',
@@ -786,6 +802,8 @@ const TRANSLATIONS = {
       uploadAvatar: 'Upload photo', changeAvatar: 'Change photo',
       clickToVerify: 'Click to verify',
       checkinsCount: 'visits', badgesCount: 'badges',
+      verifiedShort: 'Verified',
+      addBusinessShort: 'New business',
     },
     settings: {
       title: 'Settings', notifications: 'Notifications',
@@ -849,6 +867,8 @@ const TRANSLATIONS = {
       linkUrl: 'https://…', linkText: 'Link text', addLocation: 'Add location',
       newPost: 'Add post (max. 4 photos)',
       photoHint: 'Photos will be resized automatically. Published immediately.',
+      landscapeHint: 'Format 4:3 (landscape)',
+      cropping: 'Cropping…',
     },
     notifications: {
       title: 'Notifications', empty: 'No notifications.',
@@ -879,6 +899,10 @@ const TRANSLATIONS = {
       replySend: 'Send', replySent: 'Reply sent.',
       like: 'Spark', noFeed: 'No stories yet.',
       title: 'Add story',
+      verticalHint: 'Format 9:16 (portrait)',
+      cropping: 'Cropping…',
+      tooLargeVideo: 'Video is too large (max 30 MB).',
+      publishingAs: 'Publishing as',
     },
     events: {
       title: 'Events', create: 'Add event', noEvents: 'No events match the filters.',
