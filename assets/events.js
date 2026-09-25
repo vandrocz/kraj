@@ -35,7 +35,15 @@ document.addEventListener('click', (e) => {
 
     case 'open-notification': openNotification(el.dataset.notifId); break;
     case 'open-add-business': openAddBusinessModal(); break;
-
+    case 'stats-period':
+     if (state._profileStatsView) {
+      state._profileStatsView.period = el.dataset.period;
+      renderApp();
+     }
+     break;
+    case 'set-language':
+      setLanguage(el.dataset.lang);
+      break;
     // Stories
     case 'story-type': state.overlay.storyType = el.dataset.type; state.overlay.files = []; state.overlay.previews = []; renderApp(); break;
     case 'remove-story-file': removeStoryFile(parseInt(el.dataset.index, 10)); break;
@@ -303,6 +311,15 @@ document.addEventListener('change', (e) => {
   else if (a === 'verif-doc-selected') onVerifDocSelected(el);
   else if (a === 'push-toggle') handlePushToggle(el.checked);
   else if (a === 'add-business-kind-change') updateAddBusinessTypeOptions(el.value);
+  else if (a === 'stats-metric') {
+   if (state._profileStatsView) {
+    state._profileStatsView.metric = el.value;
+    renderApp();
+    }
+  }
+  else if (a === 'lang-select') {
+  setLanguage(el.value);
+  }
   else if (a === 'district-change') {
     const form = el.closest('form');
     const citySelect = form.querySelector('select[name="city"]');
