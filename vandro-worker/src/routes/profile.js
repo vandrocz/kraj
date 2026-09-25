@@ -35,6 +35,34 @@ function escapePlain(t) {
   return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// PATCH /me/:type/:id — rozšírené povolené polia (B6)
+profileRoutes.patch('/me/:type/:id', async (c) => {
+  const user = c.get('user');
+  const table = TYPE_TO_TABLE[normalizeType(c.req.param('type'))];
+  const id = c.req.param('id');
+  if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
+  const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(id).first();
+  if (!owned) return c.json({ error: 'Nenájdené.' }, 404);
+  if (owned.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
+
+  // B6: nové polia — opening_hours pre všetky, admission pre orgs, price_level pre gastro/acc
+  const common = ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'type', 'opening_hours'];
+  const allowedFields = table === 'restaurants'
+    ? [...common, 'cuisine_type', 'price_level']
+    : table === 'accommodation'
+      ? [...common, 'capacity', 'price_level']
+      : [...common, 'admission'];
+
+  const body = await c.req.json().catch(() => ({}));
+  const sets = [], params = [];
+  for (const f of allowedFields) if (f in body) { sets.push(`${f} = ?`); params.push(body[f] ?? null); }
+  if (sets.length === 0) return c.json({ error: 'Žiadne polia.' }, 400);
+  params.push(id);
+  await c.env.DB.prepare(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run();
+  const updated = await c.env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(id).first();
+  return c.json({ business: updated });
+});
+
 profileRoutes.get('/search', async (c) => {
   const user = c.get('user');
   const q = (c.req.query('q') || '').trim();
