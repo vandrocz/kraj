@@ -1,10 +1,9 @@
 // ============================================================
-// HASHTAGS — render, trending, filter
+// HASHTAGS — i18n verzia
 // ============================================================
 
 const HASHTAG_RE = /#([a-zA-Z0-9_áäčďéěíľĺňóôŕřšťúůýžÁÄČĎÉĚÍĽĹŇÓÔŔŘŠŤÚŮÝŽ]{2,40})/g;
 
-// Vráti HTML s klikateľnými hashtagmi
 function linkifyHashtags(text) {
   if (!text) return '';
   return escapeHtml(text).replace(HASHTAG_RE, (m, tag) => {
@@ -12,7 +11,6 @@ function linkifyHashtags(text) {
   });
 }
 
-// Načítanie trending hashtags
 async function loadTrendingHashtags() {
   if (state._trendingHashtags) return state._trendingHashtags;
   try {
@@ -27,7 +25,7 @@ function renderTrendingHashtagsInline() {
   if (!items || items.length === 0) return '';
   return `
     <div class="trending-hashtags">
-      <div class="trending-hashtags-title">${icon('hash', { size: 14 })} Trendy</div>
+      <div class="trending-hashtags-title">${icon('hash', { size: 14 })} ${escapeHtml(t('hashtags.trending'))}</div>
       <div class="trending-hashtags-list">
         ${items.map((h) => `
           <button class="hashtag-chip" data-action="open-hashtag" data-tag="${escapeAttr(h.hashtag)}">
@@ -39,13 +37,13 @@ function renderTrendingHashtagsInline() {
     </div>`;
 }
 
-// Otvor overlay s postami daného hashtagu
 async function openHashtag(tag) {
   tag = String(tag || '').toLowerCase().replace(/^#/, '');
   if (!tag) return;
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'hashtag', tag };
   state._hashtagPosts = null;
+  pushHistoryState('overlay');
   renderApp();
 
   try {
@@ -53,7 +51,7 @@ async function openHashtag(tag) {
     state._hashtagPosts = data.posts || [];
   } catch (err) {
     state._hashtagPosts = [];
-    showToast('Hashtag sa nepodarilo načítať.');
+    showToast(t('errors.loadFailed'));
   }
   renderApp();
 }
@@ -63,10 +61,9 @@ function renderHashtagOverlay() {
   const posts = state._hashtagPosts;
 
   let content = '';
-  if (posts === null) content = '<p class="empty-state">Načítám…</p>';
-  else if (posts.length === 0) content = `<p class="empty-state">Zatím žádné příspěvky s #${escapeHtml(tag)}.</p>`;
+  if (posts === null) content = `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`;
+  else if (posts.length === 0) content = `<p class="empty-state">${escapeHtml(t('hashtags.noPosts'))} #${escapeHtml(tag)}.</p>`;
   else {
-    // Všetky posty patria rôznym feedom — vykreslíme ich s ich feedKey
     content = `<div class="post-feed-grid">
       ${posts.map((p) => renderSocialPostCard(p, p.__feedKey || (p.target_feed === 'gastro' ? 'gastro' : p.target_feed === 'accommodation' ? 'accommodation' : 'organization'))).join('')}
     </div>`;
