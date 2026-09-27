@@ -1,5 +1,5 @@
 // ============================================================
-// PODUJATIA (Events) — i18n verzia
+// PODUJATIA (Events)
 // ============================================================
 
 async function loadEvents(loadMore = false) {
@@ -257,6 +257,136 @@ function renderEventDetailOverlay() {
     </div>`;
 }
 
+// ============================================================
+// KALENDÁR — modal s voľbou
+// ============================================================
+function openCalendarChoice(eventId) {
+  const ev = state._eventDetail;
+  if (!ev || ev.id !== eventId) return;
+
+  openModal({
+    title: t('events.addToCalendar'),
+    body: `
+      <div class="calendar-choice">
+        <button type="button" class="calendar-choice-btn" data-action="calendar-google">
+          <span class="calendar-choice-icon">📅</span>
+          <span class="calendar-choice-label">Google Calendar</span>
+        </button>
+        <button type="button" class="calendar-choice-btn" data-action="calendar-ics">
+          <span class="calendar-choice-icon">📥</span>
+          <span class="calendar-choice-label">Apple / ICS soubor</span>
+        </button>
+        <button type="button" class="calendar-choice-btn" data-action="calendar-outlook">
+          <span class="calendar-choice-icon">📧</span>
+          <span class="calendar-choice-label">Outlook / Outlook.com</span>
+        </button>
+        <button type="button" class="calendar-choice-btn" data-action="calendar-copy-link">
+          <span class="calendar-choice-icon">🔗</span>
+          <span class="calendar-choice-label">${escapeHtml(t('events.copyLink'))}</span>
+        </button>
+      </div>
+    `,
+    submitLabel: t('common.close'),
+    onSubmit: () => closeModal(),
+  });
+}
+
+function formatCalDate(iso) {
+  const d = new Date((String(iso).replace(' ', 'T')) + 'Z');
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+}
+
+function addEventToGoogleCalendar(eventId) {
+  const ev = state._eventDetail;
+  if (!ev || ev.id !== eventId) return;
+
+  const start = formatCalDate(ev.start_at);
+  const end = ev.end_at ? formatCalDate(ev.end_at) : formatCalDate(new Date(new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').getTime() + 2 * 60 * 60 * 1000).toISOString());
+  const title = encodeURIComponent(ev.title || '');
+  const details = encodeURIComponent((ev.description || '').slice(0, 800));
+  const location = encodeURIComponent([ev.location_name, ev.city, ev.region].filter(Boolean).join(', '));
+
+  const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${location}&sf=true&output=xml`;
+
+  window.open(url, '_blank', 'noopener');
+  showToast(t('events.savedToCalendar'));
+  closeModal();
+}
+
+function downloadEventIcs(eventId) {
+  const ev = state._eventDetail;
+  if (!ev || ev.id !== eventId) return;
+
+  const start = formatCalDate(ev.start_at);
+  const end = ev.end_at ? formatCalDate(ev.end_at) : formatCalDate(new Date(new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').getTime() + 2 * 60 * 60 * 1000).toISOString());
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//VANDRO//Event//CS',
+    'CALSCALE:GREGORIAN',
+    'BEGIN:VEVENT',
+    `UID:${ev.id}@vandro.cz`,
+    `DTSTAMP:${formatCalDate(new Date().toISOString())}`,
+    `DTSTART:${start}`,
+    `DTEND:${end}`,
+    `SUMMARY:${(ev.title || '').replace(/\n/g, ' ')}`,
+    `DESCRIPTION:${(ev.description || '').replace(/\n/g, ' ')}`,
+    `LOCATION:${([ev.location_name, ev.city, ev.region].filter(Boolean).join(', ')).replace(/\n/g, ' ')}`,
+    `URL:https://naskraj.vandro.cz/?event=${encodeURIComponent(ev.id)}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(ev.title || 'event').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast(t('events.savedToCalendar'));
+  closeModal();
+}
+
+function addEventToOutlook(eventId) {
+  const ev = state._eventDetail;
+  if (!ev || ev.id !== eventId) return;
+
+  const startISO = new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').toISOString();
+  const endISO = ev.end_at
+    ? new Date((String(ev.end_at).replace(' ', 'T')) + 'Z').toISOString()
+    : new Date(new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').getTime() + 2 * 60 * 60 * 1000).toISOString();
+
+  const url = `https://outlook.live.com/calendar/0/deeplink/compose?` + new URLSearchParams({
+    path: '/calendar/action/compose',
+    rru: 'addevent',
+    subject: ev.title || '',
+    body: (ev.description || '').slice(0, 800),
+    startdt: startISO,
+    enddt: endISO,
+    location: [ev.location_name, ev.city, ev.region].filter(Boolean).join(', '),
+  }).toString();
+
+  window.open(url, '_blank', 'noopener');
+  showToast(t('events.savedToCalendar'));
+  closeModal();
+}
+
+async function copyEventLink(eventId) {
+  const url = `${location.origin}${location.pathname}?event=${encodeURIComponent(eventId)}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast(t('toasts.copied'));
+    closeModal();
+  } catch {
+    showToast(t('toasts.shareFailed'));
+  }
+}
+
 function openEventGallery(eventId, startIndex = 0) {
   const ev = state._eventDetail;
   if (!ev || ev.id !== eventId) return;
@@ -287,40 +417,6 @@ async function shareEvent(id) {
   }
   try { await navigator.clipboard.writeText(url); showToast(t('toasts.copied')); }
   catch { showToast(t('toasts.shareFailed')); }
-}
-
-function addEventToCalendar(id) {
-  const ev = state._eventDetail;
-  if (!ev) return;
-  const fmt = (iso) => {
-    const d = new Date((String(iso).replace(' ', 'T')) + 'Z');
-    return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-  };
-  const start = fmt(ev.start_at);
-  const end = ev.end_at ? fmt(ev.end_at) : fmt(ev.start_at);
-  const ics = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Náš kraj//Akce//CS',
-    'BEGIN:VEVENT',
-    `UID:${ev.id}@naskraj.vandro.cz`,
-    `DTSTAMP:${fmt(new Date().toISOString())}`,
-    `DTSTART:${start}`,
-    `DTEND:${end}`,
-    `SUMMARY:${(ev.title || '').replace(/\n/g, ' ')}`,
-    `DESCRIPTION:${(ev.description || '').replace(/\n/g, ' ')}`,
-    `LOCATION:${(ev.location_name || ev.city || '').replace(/\n/g, ' ')}`,
-    'END:VEVENT',
-    'END:VCALENDAR',
-  ].join('\r\n');
-  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${(ev.title || 'event').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`;
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast(t('events.savedToCalendar'));
 }
 
 function openCreateEvent() {
