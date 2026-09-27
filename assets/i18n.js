@@ -15,7 +15,7 @@ const TRANSLATIONS = {
       showAll: 'Zobrazit vše', seeAll: 'Zobrazit vše', reply: 'Odpovědět',
       writeMessage: 'Napiš zprávu…', sending: 'Odesílám…', saving: 'Ukládám…',
       uploading: 'Nahrávám…', processing: 'Zpracovávám…', user: 'Uživatel',
-      unknown: 'Neznámý', notFound: 'Nenalezeno.', nothing: 'Nic',
+      unknown: 'Neznámý', notFound: 'Nenalezeno.', nothing: 'Nic', reply: 'Odpovědět',
       of: 'z', items: 'položek', itemsFew: 'položky',
     },
     nav: {
@@ -142,7 +142,7 @@ const TRANSLATIONS = {
       newPost: 'Přidat příspěvek (max. 4 fotky)',
       photoHint: 'Fotky se automaticky zmenší. Zveřejní se ihned.',
       landscapeHint: 'Formát 4:3 (na šířku)',
-      cropping: 'Ořezávám…',
+      cropping: 'Ořezávám…', replyAdded: 'Odpověď přidána.',
     },
     notifications: {
       title: 'Notifikace', empty: 'Žádné notifikace.',
@@ -195,7 +195,7 @@ const TRANSLATIONS = {
       deleteConfirm: 'Smazat tuto akci?', deleted: 'Akce smazána.',
       published: 'Akce zveřejněna!', savedToCalendar: 'Uloženo do kalendáře.',
       typeOrg: 'Organizace', typeAcc: 'Ubytování', typeGastro: 'Gastro',
-      typeEvent: 'Akce',
+      typeEvent: 'Akce', copyLink: 'Kopírovat odkaz',
     },
     checkins: {
       title: 'Byl jsem tady', note: 'Poznámka (nepovinné)',
@@ -379,7 +379,7 @@ const TRANSLATIONS = {
       writeMessage: 'Napíš správu…', sending: 'Odosielam…', saving: 'Ukladám…',
       uploading: 'Nahrávam…', processing: 'Spracúvam…', user: 'Používateľ',
       unknown: 'Neznámy', notFound: 'Nenájdené.', nothing: 'Nič',
-      of: 'z', items: 'položiek', itemsFew: 'položky',
+      of: 'z', items: 'položiek', itemsFew: 'položky', reply: 'Odpovedať',
     },
     nav: {
       organizations: 'Organizácie', accommodation: 'Ubytovanie', gastro: 'Gastro',
@@ -505,7 +505,7 @@ const TRANSLATIONS = {
       newPost: 'Pridať príspevok (max. 4 fotky)',
       photoHint: 'Fotky sa automaticky zmenšia. Zverejnia sa ihneď.',
       landscapeHint: 'Formát 4:3 (na šírku)',
-      cropping: 'Orezávam…',
+      cropping: 'Orezávam…', replyAdded: 'Odpoveď pridaná.',
     },
     notifications: {
       title: 'Notifikácie', empty: 'Žiadne notifikácie.',
@@ -558,7 +558,7 @@ const TRANSLATIONS = {
       deleteConfirm: 'Zmazať toto podujatie?', deleted: 'Podujatie zmazané.',
       published: 'Podujatie zverejnené!', savedToCalendar: 'Uložené do kalendára.',
       typeOrg: 'Organizácia', typeAcc: 'Ubytovanie', typeGastro: 'Gastro',
-      typeEvent: 'Podujatie',
+      typeEvent: 'Podujatie', copyLink: 'Kopírovať odkaz'
     },
     checkins: {
       title: 'Bol som tu', note: 'Poznámka (nepovinné)',
@@ -742,7 +742,7 @@ const TRANSLATIONS = {
       writeMessage: 'Write a message…', sending: 'Sending…', saving: 'Saving…',
       uploading: 'Uploading…', processing: 'Processing…', user: 'User',
       unknown: 'Unknown', notFound: 'Not found.', nothing: 'Nothing',
-      of: 'of', items: 'items', itemsFew: 'items',
+      of: 'of', items: 'items', itemsFew: 'items', reply: 'Reply',
     },
     nav: {
       organizations: 'Places', accommodation: 'Stay', gastro: 'Food',
@@ -868,7 +868,7 @@ const TRANSLATIONS = {
       newPost: 'Add post (max. 4 photos)',
       photoHint: 'Photos will be resized automatically. Published immediately.',
       landscapeHint: 'Format 4:3 (landscape)',
-      cropping: 'Cropping…',
+      cropping: 'Cropping…', replyAdded: 'Reply added.',
     },
     notifications: {
       title: 'Notifications', empty: 'No notifications.',
@@ -915,7 +915,7 @@ const TRANSLATIONS = {
       region: 'Region', city: 'City', description: 'Description', descriptionPh: 'What will happen?',
       publishEvent: 'Publish event', pickPhotos: 'Click to pick 1–4 photos',
       photosReady: '{n} photos ready', creating: 'Creating…',
-      aboutEvent: 'About event', organizer: 'Organizer',
+      aboutEvent: 'About event', organizer: 'Organizer', copyLink: 'Copy link',
       addToCalendar: 'Add to calendar', share: 'Share',
       dateNotSpecified: 'Date not specified', eventLocation: 'Location',
       deleteConfirm: 'Delete this event?', deleted: 'Event deleted.',
