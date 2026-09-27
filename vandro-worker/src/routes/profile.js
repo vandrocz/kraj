@@ -764,8 +764,158 @@ profileRoutes.get('/:type/:id', async (c) => {
   const followers = await getFollowCount(c.env, type, id);
   const kind = bizKindFromType(table);
 
+  // Galéria
+  let gallery = [];
+  try {
+    const { results: galRows } = await c.env.DB.prepare(
+      `SELECT id, image_url, caption, sort_order FROM business_gallery
+       WHERE business_id = ? AND business_kind = ?
+       ORDER BY sort_order ASC, created_at ASC`,
+    ).bind(id, table).all();
+    gallery = galRows || [];
+  } catch {}
+
   return c.json({
-    type: 'business', kind, feedKey, profile: business, posts: postsWithMedia,
+    type: 'business', kind, feedKey, profile: business, posts: postsWithMedia, gallery,
     stats: { followers, posts: postsWithMedia.length }, is_following: false,
   });
+});
+
+// ============================================================
+// GALÉRIA "O NÁS" — max 6 fotiek s popismi
+// ============================================================
+
+profileRoutes.get('/:type/:id/gallery', async (c) => {
+  const type = normalizeType(c.req.param('type'));
+  const id = c.req.param('id');
+  const table = TYPE_TO_TABLE[type];
+  if (!table || table === 'users') return c.json({ items: [] });
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, image_url, caption, sort_order, created_at
+     FROM business_gallery
+     WHERE business_id = ? AND business_kind = ?
+     ORDER BY sort_order ASC, created_at ASC`,
+  ).bind(id, table).all();
+
+  return c.json({ items: results || [] });
+});
+
+profileRoutes.post('/me/gallery/:type/:id', async (c) => {
+  const user = c.get('user');
+  const table = TYPE_TO_TABLE[normalizeType(c.req.param('type'))];
+  const id = c.req.param('id');
+  if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
+
+  // Oprávnenie
+  const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(id).first();
+  if (!owned) return c.json({ error: 'Nenájdené.' }, 404);
+  if (owned.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
+
+  // Limit 6
+  const countRow = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM business_gallery WHERE business_id = ? AND business_kind = ?`,
+  ).bind(id, table).first();
+  if ((countRow?.n || 0) >= 6) {
+    return c.json({ error: 'Maximálne 6 fotiek v galérii. Najprv nejakú odstráň.' }, 400);
+  }
+
+  const form = await c.req.parseBody();
+  const file = form.file;
+  const caption = (form.caption || '').toString().slice(0, 120);
+
+  if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
+  if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
+
+  const v = await validateUpload(file, 'image');
+  if (!v.ok) {
+    const msgs = {
+      bad_type: 'Povolené sú len JPG, PNG, WebP alebo GIF.',
+      too_large: 'Fotka je príliš veľká (max 10 MB).',
+      bad_magic: 'Súbor nie je platná fotka.',
+      empty: 'Súbor je prázdny.',
+      no_file: 'Chýba súbor.',
+    };
+    return c.json({ error: msgs[v.reason] || 'Neplatný súbor.' }, 400);
+  }
+
+  const publicBase = c.env.R2_PUBLIC_BASE || '';
+  const ext = ((file.name || 'x.jpg').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const key = `gallery/${newId()}.${ext}`;
+  await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type || 'image/jpeg' } });
+  const url = publicBase ? `${publicBase}/${key}` : key;
+
+  const galleryId = newId('gal');
+  const maxOrderRow = await c.env.DB.prepare(
+    `SELECT MAX(sort_order) AS m FROM business_gallery WHERE business_id = ? AND business_kind = ?`,
+  ).bind(id, table).first();
+  const nextOrder = (maxOrderRow?.m ?? -1) + 1;
+
+  await c.env.DB.prepare(
+    `INSERT INTO business_gallery (id, business_id, business_kind, image_url, caption, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).bind(galleryId, id, table, url, caption || null, nextOrder).run();
+
+  return c.json({ id: galleryId, image_url: url, caption, sort_order: nextOrder }, 201);
+});
+
+profileRoutes.patch('/me/gallery/:galleryId', async (c) => {
+  const user = c.get('user');
+  const galleryId = c.req.param('galleryId');
+
+  const row = await c.env.DB.prepare(
+    `SELECT * FROM business_gallery WHERE id = ?`,
+  ).bind(galleryId).first();
+  if (!row) return c.json({ error: 'Nenájdené.' }, 404);
+
+  const table = TYPE_TO_TABLE[normalizeType(row.business_kind)] || row.business_kind;
+  const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(row.business_id).first();
+  if (!owned || (owned.user_id !== user.sub && user.role !== 'admin')) {
+    return c.json({ error: 'Nemáš oprávnenie.' }, 403);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const caption = (body.caption || '').toString().slice(0, 120);
+  const sortOrder = Number.isFinite(body.sort_order) ? parseInt(body.sort_order, 10) : null;
+
+  const sets = [];
+  const params = [];
+  if ('caption' in body) { sets.push('caption = ?'); params.push(caption); }
+  if (sortOrder !== null) { sets.push('sort_order = ?'); params.push(sortOrder); }
+
+  if (sets.length === 0) return c.json({ error: 'Žiadne polia.' }, 400);
+  params.push(galleryId);
+  await c.env.DB.prepare(`UPDATE business_gallery SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run();
+
+  const updated = await c.env.DB.prepare(`SELECT * FROM business_gallery WHERE id = ?`).bind(galleryId).first();
+  return c.json({ item: updated });
+});
+
+profileRoutes.delete('/me/gallery/:galleryId', async (c) => {
+  const user = c.get('user');
+  const galleryId = c.req.param('galleryId');
+
+  const row = await c.env.DB.prepare(
+    `SELECT * FROM business_gallery WHERE id = ?`,
+  ).bind(galleryId).first();
+  if (!row) return c.json({ error: 'Nenájdené.' }, 404);
+
+  const table = TYPE_TO_TABLE[normalizeType(row.business_kind)] || row.business_kind;
+  const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(row.business_id).first();
+  if (!owned || (owned.user_id !== user.sub && user.role !== 'admin')) {
+    return c.json({ error: 'Nemáš oprávnenie.' }, 403);
+  }
+
+  // Zmaž z R2
+  if (c.env.MEDIA && row.image_url) {
+    try {
+      const publicBase = c.env.R2_PUBLIC_BASE || '';
+      let key = row.image_url;
+      if (publicBase && key.startsWith(publicBase + '/')) key = key.slice(publicBase.length + 1);
+      if (key && !key.startsWith('http')) await c.env.MEDIA.delete(key);
+    } catch {}
+  }
+
+  await c.env.DB.prepare(`DELETE FROM business_gallery WHERE id = ?`).bind(galleryId).run();
+  return c.json({ ok: true });
 });
