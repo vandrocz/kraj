@@ -4172,3 +4172,243 @@ body > .upload-overlay { pointer-events: auto; }
   height: 100%;
   object-fit: cover;
 }
+
+/* ============================================================
+   LIGHTBOX — 3-stavový panel s drag handle
+   ============================================================ */
+
+.lightbox-info-pane {
+  position: relative;
+  background: var(--c-surface);
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.lightbox-drag-handle {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  z-index: 6;
+  background: var(--c-surface);
+  padding: 8px 0 6px;
+  touch-action: none;
+}
+.lightbox-drag-handle-bar {
+  width: 44px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--c-border);
+  transition: background .15s;
+}
+.lightbox-drag-handle:hover .lightbox-drag-handle-bar,
+.lightbox-drag-handle.is-dragging .lightbox-drag-handle-bar {
+  background: var(--c-text-muted);
+}
+
+@media (min-width: 900px) {
+  .lightbox-drag-handle { display: none; }
+}
+
+@media (max-width: 899px) {
+  .lightbox.is-open { padding: 0; }
+  .lightbox-inner {
+    flex-direction: column;
+    border-radius: 0;
+    height: 100vh;
+    max-height: 100vh;
+    max-width: 100%;
+    background: #0e1713;
+  }
+  .lightbox-image-pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    background: #0e1713;
+    transition: max-height .28s cubic-bezier(.32,.72,0,1), opacity .2s;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lightbox-img {
+    max-height: 100%;
+    max-width: 100%;
+    width: auto;
+    height: auto;
+  }
+  .lightbox-info-pane {
+    background: var(--c-surface);
+    border-radius: 20px 20px 0 0;
+    padding: 0 16px 18px;
+    box-shadow: 0 -12px 30px rgba(0,0,0,0.35);
+    z-index: 2;
+    transition: max-height .28s cubic-bezier(.32,.72,0,1);
+    margin-top: -16px;
+  }
+
+  /* Stav 0: compact */
+  .lightbox-inner.lb-panel-0 .lightbox-info-pane { max-height: 45vh; }
+  .lightbox-inner.lb-panel-0 .lightbox-image-pane { max-height: calc(55vh + 16px); }
+
+  /* Stav 1: expanded */
+  .lightbox-inner.lb-panel-1 .lightbox-info-pane { max-height: 75vh; }
+  .lightbox-inner.lb-panel-1 .lightbox-image-pane { max-height: calc(25vh + 16px); }
+
+  /* Stav 2: fullscreen (nad fotku) */
+  .lightbox-inner.lb-panel-2 .lightbox-info-pane {
+    max-height: calc(100vh - 8px);
+    margin-top: 0;
+    border-radius: 20px 20px 0 0;
+  }
+  .lightbox-inner.lb-panel-2 .lightbox-image-pane {
+    max-height: 0;
+    min-height: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .lightbox-inner.lb-panel-2 .lightbox-close {
+    top: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.55);
+    z-index: 20;
+  }
+  .lightbox-inner.lb-panel-2 .lightbox-nav,
+  .lightbox-inner.lb-panel-2 .lightbox-counter {
+    display: none;
+  }
+}
+
+@media (min-width: 900px) {
+  .lightbox-inner { flex-direction: row; max-height: 85vh; }
+  .lightbox-image-pane { flex: 1.4; }
+  .lightbox-info-pane {
+    width: 400px;
+    max-height: 85vh;
+    overflow-y: auto;
+    border-left: 1px solid var(--c-border);
+    padding: 20px;
+    border-radius: 0;
+    margin-top: 0;
+  }
+}
+@media (min-width: 1200px) {
+  .lightbox-info-pane { width: 460px; }
+}
+
+/* ============================================================
+   LIGHTBOX — komentáre s reply
+   ============================================================ */
+.lightbox-comments-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.lightbox-comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+  margin-bottom: 10px;
+}
+
+.lightbox-comment {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.lightbox-comment.is-reply {
+  margin-left: 40px;
+  margin-top: 8px;
+  padding-left: 10px;
+  border-left: 2px solid var(--c-border);
+}
+
+.lightbox-comment-avatar-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  line-height: 0;
+}
+.lightbox-comment-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid var(--c-primary-light);
+  display: block;
+}
+.lightbox-comment-avatar-init {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(155deg, var(--c-primary-dark), var(--c-primary));
+  color: white;
+  font-weight: 800;
+  font-size: 13px;
+  border: none;
+}
+
+.lightbox-comment-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lightbox-comment-name {
+  font-weight: 700;
+  color: var(--c-text);
+  font-size: 12.5px;
+  cursor: pointer;
+  display: inline-block;
+  width: fit-content;
+}
+.lightbox-comment-name:hover { color: var(--c-primary-dark); }
+
+.lightbox-comment-text {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--c-text);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.lightbox-comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--c-text-muted);
+}
+
+.lightbox-comment-time {
+  font-size: 11.5px !important;
+  color: var(--c-text-muted) !important;
+}
+
+.lightbox-comment-reply-btn,
+.lightbox-comment-delete-btn {
+  background: none;
+  border: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--c-text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.lightbox-comment-reply-btn:hover { color: var(--c-primary-dark); }
+.lightbox-comment-delete-btn:hover { color: #B3273C; }
+
+.lightbox-comment-replies {
+  display: flex
