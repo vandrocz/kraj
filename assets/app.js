@@ -74,6 +74,9 @@ const state = {
   _modal: null,
   _modalLoading: false,
 
+  // Reply state v lightboxe
+  _lightboxReplyTo: null,
+
   lightbox: null,
   loading: {},
 
@@ -522,6 +525,7 @@ function openProfile(kind, id) {
 }
 
 function closeOverlay(fromHistory = false) {
+  if (typeof stopStoryAutoAdvance === 'function') stopStoryAutoAdvance();
   const prev = state.overlayStack.pop();
   state.overlay = prev || null;
   if (!fromHistory && state._historyPushed) clearHistoryState();
@@ -561,6 +565,7 @@ function switchTab(tab) {
   state.overlay = null;
   state.overlayStack = [];
   if (state.lightbox) closeLightbox(true);
+  if (typeof stopStoryAutoAdvance === 'function') stopStoryAutoAdvance();
   if (state._historyPushed) { state._historyPushed = false; }
   state.tab = tab;
   persistTab(tab);
@@ -574,7 +579,7 @@ function switchTab(tab) {
 }
 
 // ============================================================
-// LIGHTBOX — s 3-stavovým panelom (compact / expanded / fullscreen)
+// LIGHTBOX — s 3-stavovým panelom
 // ============================================================
 function openLightbox(images, index = 0, caption = '', post = null) {
   state.lightbox = {
@@ -582,8 +587,9 @@ function openLightbox(images, index = 0, caption = '', post = null) {
     index: Math.max(0, Math.min(index, images.length - 1)),
     caption,
     post,
-    panelState: 0, // 0 = compact (45vh), 1 = expanded (75vh), 2 = fullscreen (100vh)
+    panelState: 0,
   };
+  state._lightboxReplyTo = null;
   updateLightboxDOM();
   const lbEl = document.getElementById('lightbox');
   if (lbEl) lbEl.classList.add('is-open');
@@ -620,6 +626,7 @@ function closeLightbox(fromHistory = false) {
   document.getElementById('lightbox')?.classList.remove('is-open');
   document.body.style.overflow = '';
   teardownLightboxDrag();
+  state._lightboxReplyTo = null;
   state.lightbox = null;
   if (!fromHistory && state._historyPushed) clearHistoryState();
 }
@@ -636,9 +643,6 @@ function lightboxNext() {
   updateLightboxDOM();
 }
 
-// ============================================================
-// Panel state — 3 úrovne
-// ============================================================
 function setLightboxPanelState(state_) {
   if (!state.lightbox) return;
   state.lightbox.panelState = Math.max(0, Math.min(2, state_));
@@ -656,25 +660,18 @@ function applyLightboxPanelState() {
   const lb = state.lightbox;
   if (!lb) return;
   const inner = document.querySelector('.lightbox-inner');
-  const pane = document.querySelector('.lightbox-info-pane');
-  const imgPane = document.querySelector('.lightbox-image-pane');
-  if (!inner || !pane || !imgPane) return;
-
+  if (!inner) return;
   inner.classList.remove('lb-panel-0', 'lb-panel-1', 'lb-panel-2');
   inner.classList.add(`lb-panel-${lb.panelState || 0}`);
 }
 
-// ============================================================
-// Drag handle — swipe up/down na paneli
-// ============================================================
 let _lbDragHandlers = null;
 
 function setupLightboxDrag() {
   teardownLightboxDrag();
 
   const handle = document.querySelector('.lightbox-drag-handle');
-  const pane = document.querySelector('.lightbox-info-pane');
-  if (!handle || !pane) return;
+  if (!handle) return;
 
   let startY = 0;
   let startState = 0;
@@ -696,21 +693,15 @@ function setupLightboxDrag() {
   const onTouchEnd = (e) => {
     handle.classList.remove('is-dragging');
     if (!state.lightbox) return;
-    const endY = e.changedTouches[0].clientY;
-    const dy = endY - startY;
+    const dy = e.changedTouches[0].clientY - startY;
 
-    // Malý pohyb = klik → cyklus
     if (!moved || Math.abs(dy) < 20) {
       cycleLightboxPanelState();
       return;
     }
 
-    // Swipe up = expand, swipe down = collapse
-    if (dy < -40) {
-      setLightboxPanelState(Math.min(2, startState + 1));
-    } else if (dy > 40) {
-      setLightboxPanelState(Math.max(0, startState - 1));
-    }
+    if (dy < -40) setLightboxPanelState(Math.min(2, startState + 1));
+    else if (dy > 40) setLightboxPanelState(Math.max(0, startState - 1));
   };
 
   const onClick = (e) => {
@@ -735,6 +726,55 @@ function teardownLightboxDrag() {
     handle.removeEventListener('click', _lbDragHandlers.onClick);
   }
   _lbDragHandlers = null;
+}
+
+// ============================================================
+// Render komentárov v lightboxe — s reply tlačidlom
+// ============================================================
+function renderLightboxComment(c, postId, feedKey, isReply = false) {
+  const isMine = isLoggedIn() && state.user.id === c.user_id;
+  const replies = (c.replies || []).map((r) => renderLightboxComment(r, postId, feedKey, true)).join('');
+
+  const replyFormOpen = state._lightboxReplyTo === c.id;
+
+  return `
+    <div class="lightbox-comment ${isReply ? 'is-reply' : ''}">
+      <button type="button" class="lightbox-comment-avatar-btn" data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}" aria-label="${escapeAttr(t('common.user'))}">
+        ${c.user_avatar
+          ? `<img src="${escapeAttr(c.user_avatar)}" alt="" class="lightbox-comment-avatar" />`
+          : `<span class="lightbox-comment-avatar lightbox-comment-avatar-init">${(c.user_name || '?').charAt(0).toUpperCase()}</span>`}
+      </button>
+      <div class="lightbox-comment-body">
+        <strong class="lightbox-comment-name" data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}">${escapeHtml(c.user_name || t('common.user'))}</strong>
+        <span class="lightbox-comment-text">${escapeHtml(c.comment_text)}</span>
+        <div class="lightbox-comment-meta">
+          <span class="lightbox-comment-time">${timeAgo(c.created_at)}</span>
+          ${isLoggedIn() ? `
+            <button class="lightbox-comment-reply-btn" data-action="toggle-lightbox-reply" data-id="${c.id}">
+              ${escapeHtml(t('common.reply'))}
+            </button>
+          ` : ''}
+          ${isMine ? `
+            <button class="lightbox-comment-delete-btn" data-action="delete-lightbox-comment" data-id="${c.id}" data-post-id="${postId}" data-feed="${feedKey}">
+              ${escapeHtml(t('common.delete'))}
+            </button>
+          ` : ''}
+        </div>
+        ${replyFormOpen ? `
+          <div class="lightbox-reply-form-wrap">
+            <input class="lightbox-comment-input" placeholder="${escapeAttr(t('post.writeComment'))}" data-lightbox-reply-input data-parent-id="${c.id}" />
+            <button type="button" class="lightbox-comment-send lightbox-reply-send" data-action="send-lightbox-reply" data-parent-id="${c.id}" data-post-id="${postId}" data-feed="${feedKey}">
+              ${icon('send', { size: 16 })}
+            </button>
+            <button type="button" class="lightbox-reply-cancel" data-action="cancel-lightbox-reply">
+              ${icon('close', { size: 16 })}
+            </button>
+          </div>
+        ` : ''}
+        ${replies ? `<div class="lightbox-comment-replies">${replies}</div>` : ''}
+      </div>
+    </div>
+  `;
 }
 
 function updateLightboxDOM() {
@@ -768,25 +808,9 @@ function updateLightboxDOM() {
 
       const commentsReady = post.__comments != null;
       const commentsList = post.__comments || [];
+      const feedKey = post.__feedKey || '';
 
-      const commentsHtml = commentsList.map((c) => {
-        const cInitial = (c.user_name || '?').charAt(0).toUpperCase();
-        const avatarInner = c.user_avatar
-          ? `<img src="${escapeAttr(c.user_avatar)}" alt="" class="lightbox-comment-avatar" />`
-          : `<span class="lightbox-comment-avatar lightbox-comment-avatar-init">${cInitial}</span>`;
-        return `
-          <div class="lightbox-comment">
-            <button type="button" class="lightbox-comment-avatar-btn" data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}" aria-label="${escapeAttr(t('common.user'))}">
-              ${avatarInner}
-            </button>
-            <div class="lightbox-comment-body">
-              <strong data-action="open-profile" data-kind="user" data-id="${c.user_id || ''}">${escapeHtml(c.user_name || t('common.user'))}</strong>
-              <span>${escapeHtml(c.comment_text)}</span>
-              <span class="lightbox-comment-time">${timeAgo(c.created_at)}</span>
-            </div>
-          </div>
-        `;
-      }).join('');
+      const commentsHtml = commentsList.map((c) => renderLightboxComment(c, post.id, feedKey, false)).join('');
 
       let commentsSection;
       if (!commentsReady) {
@@ -798,9 +822,12 @@ function updateLightboxDOM() {
       }
 
       info.innerHTML = `
-        <div class="lightbox-drag-handle" data-action="lightbox-cycle-panel" role="button" aria-label="Zobrazit komentáře"></div>
+        <div class="lightbox-drag-handle" role="button" aria-label="${escapeAttr(t('post.comments'))}">
+          <span class="lightbox-drag-handle-bar"></span>
+        </div>
+
         <header class="lightbox-post-head">
-          <button data-action="open-profile" data-kind="${post.__feedKey || ''}" data-id="${biz.id || ''}" style="background:none;border:none;padding:0;cursor:pointer;flex-shrink:0;">
+          <button data-action="open-profile" data-kind="${feedKey}" data-id="${biz.id || ''}" style="background:none;border:none;padding:0;cursor:pointer;flex-shrink:0;">
             ${avatarHtml}
           </button>
           <div style="flex:1;min-width:0">
@@ -808,12 +835,14 @@ function updateLightboxDOM() {
             <p class="post-time">${biz.city ? `${escapeHtml(biz.city)}, ` : ''}${biz.district ? escapeHtml(biz.district) : ''} · ${timeAgo(post.created_at)}</p>
           </div>
         </header>
+
         <div class="lightbox-post-body">
           <div class="lightbox-post-text rich-text">${linkifyHashtags(htmlToPlain(getPostText(post)))}</div>
           ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
         </div>
+
         <div class="lightbox-post-actions">
-          <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
+          <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${feedKey}">
             ${icon('spark', { size: 22, filled: !!post.__liked })}
           </button>
           <span class="lightbox-stat">${fmt(post.likes || 0)} ${escapeHtml(t('post.like'))}</span>
@@ -828,7 +857,7 @@ function updateLightboxDOM() {
             ${commentsSection}
           </div>
           ${isLoggedIn() ? `
-            <form class="lightbox-comment-form" data-action="submit-lightbox-comment" data-id="${post.id}" data-feed="${post.__feedKey || ''}">
+            <form class="lightbox-comment-form" data-action="submit-lightbox-comment" data-id="${post.id}" data-feed="${feedKey}">
               <input class="lightbox-comment-input" placeholder="${escapeAttr(t('post.writeComment'))}" data-lightbox-comment-input />
               <button type="submit" class="lightbox-comment-send" aria-label="${escapeAttr(t('common.submit'))}">${icon('send', { size: 18 })}</button>
             </form>
@@ -840,7 +869,6 @@ function updateLightboxDOM() {
         </div>
       `;
 
-      // Po rendere pripojíme drag handlery
       setTimeout(() => {
         setupLightboxDrag();
         applyLightboxPanelState();
@@ -947,7 +975,7 @@ async function openNotification(notifId) {
 }
 
 // ============================================================
-// GDPR COOKIE CONSENT V2
+// GDPR COOKIES V2
 // ============================================================
 const COOKIE_CONSENT_VERSION = '2';
 
@@ -988,9 +1016,7 @@ function getCookieConsentShared() {
   return null;
 }
 
-function hasValidCookieConsent() {
-  return !!getCookieConsentShared();
-}
+function hasValidCookieConsent() { return !!getCookieConsentShared(); }
 
 function acceptCookies() {
   setCookieConsentShared('1', { analytics: true, marketing: true });
@@ -1075,13 +1101,15 @@ function renderCookieBanner() {
   let startX = 0, startY = 0;
   document.addEventListener('touchstart', (e) => {
     if (!e.target.closest('.lightbox.is-open')) return;
-    if (e.target.closest('.lightbox-comments-section')) return; // neruš swipe v komentároch
+    if (e.target.closest('.lightbox-comments-section')) return;
+    if (e.target.closest('.lightbox-drag-handle')) return;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
   }, { passive: true });
   document.addEventListener('touchend', (e) => {
     if (!e.target.closest('.lightbox.is-open')) return;
     if (e.target.closest('.lightbox-comments-section')) return;
+    if (e.target.closest('.lightbox-drag-handle')) return;
     const dx = e.changedTouches[0].clientX - startX;
     const dy = e.changedTouches[0].clientY - startY;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
