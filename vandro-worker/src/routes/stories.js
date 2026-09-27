@@ -28,7 +28,13 @@ storiesRoutes.get('/feed', async (c) => {
     console.warn('[stories] cleanup on feed failed:', err.message);
   }
 
-  // 1) Osobné stories
+  // Zisti mesto usera pre odporúčania
+  const meRow = await c.env.DB.prepare(
+    `SELECT display_name, avatar_url, geo_city FROM users WHERE id = ?`,
+  ).bind(user.sub).first();
+  const myCity = meRow?.geo_city || null;
+
+  // 1) Moje osobné stories
   const myPersonal = await c.env.DB.prepare(
     `SELECT id, user_id, business_id, image_url, caption, media_type, media_urls_json, created_at, expires_at
      FROM stories
@@ -91,19 +97,57 @@ storiesRoutes.get('/feed', async (c) => {
      ORDER BY s.created_at ASC`,
   ).bind(user.sub).all();
 
+  // 5) NOVÉ: Stories od NE-sledovaných userov (odporúčania podľa mesta)
+  const { results: suggestedUser } = await c.env.DB.prepare(
+    `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
+            u.display_name AS author_name, u.avatar_url AS author_avatar
+     FROM stories s JOIN users u ON u.id = s.user_id
+     WHERE s.expires_at > datetime('now') AND s.business_id IS NULL
+       AND s.user_id != ?
+       AND s.user_id NOT IN (
+         SELECT target_id FROM follows WHERE follower_id = ? AND target_type = 'users'
+       )
+       ${myCity ? 'AND u.geo_city = ?' : ''}
+     ORDER BY s.created_at DESC
+     LIMIT 10`,
+  ).bind(...(myCity ? [user.sub, user.sub, myCity] : [user.sub, user.sub])).all();
+
+  // 6) NOVÉ: Stories od NE-sledovaných podnikov (odporúčania podľa mesta)
+  const { results: suggestedBiz } = await c.env.DB.prepare(
+    `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
+            COALESCE(o.name, a.name, r.name) AS business_name,
+            COALESCE(o.logo_url, a.image_url, r.image_url) AS business_logo,
+            COALESCE(o.city, a.city, r.city) AS business_city,
+            CASE
+              WHEN o.id IS NOT NULL THEN 'organizations'
+              WHEN a.id IS NOT NULL THEN 'accommodation'
+              WHEN r.id IS NOT NULL THEN 'restaurants'
+              ELSE NULL
+            END AS business_kind
+     FROM stories s
+     LEFT JOIN organizations o ON o.id = s.business_id
+     LEFT JOIN accommodation a ON a.id = s.business_id
+     LEFT JOIN restaurants r ON r.id = s.business_id
+     WHERE s.expires_at > datetime('now') AND s.business_id IS NOT NULL
+       AND s.business_id NOT IN (
+         SELECT target_id FROM follows
+         WHERE follower_id = ? AND target_type IN ('organizations','accommodation','restaurants')
+       )
+       ${myCity ? 'AND COALESCE(o.city, a.city, r.city) = ?' : ''}
+     ORDER BY s.created_at DESC
+     LIMIT 10`,
+  ).bind(...(myCity ? [user.sub, myCity] : [user.sub])).all();
+
   const groups = [];
 
   if (myPersonal.results.length > 0) {
-    const me = await c.env.DB.prepare(
-      `SELECT display_name, avatar_url FROM users WHERE id = ?`,
-    ).bind(user.sub).first();
     groups.push({
       key: 'me',
       is_me: true,
       author_id: user.sub,
       author_kind: 'user',
-      author_name: me?.display_name || 'Já',
-      author_avatar: me?.avatar_url || null,
+      author_name: meRow?.display_name || 'Já',
+      author_avatar: meRow?.avatar_url || null,
       stories: myPersonal.results.map(normalizeStory),
     });
   }
@@ -161,10 +205,47 @@ storiesRoutes.get('/feed', async (c) => {
   }
   groups.push(...fBizMap.values());
 
+  // Suggested users (odporúčania)
+  const sugUserMap = new Map();
+  for (const s of suggestedUser) {
+    if (!sugUserMap.has(s.user_id)) {
+      sugUserMap.set(s.user_id, {
+        key: `user_${s.user_id}`,
+        author_id: s.user_id,
+        author_kind: 'user',
+        author_name: s.author_name || 'Profil',
+        author_avatar: s.author_avatar || null,
+        suggested: true,
+        stories: [],
+      });
+    }
+    sugUserMap.get(s.user_id).stories.push(normalizeStory(s));
+  }
+  groups.push(...sugUserMap.values());
+
+  // Suggested businesses
+  const sugBizMap = new Map();
+  for (const s of suggestedBiz) {
+    if (!sugBizMap.has(s.business_id)) {
+      sugBizMap.set(s.business_id, {
+        key: `biz_${s.business_id}`,
+        business_id: s.business_id,
+        business_kind: s.business_kind,
+        author_id: s.business_id,
+        author_kind: s.business_kind,
+        author_name: s.business_name || 'Podnik',
+        author_avatar: s.business_logo || null,
+        suggested: true,
+        stories: [],
+      });
+    }
+    sugBizMap.get(s.business_id).stories.push(normalizeStory(s));
+  }
+  groups.push(...sugBizMap.values());
+
   return c.json({ groups });
 });
 
-// Vytvorenie story
 storiesRoutes.post('/', async (c) => {
   const user = c.get('user');
   const rl = await rateLimit(c.env, 'story', user.sub, 10, 86400);
@@ -188,7 +269,6 @@ storiesRoutes.post('/', async (c) => {
   return c.json({ id, expires_at: exp }, 201);
 });
 
-// Upload fotky
 storiesRoutes.post('/upload', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -216,7 +296,6 @@ storiesRoutes.post('/upload', async (c) => {
   return c.json({ url }, 201);
 });
 
-// Upload videa
 storiesRoutes.post('/upload-video', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
