@@ -1,5 +1,5 @@
 // ============================================================
-// SOCIÁLNY FEED — opravené lajky
+// SOCIÁLNY FEED
 // ============================================================
 
 function buildFeedQuery(feedKey) {
@@ -164,12 +164,7 @@ function renderSocialPostCard(post, feedKey) {
     </article>`;
 }
 
-// ============================================================
-// Pomocná funkcia — nájdi post objekt všade (feed, lightbox, profiles)
-// Vždy vráti jednu referenciu (priorita: feed item > lightbox > profile)
-// ============================================================
 function findPostAnywhere(postId) {
-  // Priorita: socialFeeds (aby sme mali konzistentnú referenciu)
   for (const k of Object.keys(state.socialFeeds)) {
     const p = state.socialFeeds[k].items.find((x) => x.id === postId);
     if (p) return p;
@@ -185,7 +180,6 @@ function findPostAnywhere(postId) {
   return null;
 }
 
-// Aktualizuj VŠETKY výskyty post objektu (feed + lightbox + profiles)
 function updatePostEverywhere(postId, updater) {
   const seen = new Set();
   const apply = (p) => {
@@ -204,23 +198,12 @@ function updatePostEverywhere(postId, updater) {
   apply(state.lightbox?.post);
 }
 
-// ============================================================
-// OPRAVA: togglePostLike
-// - Lock proti dvojkliku
-// - Synchronizácia medzi feedom a lightboxom
-// - Server response je zdroj pravdy
-// - Vždy aktualizuj UI bez ohľadu na to, ktoré tlačidlo kliklo
-// ============================================================
 async function togglePostLike(postId, feedKey, btnEl) {
   if (!isLoggedIn()) { showToast(t('post.loginToComment')); switchTab('account'); return; }
 
   const post = findPostAnywhere(postId);
-  if (!post) {
-    console.warn('[like] post nenájdený:', postId);
-    return;
-  }
+  if (!post) return;
 
-  // Zámok proti rýchlemu dvojkliku
   if (post.__likePending) return;
   post.__likePending = true;
 
@@ -228,26 +211,20 @@ async function togglePostLike(postId, feedKey, btnEl) {
   const optimisticLiked = !wasLiked;
   const optimisticLikes = Math.max(0, (post.likes || 0) + (wasLiked ? -1 : 1));
 
-  // Optimistický update všade
   updatePostEverywhere(postId, (p) => {
     p.__liked = optimisticLiked;
     p.likes = optimisticLikes;
   });
-
-  // Okamžitý vizuálny feedback
   updateLikeButtonsDOM(postId, optimisticLiked, optimisticLikes);
 
   try {
     const data = await apiPost(`/api/feed/${postId}/like`, {});
-
-    // Server response je zdroj pravdy
     updatePostEverywhere(postId, (p) => {
       p.__liked = !!data.liked;
       p.likes = data.likes || 0;
     });
     updateLikeButtonsDOM(postId, !!data.liked, data.likes || 0);
   } catch (err) {
-    // Rollback
     updatePostEverywhere(postId, (p) => {
       p.__liked = wasLiked;
       p.likes = Math.max(0, (p.likes || 0) + (wasLiked ? 1 : -1));
@@ -259,20 +236,16 @@ async function togglePostLike(postId, feedKey, btnEl) {
   }
 }
 
-// Aktualizuj všetky lajk tlačidlá + počítadlá pre daný post na obrazovke
 function updateLikeButtonsDOM(postId, liked, likes) {
-  // Všetky tlačidlá (vo feede, v lightboxe, v profile)
   document.querySelectorAll(`[data-action="toggle-post-like"][data-id="${postId}"]`).forEach((btn) => {
     btn.classList.toggle('is-liked', !!liked);
     btn.innerHTML = icon('spark', { size: 22, filled: !!liked });
   });
 
-  // Všetky počítadlá (textové + lightbox stat)
   document.querySelectorAll(`[data-like-count="${postId}"]`).forEach((el) => {
     el.textContent = likes > 0 ? `${fmt(likes)} ${t('feed.likesMe')}` : t('feed.likesMe');
   });
 
-  // Lightbox stat (text)
   if (state.lightbox?.post?.id === postId) {
     const stat = document.querySelector('.lightbox-stat');
     if (stat) stat.textContent = `${fmt(likes)} ${t('post.like')}`;
@@ -285,7 +258,6 @@ async function toggleBookmark(postId, btnEl) {
     const data = await apiPost(`/api/feed/${postId}/bookmark`, {});
     updatePostEverywhere(postId, (p) => { p.__bookmarked = !!data.bookmarked; });
 
-    // Aktualizuj všetky bookmark tlačidlá na obrazovke
     document.querySelectorAll(`[data-action="toggle-bookmark"][data-id="${postId}"]`).forEach((b) => {
       b.classList.toggle('is-bookmarked', !!data.bookmarked);
       b.innerHTML = icon('bookmark', { size: 20, filled: !!data.bookmarked });
@@ -363,7 +335,6 @@ function deletePost(postId, feedKey) {
       try {
         await apiDelete(`/api/feed/post/${postId}`);
         if (state.socialFeeds[feedKey]) state.socialFeeds[feedKey].items = state.socialFeeds[feedKey].items.filter((p) => p.id !== postId);
-        // Zavri lightbox ak je otvorený pre tento post
         if (state.lightbox?.post?.id === postId) closeLightbox();
         closeModal();
         showToast(t('toasts.postDeleted'));
@@ -468,12 +439,14 @@ async function handleEditPostSubmit(form) {
   }
 }
 
-async function submitLightboxComment(postId, feedKey, text) {
+async function submitLightboxComment(postId, feedKey, text, parentId = null) {
   if (!text.trim()) return;
   if (!isLoggedIn()) { showToast(t('post.loginToComment')); return; }
 
   try {
-    await apiPost(`/api/feed/${postId}/comment`, { text: text.trim() });
+    const payload = { text: text.trim() };
+    if (parentId) payload.parent_id = parentId;
+    await apiPost(`/api/feed/${postId}/comment`, payload);
 
     let newComments = null;
     let newTotal = null;
@@ -500,7 +473,7 @@ async function submitLightboxComment(postId, feedKey, text) {
       });
     }
 
-    showToast(t('toasts.commentAdded'));
+    showToast(parentId ? t('post.replyAdded') : t('toasts.commentAdded'));
   } catch (err) {
     showToast(err.message);
   }
