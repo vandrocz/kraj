@@ -1,5 +1,5 @@
 // ============================================================
-// PODUJATIA (Events)
+// PODUJATIA
 // ============================================================
 
 async function loadEvents(loadMore = false) {
@@ -44,7 +44,6 @@ function onEventFilterChange(field, value) {
 function renderEventsPage() {
   const title = getFeedTitle('events');
   const canCreate = isLoggedIn() && (state.user.role === 'organization' || state.user.role === 'hotelier' || state.user.role === 'admin');
-
   return `
     <div class="page-scroll">
       ${renderHeader(title, `
@@ -94,8 +93,7 @@ function renderEventsList() {
   return `
     <div class="events-list">${e.items.map(renderEventCard).join('')}</div>
     ${e.loading_more ? `<p class="empty-state">${escapeHtml(t('common.loadingMore'))}</p>` : ''}
-    ${e.next_cursor ? `<div data-load-more style="height:1px"></div>` : ''}
-  `;
+    ${e.next_cursor ? `<div data-load-more style="height:1px"></div>` : ''}`;
 }
 
 function renderEventCard(ev) {
@@ -112,9 +110,7 @@ function renderEventCard(ev) {
         <span class="event-card-kind">${escapeHtml(kindLabel)}</span>
       </div>
       <div class="event-card-body">
-        <div class="event-card-date">
-          ${icon('calendar', { size: 14 })} ${formatEventDate(ev.start_at)}
-        </div>
+        <div class="event-card-date">${icon('calendar', { size: 14 })} ${formatEventDate(ev.start_at)}</div>
         <h3 class="event-card-title">${escapeHtml(ev.title)}</h3>
         ${ev.location_name || ev.city ? `<p class="event-card-loc">${icon('location', { size: 13 })} ${escapeHtml(ev.location_name || '')}${ev.city ? `${ev.location_name ? ' · ' : ''}${escapeHtml(ev.city)}` : ''}</p>` : ''}
         <div class="event-card-business" data-action="open-profile" data-kind="${ev.business_kind}" data-id="${ev.business_id}">
@@ -135,10 +131,7 @@ async function openEventDetail(id) {
     const data = await apiGet(`/api/events/${id}`);
     state._eventDetail = data.event;
     renderApp();
-  } catch (err) {
-    showToast(err.message);
-    closeOverlay();
-  }
+  } catch (err) { showToast(err.message); closeOverlay(); }
 }
 
 function renderEventDetailOverlay() {
@@ -163,11 +156,7 @@ function renderEventDetailOverlay() {
     ? `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`
     : null;
 
-  const kindLabel = {
-    organizations: t('events.typeOrg'),
-    accommodation: t('events.typeAcc'),
-    restaurants: t('events.typeGastro'),
-  }[ev.business_kind] || t('events.typeEvent');
+  const kindLabel = { organizations: t('events.typeOrg'), accommodation: t('events.typeAcc'), restaurants: t('events.typeGastro') }[ev.business_kind] || t('events.typeEvent');
 
   return `
     <div class="page-scroll event-detail-page">
@@ -178,8 +167,7 @@ function renderEventDetailOverlay() {
           <button class="event-detail-cover-image" data-action="open-event-gallery" data-event-id="${ev.id}" data-index="0">
             <img src="${escapeAttr(cover)}" alt="${escapeAttr(ev.title)}" />
             ${gallery.length > 1 ? `<span class="event-detail-gallery-badge">${icon('grid', { size: 12 })} ${gallery.length}</span>` : ''}
-          </button>
-        ` : ''}
+          </button>` : ''}
         <div class="event-detail-cover-content">
           <span class="event-detail-kind">${escapeHtml(kindLabel)}</span>
           <h1 class="event-detail-title">${escapeHtml(ev.title)}</h1>
@@ -188,16 +176,10 @@ function renderEventDetailOverlay() {
 
       ${gallery.length > 1 ? `
         <div class="event-detail-thumbs">
-          ${gallery.map((url, idx) => `
-            <button class="event-detail-thumb" data-action="open-event-gallery" data-event-id="${ev.id}" data-index="${idx}">
-              <img src="${escapeAttr(url)}" alt="" />
-            </button>
-          `).join('')}
-        </div>
-      ` : ''}
+          ${gallery.map((url, idx) => `<button class="event-detail-thumb" data-action="open-event-gallery" data-event-id="${ev.id}" data-index="${idx}"><img src="${escapeAttr(url)}" alt="" /></button>`).join('')}
+        </div>` : ''}
 
       <div class="event-detail-body">
-
         <div class="event-detail-date-card">
           ${dateBlock ? `
             <div class="event-detail-date-big">
@@ -208,27 +190,25 @@ function renderEventDetailOverlay() {
             <div class="event-detail-date-info">
               <p class="event-detail-weekday">${dateBlock.weekday}</p>
               <p class="event-detail-time">${dateBlock.time}${endTime ? ` – ${endTime}` : ''}</p>
-            </div>
-          ` : `<p style="color:var(--c-text-muted)">${escapeHtml(t('events.dateNotSpecified'))}</p>`}
+            </div>` : `<p style="color:var(--c-text-muted)">${escapeHtml(t('events.dateNotSpecified'))}</p>`}
         </div>
 
-        ${ev.location_name || ev.city ? `
+        ${ev.location_name || ev.city || ev.address ? `
           <div class="event-detail-info-row">
             <span class="event-detail-info-icon">${icon('location', { size: 20 })}</span>
             <div class="event-detail-info-text">
               <span class="event-detail-info-label">${escapeHtml(t('events.eventLocation'))}</span>
-              <span class="event-detail-info-value">${escapeHtml(ev.location_name || '')}</span>
+              <span class="event-detail-info-value">${escapeHtml(ev.location_name || ev.address || '')}</span>
               ${ev.city ? `<span class="event-detail-info-sub">${escapeHtml(ev.city)}${ev.region ? ', ' + escapeHtml(ev.region) : ''}</span>` : ''}
             </div>
-          </div>
-        ` : ''}
+            ${ev.geo_lat && ev.geo_lng ? `<a class="event-detail-info-map-btn" href="https://www.openstreetmap.org/?mlat=${ev.geo_lat}&mlon=${ev.geo_lng}#map=16/${ev.geo_lat}/${ev.geo_lng}" target="_blank" rel="noopener" aria-label="${escapeAttr(t('geo.pickOnMap'))}">${icon('mapPin', { size: 18 })}</a>` : ''}
+          </div>` : ''}
 
         ${ev.content_html || ev.description ? `
           <div class="event-detail-description">
             <h3 class="event-detail-section-title">${escapeHtml(t('events.aboutEvent'))}</h3>
             <div class="rich-text">${linkifyHashtags(htmlToPlain(ev.content_html || ev.description || ''))}</div>
-          </div>
-        ` : ''}
+          </div>` : ''}
 
         <div class="event-detail-organizer">
           <h3 class="event-detail-section-title">${escapeHtml(t('events.organizer'))}</h3>
@@ -250,42 +230,34 @@ function renderEventDetailOverlay() {
             <button class="event-detail-action-btn" data-action="share-event" data-id="${ev.id}">
               ${icon('share', { size: 18 })} ${escapeHtml(t('events.share'))}
             </button>
-          </div>
-        ` : ''}
-
+          </div>` : ''}
       </div>
     </div>`;
 }
 
 // ============================================================
-// KALENDÁR — modal s voľbou
+// KALENDÁR — modal s výberom
 // ============================================================
 function openCalendarChoice(eventId) {
   const ev = state._eventDetail;
   if (!ev || ev.id !== eventId) return;
-
   openModal({
     title: t('events.addToCalendar'),
     body: `
       <div class="calendar-choice">
         <button type="button" class="calendar-choice-btn" data-action="calendar-google">
-          <span class="calendar-choice-icon">📅</span>
-          <span class="calendar-choice-label">Google Calendar</span>
+          <span class="calendar-choice-icon">📅</span><span class="calendar-choice-label">Google Calendar</span>
         </button>
         <button type="button" class="calendar-choice-btn" data-action="calendar-ics">
-          <span class="calendar-choice-icon">📥</span>
-          <span class="calendar-choice-label">Apple / ICS soubor</span>
+          <span class="calendar-choice-icon">📥</span><span class="calendar-choice-label">Apple / ICS soubor</span>
         </button>
         <button type="button" class="calendar-choice-btn" data-action="calendar-outlook">
-          <span class="calendar-choice-icon">📧</span>
-          <span class="calendar-choice-label">Outlook / Outlook.com</span>
+          <span class="calendar-choice-icon">📧</span><span class="calendar-choice-label">Outlook / Outlook.com</span>
         </button>
         <button type="button" class="calendar-choice-btn" data-action="calendar-copy-link">
-          <span class="calendar-choice-icon">🔗</span>
-          <span class="calendar-choice-label">${escapeHtml(t('events.copyLink'))}</span>
+          <span class="calendar-choice-icon">🔗</span><span class="calendar-choice-label">${escapeHtml(t('events.copyLink'))}</span>
         </button>
-      </div>
-    `,
+      </div>`,
     submitLabel: t('common.close'),
     onSubmit: () => closeModal(),
   });
@@ -299,32 +271,29 @@ function formatCalDate(iso) {
 function addEventToGoogleCalendar(eventId) {
   const ev = state._eventDetail;
   if (!ev || ev.id !== eventId) return;
-
   const start = formatCalDate(ev.start_at);
-  const end = ev.end_at ? formatCalDate(ev.end_at) : formatCalDate(new Date(new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').getTime() + 2 * 60 * 60 * 1000).toISOString());
+  const end = ev.end_at
+    ? formatCalDate(ev.end_at)
+    : formatCalDate(new Date(new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').getTime() + 2 * 60 * 60 * 1000).toISOString());
   const title = encodeURIComponent(ev.title || '');
   const details = encodeURIComponent((ev.description || '').slice(0, 800));
-  const location = encodeURIComponent([ev.location_name, ev.city, ev.region].filter(Boolean).join(', '));
+  const location = encodeURIComponent([ev.location_name, ev.address, ev.city, ev.region].filter(Boolean).join(', '));
 
   const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${location}&sf=true&output=xml`;
-
   window.open(url, '_blank', 'noopener');
   showToast(t('events.savedToCalendar'));
-  closeModal();
 }
 
 function downloadEventIcs(eventId) {
   const ev = state._eventDetail;
   if (!ev || ev.id !== eventId) return;
-
   const start = formatCalDate(ev.start_at);
-  const end = ev.end_at ? formatCalDate(ev.end_at) : formatCalDate(new Date(new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').getTime() + 2 * 60 * 60 * 1000).toISOString());
+  const end = ev.end_at
+    ? formatCalDate(ev.end_at)
+    : formatCalDate(new Date(new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').getTime() + 2 * 60 * 60 * 1000).toISOString());
 
   const ics = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//VANDRO//Event//CS',
-    'CALSCALE:GREGORIAN',
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//VANDRO//Event//CS', 'CALSCALE:GREGORIAN',
     'BEGIN:VEVENT',
     `UID:${ev.id}@vandro.cz`,
     `DTSTAMP:${formatCalDate(new Date().toISOString())}`,
@@ -332,10 +301,9 @@ function downloadEventIcs(eventId) {
     `DTEND:${end}`,
     `SUMMARY:${(ev.title || '').replace(/\n/g, ' ')}`,
     `DESCRIPTION:${(ev.description || '').replace(/\n/g, ' ')}`,
-    `LOCATION:${([ev.location_name, ev.city, ev.region].filter(Boolean).join(', ')).replace(/\n/g, ' ')}`,
+    `LOCATION:${([ev.location_name, ev.address, ev.city, ev.region].filter(Boolean).join(', ')).replace(/\n/g, ' ')}`,
     `URL:https://naskraj.vandro.cz/?event=${encodeURIComponent(ev.id)}`,
-    'END:VEVENT',
-    'END:VCALENDAR',
+    'END:VEVENT', 'END:VCALENDAR',
   ].join('\r\n');
 
   const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
@@ -347,44 +315,32 @@ function downloadEventIcs(eventId) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-
   showToast(t('events.savedToCalendar'));
-  closeModal();
 }
 
 function addEventToOutlook(eventId) {
   const ev = state._eventDetail;
   if (!ev || ev.id !== eventId) return;
-
   const startISO = new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').toISOString();
   const endISO = ev.end_at
     ? new Date((String(ev.end_at).replace(' ', 'T')) + 'Z').toISOString()
     : new Date(new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').getTime() + 2 * 60 * 60 * 1000).toISOString();
 
   const url = `https://outlook.live.com/calendar/0/deeplink/compose?` + new URLSearchParams({
-    path: '/calendar/action/compose',
-    rru: 'addevent',
-    subject: ev.title || '',
-    body: (ev.description || '').slice(0, 800),
-    startdt: startISO,
-    enddt: endISO,
-    location: [ev.location_name, ev.city, ev.region].filter(Boolean).join(', '),
+    path: '/calendar/action/compose', rru: 'addevent',
+    subject: ev.title || '', body: (ev.description || '').slice(0, 800),
+    startdt: startISO, enddt: endISO,
+    location: [ev.location_name, ev.address, ev.city, ev.region].filter(Boolean).join(', '),
   }).toString();
 
   window.open(url, '_blank', 'noopener');
   showToast(t('events.savedToCalendar'));
-  closeModal();
 }
 
 async function copyEventLink(eventId) {
   const url = `${location.origin}${location.pathname}?event=${encodeURIComponent(eventId)}`;
-  try {
-    await navigator.clipboard.writeText(url);
-    showToast(t('toasts.copied'));
-    closeModal();
-  } catch {
-    showToast(t('toasts.shareFailed'));
-  }
+  try { await navigator.clipboard.writeText(url); showToast(t('toasts.copied')); closeModal(); }
+  catch { showToast(t('toasts.shareFailed')); }
 }
 
 function openEventGallery(eventId, startIndex = 0) {
@@ -393,13 +349,8 @@ function openEventGallery(eventId, startIndex = 0) {
   const gallery = Array.isArray(ev.gallery) && ev.gallery.length > 0 ? ev.gallery : (ev.cover_image_url ? [ev.cover_image_url] : []);
   if (gallery.length === 0) return;
   const fakePost = {
-    id: `event-${ev.id}`,
-    text: ev.title,
-    html: `<p>${escapeHtml(ev.title)}</p>`,
-    media: gallery,
-    created_at: ev.created_at,
-    likes: 0,
-    comment_count: 0,
+    id: `event-${ev.id}`, text: ev.title, html: `<p>${escapeHtml(ev.title)}</p>`, media: gallery,
+    created_at: ev.created_at, likes: 0, comment_count: 0,
     business: { id: ev.business_id, name: ev.business_name, logo_url: ev.business_logo },
     __feedKey: ev.business_kind === 'organizations' ? 'organization' : ev.business_kind === 'accommodation' ? 'accommodation' : 'gastro',
     __isEvent: true,
@@ -412,35 +363,34 @@ async function shareEvent(id) {
   if (!ev) return;
   const url = `${location.origin}${location.pathname}?event=${encodeURIComponent(id)}`;
   const text = `${ev.title} · ${formatEventDate(ev.start_at)}`;
-  if (navigator.share) {
-    try { await navigator.share({ title: ev.title, text, url }); return; } catch { return; }
-  }
+  if (navigator.share) { try { await navigator.share({ title: ev.title, text, url }); return; } catch { return; } }
   try { await navigator.clipboard.writeText(url); showToast(t('toasts.copied')); }
   catch { showToast(t('toasts.shareFailed')); }
 }
 
 function openCreateEvent() {
   state.overlayStack.push(state.overlay);
-  state.overlay = { type: 'create-event', file: null, previewUrl: null, uploading: false, businessId: null };
+  state.overlay = { type: 'create-event', uploading: false, businessId: null, eventFiles: [] };
   pushHistoryState('overlay');
   renderApp();
 }
 
 function renderCreateEventOverlay() {
   const businesses = state.businesses || [];
-  if (businesses.length === 0) {
-    return `<div class="page-scroll">${renderBackHeader(t('events.create'))}<p class="empty-state">${escapeHtml(t('profile.noBusiness'))}</p></div>`;
-  }
+  if (businesses.length === 0) return `<div class="page-scroll">${renderBackHeader(t('events.create'))}<p class="empty-state">${escapeHtml(t('profile.noBusiness'))}</p></div>`;
   if (!state.overlay.businessId) state.overlay.businessId = businesses[0].id;
   const selected = businesses.find((b) => b.id === state.overlay.businessId) || businesses[0];
   const KIND_MAP = { organization: 'organizations', accommodation: 'accommodation', gastro: 'restaurants' };
   const eventFiles = state.overlay.eventFiles || [];
 
+  const bizAddr = [selected.address, selected.city, selected.district, selected.region].filter(Boolean).join(', ');
+
   return `
     <div class="page-scroll">
       ${renderBackHeader(t('events.create'))}
       <div class="profile-section">
-        <form data-action="submit-create-event" data-business-id="${selected.id}" data-business-kind="${KIND_MAP[selected.kind]}">
+        <form data-action="submit-create-event" data-business-id="${selected.id}" data-business-kind="${KIND_MAP[selected.kind]}"
+              data-geo-lat="${escapeAttr(selected.geo_lat ?? '')}" data-geo-lng="${escapeAttr(selected.geo_lng ?? '')}">
           <div class="form-field">
             <label class="form-label">${escapeHtml(t('profile.businessPicker'))}</label>
             <select class="form-select" data-action="event-business-select">
@@ -451,14 +401,32 @@ function renderCreateEventOverlay() {
           <div class="form-field"><label class="form-label">${escapeHtml(t('events.title2'))}</label><input class="form-input" name="title" required maxlength="200" /></div>
           <div class="form-field"><label class="form-label">${escapeHtml(t('events.startDate'))}</label><input class="form-input" type="datetime-local" name="start_at" required /></div>
           <div class="form-field"><label class="form-label">${escapeHtml(t('events.endDate'))}</label><input class="form-input" type="datetime-local" name="end_at" /></div>
-          <div class="form-field"><label class="form-label">${escapeHtml(t('events.locationName'))}</label><input class="form-input" name="location_name" placeholder="${escapeAttr(t('events.locationPh'))}" /></div>
-          <div class="form-field"><label class="form-label">${escapeHtml(t('events.region'))}</label>
-            <select class="form-select" name="region">
-              <option value="">${escapeHtml(t('auth.registerSelectRegion'))}</option>
-              ${Object.keys(REGIONS).map((r) => `<option value="${r}">${r}</option>`).join('')}
-            </select>
+
+          <div class="form-section">
+            <h3 class="form-section-title">${escapeHtml(t('events.addressLabel'))}</h3>
+            <div class="form-field">
+              <div class="post-place-input" style="position:relative">
+                <input class="form-input" name="address" data-event-address-input value="${escapeAttr(bizAddr)}" placeholder="${escapeAttr(t('events.addressPlaceholder'))}" autocomplete="off" />
+              </div>
+            </div>
+            <div class="post-place-actions" style="margin-bottom:10px">
+              <button type="button" class="profile-action-btn" data-action="event-map-picker">
+                ${icon('mapPin', { size: 15 })} ${escapeHtml(t('events.pickOnMap'))}
+              </button>
+              <button type="button" class="profile-action-btn" data-action="event-address-from-business" data-business-id="${escapeAttr(selected.id)}">
+                ${icon('landmark', { size: 15 })} ${escapeHtml(t('events.addressFromBusiness'))}
+              </button>
+            </div>
+            <p class="form-hint" data-event-geo-label>${selected.geo_lat && selected.geo_lng ? `📍 ${Number(selected.geo_lat).toFixed(4)}, ${Number(selected.geo_lng).toFixed(4)}` : ''}</p>
+            <div class="form-field"><label class="form-label">${escapeHtml(t('events.locationName'))}</label><input class="form-input" name="location_name" placeholder="${escapeAttr(t('events.locationPh'))}" /></div>
+            <div class="form-field"><label class="form-label">${escapeHtml(t('events.region'))}</label>
+              <select class="form-select" name="region">
+                <option value="">${escapeHtml(t('auth.registerSelectRegion'))}</option>
+                ${Object.keys(REGIONS).map((r) => `<option value="${r}" ${selected.region === r ? 'selected' : ''}>${r}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-field"><label class="form-label">${escapeHtml(t('events.city'))}</label><input class="form-input" name="city" value="${escapeAttr(selected.city || '')}" /></div>
           </div>
-          <div class="form-field"><label class="form-label">${escapeHtml(t('events.city'))}</label><input class="form-input" name="city" /></div>
 
           <div class="file-drop ${eventFiles.length > 0 ? 'has-file' : ''}" data-action="trigger-event-file">
             <input type="file" accept="image/*" multiple id="event-file-input" data-action="event-files-selected" style="display:none" />
@@ -500,7 +468,6 @@ function removeEventFile(name) {
 async function handleCreateEventSubmit(form) {
   state.overlay.uploading = true;
   renderApp();
-
   try {
     const fd = new FormData(form);
     fd.set('business_id', form.dataset.businessId);
@@ -511,6 +478,9 @@ async function handleCreateEventSubmit(form) {
     const endEl = form.querySelector('input[name="end_at"]');
     if (startEl?.value) fd.set('start_at', startEl.value.replace('T', ' ') + ':00');
     if (endEl?.value) fd.set('end_at', endEl.value.replace('T', ' ') + ':00');
+
+    if (form.dataset.geoLat) fd.set('geo_lat', form.dataset.geoLat);
+    if (form.dataset.geoLng) fd.set('geo_lng', form.dataset.geoLng);
 
     await apiPost('/api/events', fd);
     showToast(t('events.published'));
@@ -542,7 +512,5 @@ async function deleteEvent(id) {
     showToast(t('events.deleted'));
     state.events.items = state.events.items.filter((e) => e.id !== id);
     closeOverlay();
-  } catch (err) {
-    showToast(err.message);
-  }
+  } catch (err) { showToast(err.message); }
 }
