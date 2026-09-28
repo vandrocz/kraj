@@ -68,19 +68,50 @@ async function loadMetaFromApi() {
 }
 
 // ============================================================
-// OBCE — načítanie z API (cache v KV na 7 dní)
+// OBCE — s opravou: retry, fallback, cache aj v localStorage
 // ============================================================
 const _citiesCache = {};
+
 async function loadCitiesForDistrict(district) {
   if (!district) return [];
-  if (_citiesCache[district]) return _citiesCache[district];
+  if (_citiesCache[district] && _citiesCache[district].length > 0) return _citiesCache[district];
+
+  // Skús najprv localStorage (rýchle, prežíva refresh)
   try {
-    const data = await apiGet(`/api/geo/cities?district=${encodeURIComponent(district)}`);
-    _citiesCache[district] = data.cities || [];
-    return _citiesCache[district];
-  } catch (err) {
-    console.warn('Obce sa nepodarilo načítať:', err.message);
-    _citiesCache[district] = [];
-    return [];
+    const lsKey = `cities_v2_${district}`;
+    const cached = localStorage.getItem(lsKey);
+    if (cached) {
+      const arr = JSON.parse(cached);
+      if (Array.isArray(arr) && arr.length > 0) {
+        _citiesCache[district] = arr;
+        return arr;
+      }
+    }
+  } catch {}
+
+  // Skús API (3 pokusy s retry)
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const data = await apiGet(`/api/geo/cities?district=${encodeURIComponent(district)}`);
+      if (data && Array.isArray(data.cities) && data.cities.length > 0) {
+        _citiesCache[district] = data.cities;
+        try { localStorage.setItem(`cities_v2_${district}`, JSON.stringify(data.cities)); } catch {}
+        return data.cities;
+      }
+      // Ak API vráti prázdne pole, nepokúšaj sa znova
+      break;
+    } catch (err) {
+      lastErr = err;
+      // Počkať 400ms * pokus
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
   }
+
+  if (lastErr) console.warn('Obce sa nepodarilo načítať:', lastErr.message);
+
+  // Fallback — vráť aspoň názov okresu ako obec
+  const fb = [district];
+  _citiesCache[district] = fb;
+  return fb;
 }
