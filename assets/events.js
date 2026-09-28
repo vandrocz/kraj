@@ -28,40 +28,27 @@ document.addEventListener('click', (e) => {
       renderApp();
       setTimeout(() => {
         document.getElementById('inline-post-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 50);
+        // Pripoj place-search na nové pole
+        if (typeof attachPostPlacePicker === 'function') attachPostPlacePicker();
+      }, 60);
       break;
     }
 
     case 'open-notification': openNotification(el.dataset.notifId); break;
     case 'open-add-business': openAddBusinessModal(); break;
-    case 'open-delete-business':
-      openDeleteBusinessModal(el.dataset.kind, el.dataset.id, el.dataset.name);
-      break;
+    case 'open-delete-business': openDeleteBusinessModal(el.dataset.kind, el.dataset.id, el.dataset.name); break;
 
-    // ====================================================
     // STORIES
-    // ====================================================
-    case 'open-create-story': {
-      const bizId = el.dataset.businessId || null;
-      const bizName = el.dataset.businessName || null;
-      openCreateStory(bizId, bizName);
-      break;
-    }
+    case 'open-create-story': openCreateStory(el.dataset.businessId || null, el.dataset.businessName || null); break;
     case 'story-type':
       state.overlay.storyType = el.dataset.type;
       state.overlay.files = [];
       state.overlay.previews = [];
       renderApp();
       break;
-    case 'remove-story-file':
-      removeStoryFile(parseInt(el.dataset.index, 10));
-      break;
-    case 'story-like':
-      storyLike(el.dataset.id);
-      break;
-    case 'open-story-viewer':
-      openStoryViewer(el.dataset.groupKey);
-      break;
+    case 'remove-story-file': removeStoryFile(parseInt(el.dataset.index, 10)); break;
+    case 'story-like': storyLike(el.dataset.id); break;
+    case 'open-story-viewer': openStoryViewer(el.dataset.groupKey); break;
     case 'close-story-viewer':
       if (typeof stopStoryAutoAdvance === 'function') stopStoryAutoAdvance();
       closeStoryViewer();
@@ -74,16 +61,10 @@ document.addEventListener('click', (e) => {
       if (typeof stopStoryAutoAdvance === 'function') stopStoryAutoAdvance();
       storyPrev();
       break;
-    case 'open-story-author':
-      openStoryAuthor(el.dataset.authorId, el.dataset.authorKind);
-      break;
-    case 'trigger-story-file':
-      document.getElementById('story-file-input')?.click();
-      break;
+    case 'open-story-author': openStoryAuthor(el.dataset.authorId, el.dataset.authorKind); break;
+    case 'trigger-story-file': document.getElementById('story-file-input')?.click(); break;
 
-    // ====================================================
     // LIGHTBOX
-    // ====================================================
     case 'open-lightbox': {
       e.preventDefault();
       const postId = el.dataset.postId;
@@ -120,19 +101,13 @@ document.addEventListener('click', (e) => {
     case 'lightbox-prev': lightboxPrev(); break;
     case 'lightbox-next': lightboxNext(); break;
     case 'toggle-lightbox-expand':
-      if (typeof cycleLightboxPanelState === 'function') cycleLightboxPanelState();
-      break;
     case 'lightbox-cycle-panel':
       if (typeof cycleLightboxPanelState === 'function') cycleLightboxPanelState();
       break;
 
-    // REPLY v lightboxe
     case 'toggle-lightbox-reply': {
-      if (state._lightboxReplyTo === el.dataset.id) {
-        state._lightboxReplyTo = null;
-      } else {
-        state._lightboxReplyTo = el.dataset.id;
-      }
+      if (state._lightboxReplyTo === el.dataset.id) state._lightboxReplyTo = null;
+      else state._lightboxReplyTo = el.dataset.id;
       updateLightboxDOM();
       setTimeout(() => {
         const input = document.querySelector(`[data-lightbox-reply-input][data-parent-id="${el.dataset.id}"]`);
@@ -140,11 +115,10 @@ document.addEventListener('click', (e) => {
       }, 50);
       break;
     }
-    case 'cancel-lightbox-reply': {
+    case 'cancel-lightbox-reply':
       state._lightboxReplyTo = null;
       updateLightboxDOM();
       break;
-    }
     case 'send-lightbox-reply': {
       const parentId = el.dataset.parentId;
       const postId = el.dataset.postId;
@@ -158,17 +132,11 @@ document.addEventListener('click', (e) => {
       submitLightboxComment(postId, feedKey, text, parentId);
       break;
     }
-    case 'delete-lightbox-comment': {
-      const id = el.dataset.id;
-      const postId = el.dataset.postId;
-      const feedKey = el.dataset.feed;
-      deleteComment(id, feedKey, postId);
+    case 'delete-lightbox-comment':
+      deleteComment(el.dataset.id, el.dataset.feed, el.dataset.postId);
       break;
-    }
 
-    // ====================================================
     // POSTY
-    // ====================================================
     case 'toggle-post-like': togglePostLike(el.dataset.id, el.dataset.feed, el); break;
     case 'toggle-bookmark': toggleBookmark(el.dataset.id, el); break;
     case 'share-post': sharePost(el.dataset.id, el.dataset.text); break;
@@ -177,22 +145,29 @@ document.addEventListener('click', (e) => {
     case 'delete-post': deletePost(el.dataset.id, el.dataset.feed); break;
     case 'delete-comment': deleteComment(el.dataset.id, el.dataset.feed, el.dataset.postId); break;
 
-    // ====================================================
-    // GALÉRIA "O NÁS"
-    // ====================================================
-    case 'trigger-gallery-file':
-      document.getElementById('gallery-file-input')?.click();
+    // GALÉRIA
+    case 'trigger-gallery-file': document.getElementById('gallery-file-input')?.click(); break;
+    case 'open-gallery-image': openLightbox([el.dataset.url], 0, el.dataset.caption || ''); break;
+    case 'delete-gallery-item': deleteGalleryItem(el.dataset.galleryId, el.dataset.kind, el.dataset.id); break;
+    case 'edit-gallery-caption': {
+      const galleryId = el.dataset.galleryId;
+      const current = el.dataset.caption || '';
+      const kind = el.dataset.kind;
+      const bizId = el.dataset.id;
+      const next = prompt(t('profile.aboutGalleryEditCaptionPrompt') || 'Popisek:', current);
+      if (next === null) break;
+      (async () => {
+        try {
+          await apiPatch(`/api/profile/me/gallery/${galleryId}`, { caption: next });
+          delete state.profiles[`${kind}:${bizId}`];
+          await loadProfile(kind, bizId);
+          showToast(t('toasts.saved'));
+        } catch (err) { showToast(err.message); }
+      })();
       break;
-    case 'open-gallery-image':
-      openLightbox([el.dataset.url], 0, el.dataset.caption || '');
-      break;
-    case 'delete-gallery-item':
-      deleteGalleryItem(el.dataset.galleryId, el.dataset.kind, el.dataset.id);
-      break;
+    }
 
-    // ====================================================
     // PROFIL
-    // ====================================================
     case 'open-profile': if (el.dataset.id) openProfile(el.dataset.kind, el.dataset.id); break;
     case 'close-overlay': closeOverlay(); break;
     case 'clear-overlay': clearOverlay(); break;
@@ -243,34 +218,19 @@ document.addEventListener('click', (e) => {
       state.overlay = { type: 'profile', kind: el.dataset.kind, id: el.dataset.id, edit: true, editKind: el.dataset.kind, editId: el.dataset.id };
       pushHistoryState('overlay');
       renderApp();
+      setTimeout(() => {
+        if (typeof attachEditProfilePlacePicker === 'function') attachEditProfilePlacePicker();
+      }, 60);
       break;
-    case 'upload-avatar':
-      uploadProfileImage(el.dataset.target, el.dataset.targetId, el.dataset.field);
-      break;
+    case 'upload-avatar': uploadProfileImage(el.dataset.target, el.dataset.targetId, el.dataset.field); break;
 
-    // ====================================================
     // AUTH
-    // ====================================================
-    case 'set-auth-view':
-      state.authView = el.dataset.view;
-      accountFormState.formError = '';
-      renderApp();
-      break;
-    case 'set-register-role':
-      accountFormState.registerRole = el.dataset.role;
-      renderApp();
-      break;
-    case 'set-business-kind':
-      accountFormState.registerBusinessKind = el.dataset.kind;
-      renderApp();
-      break;
-    case 'logout':
-      handleLogout();
-      break;
+    case 'set-auth-view': state.authView = el.dataset.view; accountFormState.formError = ''; renderApp(); break;
+    case 'set-register-role': accountFormState.registerRole = el.dataset.role; renderApp(); break;
+    case 'set-business-kind': accountFormState.registerBusinessKind = el.dataset.kind; renderApp(); break;
+    case 'logout': handleLogout(); break;
 
-    // ====================================================
-    // BUSINESS DASHBOARD
-    // ====================================================
+    // BUSINESS
     case 'select-business': selectBusiness(el.dataset.id); break;
     case 'trigger-file-input': document.getElementById('post-file-input')?.click(); break;
     case 'remove-post-file': removePostFile(el.dataset.name); break;
@@ -289,34 +249,32 @@ document.addEventListener('click', (e) => {
       })();
       break;
 
-    // ====================================================
     // RICH EDITOR
-    // ====================================================
     case 'rich-cmd': richCmd(el.dataset.cmd); break;
     case 'rich-link': richLink(); break;
     case 'rich-emoji': richEmoji(); break;
     case 'close-emoji': closeEmojiPicker(); break;
     case 'insert-emoji': insertEmoji(el.dataset.emoji); break;
     case 'insert-mention': insertMention(el.dataset.name); break;
+
+    // GEO / POLOHA
     case 'attach-geo':
       (async () => {
         const loc = await attachLocationToPost();
-        if (loc) {
-          const f = document.querySelector('[data-action="submit-business-post"]');
-          if (f) {
-            f.dataset.geoLat = loc.lat;
-            f.dataset.geoLng = loc.lng;
-            f.dataset.geoPlace = loc.place;
-          }
-          const btn = document.querySelector('[data-geo-label]');
-          if (btn) btn.textContent = `📍 ${loc.place}`;
-        }
+        if (loc) applyPostLocation(loc.lat, loc.lng, loc.place);
       })();
       break;
+    case 'open-post-map':
+      (async () => {
+        const result = await openMapPicker({ title: t('geo.pickOnMap') });
+        if (result) applyPostLocation(result.lat, result.lng, result.place);
+      })();
+      break;
+    case 'clear-post-location':
+      clearPostLocation();
+      break;
 
-    // ====================================================
     // EVENTY
-    // ====================================================
     case 'open-event': openEventDetail(el.dataset.id); break;
     case 'open-event-create': openCreateEvent(); break;
     case 'delete-event': deleteEvent(el.dataset.id); break;
@@ -329,65 +287,62 @@ document.addEventListener('click', (e) => {
     case 'open-event-gallery': openEventGallery(el.dataset.eventId, parseInt(el.dataset.index || '0', 10)); break;
     case 'trigger-event-file': document.getElementById('event-file-input')?.click(); break;
     case 'remove-event-file': removeEventFile(el.dataset.name); break;
+    case 'event-address-from-business': applyBusinessAddressToEvent(el.dataset.businessId); break;
+    case 'event-map-picker':
+      (async () => {
+        const result = await openMapPicker({ title: t('geo.pickOnMap') });
+        if (!result) break;
+        const form = document.querySelector('[data-action="submit-create-event"]');
+        if (!form) break;
+        form.dataset.geoLat = String(result.lat);
+        form.dataset.geoLng = String(result.lng);
+        form.dataset.geoPlace = result.place || '';
+        const label = form.querySelector('[data-event-geo-label]');
+        if (label) label.textContent = `📍 ${result.place || result.lat.toFixed(4) + ', ' + result.lng.toFixed(4)}`;
+        const addrInput = form.querySelector('input[name="address"]');
+        if (addrInput) addrInput.value = result.place || addrInput.value;
+      })();
+      break;
 
-    // ====================================================
-    // PROFIL TABS & STATS
-    // ====================================================
+    // STATS
     case 'biz-profile-tab': switchBizProfileTab(el.dataset.tab); break;
     case 'open-profile-stats': openProfileStats(el.dataset.kind, el.dataset.id); break;
     case 'stats-period':
-      if (state._profileStatsView) {
-        state._profileStatsView.period = el.dataset.period;
-        renderApp();
-      }
+      if (state._profileStatsView) { state._profileStatsView.period = el.dataset.period; renderApp(); }
       break;
 
-    // ====================================================
     // NEARBY
-    // ====================================================
     case 'open-nearby': openNearby(); break;
     case 'nearby-refresh': loadNearby(); break;
 
-    // ====================================================
     // WISHLIST
-    // ====================================================
     case 'open-wishlist': openWishlist(); break;
     case 'toggle-wishlist': toggleWishlist(el.dataset.kind, el.dataset.id, el); break;
 
-    // ====================================================
-    // BADGES & CHECKINS
-    // ====================================================
+    // BADGES / CHECKINS
     case 'open-badges': openBadges(); break;
     case 'open-user-checkins': openUserCheckins(el.dataset.id); break;
     case 'open-business-checkins': openBusinessCheckins(el.dataset.kind, el.dataset.id); break;
     case 'open-create-checkin': openCheckinCreate(el.dataset.kind, el.dataset.id, el.dataset.name); break;
 
-    // ====================================================
     // REVIEWS
-    // ====================================================
     case 'open-create-review': openCreateReview(el.dataset.kind, el.dataset.id); break;
     case 'set-review-rating': setReviewRating(parseInt(el.dataset.value, 10)); break;
 
-    // ====================================================
     // ONBOARDING
-    // ====================================================
     case 'onboarding-next': onboardingNext(); break;
     case 'onboarding-skip': onboardingSkip(); break;
     case 'onboarding-toggle-biz': onboardingToggleBiz(el.dataset.kind, el.dataset.id, el.dataset.name); break;
     case 'onboarding-avatar-pick': onboardingAvatarPick(); break;
     case 'onboarding-finish': finishOnboarding(false); break;
 
-    // ====================================================
     // VERIFICATION
-    // ====================================================
     case 'open-verification-request': openVerificationRequest(el.dataset.kind, el.dataset.id, el.dataset.name); break;
     case 'trigger-verif-doc': document.getElementById('verif-doc-input')?.click(); break;
     case 'approve-verification': approveVerification(el.dataset.id); break;
     case 'reject-verification': rejectVerification(el.dataset.id); break;
 
-    // ====================================================
     // ADMIN
-    // ====================================================
     case 'admin-tab':
       state._adminTab = el.dataset.tab;
       if (el.dataset.tab === 'users' && state.adminUsers === null) loadAdminUsers();
@@ -399,20 +354,12 @@ document.addEventListener('click', (e) => {
     case 'admin-user-detail': openUserDetail(el.dataset.id); break;
     case 'admin-force-verify-email':
       (async () => {
-        try {
-          await apiPost(`/api/admin/users/${el.dataset.id}/force-verify-email`, {});
-          showToast(t('admin.forceVerify'));
-        } catch (err) { showToast(err.message); }
+        try { await apiPost(`/api/admin/users/${el.dataset.id}/force-verify-email`, {}); showToast(t('admin.forceVerify')); } catch (err) { showToast(err.message); }
       })();
       break;
     case 'resolve-user-report':
       (async () => {
-        try {
-          await apiPost(`/api/admin/user-reports/${el.dataset.id}/resolve`, {});
-          showToast(t('admin.resolve'));
-          state.adminUserReports = null;
-          renderApp();
-        } catch (err) { showToast(err.message); }
+        try { await apiPost(`/api/admin/user-reports/${el.dataset.id}/resolve`, {}); showToast(t('admin.resolve')); state.adminUserReports = null; renderApp(); } catch (err) { showToast(err.message); }
       })();
       break;
     case 'open-broadcast-push': openBroadcastPush(); break;
@@ -420,37 +367,99 @@ document.addEventListener('click', (e) => {
     case 'admin-seed-test': adminSeedTest(); break;
     case 'admin-cleanup-test': adminCleanupTest(); break;
 
-    // ====================================================
     // PUSH
-    // ====================================================
     case 'push-test': testPush(); break;
 
-    // ====================================================
     // COOKIES
-    // ====================================================
     case 'accept-cookies': acceptCookies(); break;
     case 'reject-cookies': rejectCookies(); break;
     case 'open-cookie-settings': openCookieSettings(); break;
     case 'save-cookie-settings': saveCookieSettings(); break;
 
-    // ====================================================
-    // HASHTAGS
-    // ====================================================
+    // HASHTAG
     case 'open-hashtag': openHashtag(el.dataset.tag); break;
 
-    // ====================================================
     // MODAL
-    // ====================================================
     case 'close-modal-scrim':
-      if (e.target.classList.contains('modal-scrim') || e.target.closest('.modal-scrim') === e.target) {
-        closeModal();
-      }
+      if (e.target.classList.contains('modal-scrim') || e.target.closest('.modal-scrim') === e.target) closeModal();
       break;
     case 'close-modal': closeModal(); break;
   }
 });
 
-// Detail modal (starý) — zatvorenie klikom mimo
+// Pomocné handlery pre post location
+function applyPostLocation(lat, lng, place) {
+  const f = document.querySelector('[data-action="submit-business-post"]');
+  if (!f) return;
+  f.dataset.geoLat = String(lat);
+  f.dataset.geoLng = String(lng);
+  f.dataset.geoPlace = place || '';
+  const input = f.querySelector('[data-post-place-input]');
+  if (input) input.value = place || '';
+  const label = f.querySelector('[data-geo-label]');
+  if (label) label.textContent = `📍 ${place || lat.toFixed(4) + ', ' + lng.toFixed(4)}`;
+  const clearBtn = f.querySelector('[data-action="clear-post-location"]');
+  if (clearBtn) clearBtn.style.display = '';
+}
+
+function clearPostLocation() {
+  const f = document.querySelector('[data-action="submit-business-post"]');
+  if (!f) return;
+  delete f.dataset.geoLat;
+  delete f.dataset.geoLng;
+  delete f.dataset.geoPlace;
+  const input = f.querySelector('[data-post-place-input]');
+  if (input) input.value = '';
+  const label = f.querySelector('[data-geo-label]');
+  if (label) label.textContent = t('post.addLocation');
+  const clearBtn = f.querySelector('[data-action="clear-post-location"]');
+  if (clearBtn) clearBtn.style.display = 'none';
+}
+
+function attachPostPlacePicker() {
+  const form = document.querySelector('[data-action="submit-business-post"]');
+  if (!form) return;
+  const input = form.querySelector('[data-post-place-input]');
+  if (!input || input.dataset.pickerAttached === '1') return;
+  input.dataset.pickerAttached = '1';
+  attachPlaceSearch(input, {
+    onSelect: (item) => applyPostLocation(item.lat, item.lng, item.name || item.display_name),
+  });
+}
+
+function attachEditProfilePlacePicker() {
+  const form = document.querySelector('[data-action="submit-edit-profile"]');
+  if (!form) return;
+  const input = form.querySelector('[data-business-address-input]');
+  if (!input || input.dataset.pickerAttached === '1') return;
+  input.dataset.pickerAttached = '1';
+  attachPlaceSearch(input, {
+    onSelect: (item) => {
+      form.dataset.geoLat = String(item.lat);
+      form.dataset.geoLng = String(item.lng);
+      form.dataset.geoAddress = item.display_name || item.name || '';
+    },
+  });
+}
+
+function applyBusinessAddressToEvent(businessId) {
+  const form = document.querySelector('[data-action="submit-create-event"]');
+  if (!form) return;
+  const biz = (state.businesses || []).find((b) => b.id === businessId);
+  if (!biz) return;
+  const addr = [biz.address, biz.city, biz.district, biz.region].filter(Boolean).join(', ');
+  const addrInput = form.querySelector('input[name="address"]');
+  if (addrInput && !addrInput.value) addrInput.value = addr;
+  if (biz.geo_lat && biz.geo_lng) {
+    form.dataset.geoLat = String(biz.geo_lat);
+    form.dataset.geoLng = String(biz.geo_lng);
+    form.dataset.geoPlace = addr;
+    const label = form.querySelector('[data-event-geo-label]');
+    if (label) label.textContent = `📍 ${addr}`;
+  }
+}
+
+// Detail modal (starý)
 document.addEventListener('click', (e) => {
   if (e.target.id === 'detail-modal') {
     e.target.classList.remove('is-open');
@@ -458,21 +467,17 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Carousel — aktívna bodka podľa scrollu
+// Carousel
 document.addEventListener('scroll', (e) => {
   const track = e.target.closest?.('[data-carousel-track]');
   if (!track) return;
   const carousel = track.closest('[data-post-carousel]');
   if (!carousel) return;
   const idx = Math.round(track.scrollLeft / track.clientWidth);
-  carousel.querySelectorAll('.post-carousel-dot').forEach((d, i) => {
-    d.classList.toggle('is-active', i === idx);
-  });
+  carousel.querySelectorAll('.post-carousel-dot').forEach((d, i) => d.classList.toggle('is-active', i === idx));
 }, true);
 
-// ============================================================
-// CHANGE HANDLERS
-// ============================================================
+// CHANGE
 document.addEventListener('change', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
@@ -489,16 +494,8 @@ document.addEventListener('change', (e) => {
   else if (a === 'files-selected') onFilesSelected(el);
   else if (a === 'event-files-selected') onEventFilesSelected(el);
   else if (a === 'file-selected') onFileSelected(el);
-  else if (a === 'admin-user-role-filter') {
-    state._adminUserRole = el.value;
-    state.adminUsers = null;
-    loadAdminUsers();
-  }
-  else if (a === 'admin-user-status-filter') {
-    state._adminUserStatus = el.value;
-    state.adminUsers = null;
-    loadAdminUsers();
-  }
+  else if (a === 'admin-user-role-filter') { state._adminUserRole = el.value; state.adminUsers = null; loadAdminUsers(); }
+  else if (a === 'admin-user-status-filter') { state._adminUserStatus = el.value; state.adminUsers = null; loadAdminUsers(); }
   else if (a === 'cookie-setting') toggleCookieSetting(el.dataset.key, el.checked);
   else if (a === 'setting-toggle') toggleSetting(el.dataset.key, el.checked);
   else if (a === 'story-file-selected') onStoryFileSelected(el);
@@ -506,38 +503,23 @@ document.addEventListener('change', (e) => {
   else if (a === 'event-business-select') {
     state.overlay.businessId = el.value;
     renderApp();
+    setTimeout(() => applyBusinessAddressToEvent(el.value), 60);
   }
-  else if (a === 'nearby-radius') {
-    state.nearby.radius = parseInt(el.value, 10);
-    loadNearby();
-  }
-  else if (a === 'nearby-kind') {
-    state.nearby.kind = el.value;
-    loadNearby();
-  }
+  else if (a === 'nearby-radius') { state.nearby.radius = parseInt(el.value, 10); loadNearby(); }
+  else if (a === 'nearby-kind') { state.nearby.kind = el.value; loadNearby(); }
   else if (a === 'onboarding-avatar-change') onboardingAvatarChange(el);
   else if (a === 'verif-doc-selected') onVerifDocSelected(el);
   else if (a === 'push-toggle') handlePushToggle(el.checked);
   else if (a === 'add-business-kind-change') updateAddBusinessTypeOptions(el.value);
-  else if (a === 'stats-metric') {
-    if (state._profileStatsView) {
-      state._profileStatsView.metric = el.value;
-      renderApp();
-    }
-  }
-  else if (a === 'lang-select') {
-    if (typeof setLanguage === 'function') setLanguage(el.value);
-  }
+  else if (a === 'stats-metric') { if (state._profileStatsView) { state._profileStatsView.metric = el.value; renderApp(); } }
+  else if (a === 'lang-select') { if (typeof setLanguage === 'function') setLanguage(el.value); }
   else if (a === 'gallery-file-selected') {
-    // Aktualizuj label s názvom vybraného súboru
     const label = document.getElementById('gallery-file-label');
     const file = el.files?.[0];
     if (label) {
-      if (file) {
-        label.innerHTML = `✓ ${escapeHtml(file.name)}`;
-      } else {
-        label.innerHTML = `${icon('plus', { size: 16 })} ${escapeHtml(t('profile.aboutGalleryAdd'))}`;
-      }
+      label.innerHTML = file
+        ? `✓ ${escapeHtml(file.name)}`
+        : `${icon('plus', { size: 16 })} ${escapeHtml(t('profile.aboutGalleryAdd'))}`;
     }
   }
   else if (a === 'district-change') {
@@ -545,37 +527,26 @@ document.addEventListener('change', (e) => {
     const citySelect = form.querySelector('select[name="city"]');
     const district = el.value;
     if (!citySelect) return;
-    if (!district) {
-      citySelect.innerHTML = '<option value="">Nejprve vyberte okres</option>';
-      return;
-    }
-    citySelect.innerHTML = '<option value="">Načítám obce…</option>';
+    if (!district) { citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerFirstDistrict'))}</option>`; return; }
+    citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerLoadingCities'))}</option>`;
     loadCitiesForDistrict(district).then((cities) => {
       if (cities.length === 0) {
-        citySelect.innerHTML = '<option value="">(žádné obce)</option>';
+        citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerNoCities'))}</option>`;
       } else {
-        citySelect.innerHTML = '<option value="">Vyberte obec…</option>' +
+        citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerSelectCity'))}</option>` +
           cities.map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join('');
       }
     });
   }
 });
 
-// ============================================================
-// INPUT HANDLERS
-// ============================================================
+// INPUT
 document.addEventListener('input', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
 
-  if (el.dataset.action === 'search-change') {
-    onSearchChange(el.dataset.feed, el.value);
-    return;
-  }
-  if (el.dataset.action === 'search-global') {
-    onGlobalSearchInput(el.value);
-    return;
-  }
+  if (el.dataset.action === 'search-change') { onSearchChange(el.dataset.feed, el.value); return; }
+  if (el.dataset.action === 'search-global') { onGlobalSearchInput(el.value); return; }
   if (el.dataset.action === 'event-search') {
     state.events.search = el.value;
     state.events.next_cursor = null;
@@ -583,24 +554,16 @@ document.addEventListener('input', (e) => {
     window._eventSearchTimer = setTimeout(() => loadEvents(), 400);
     return;
   }
-  if (el.dataset.action === 'onboarding-bio') {
-    state.overlay.bio = el.value;
-    return;
-  }
+  if (el.dataset.action === 'onboarding-bio') { state.overlay.bio = el.value; return; }
   if (el.dataset.action === 'admin-user-search') {
     state._adminUserQuery = el.value;
     clearTimeout(window._adminUserSearchTimer);
-    window._adminUserSearchTimer = setTimeout(() => {
-      state.adminUsers = null;
-      loadAdminUsers();
-    }, 400);
+    window._adminUserSearchTimer = setTimeout(() => { state.adminUsers = null; loadAdminUsers(); }, 400);
     return;
   }
 });
 
-// ============================================================
-// SUBMIT HANDLERS
-// ============================================================
+// SUBMIT
 document.addEventListener('submit', (e) => {
   const form = e.target.closest('[data-action]');
   if (!form) return;
@@ -643,11 +606,10 @@ document.addEventListener('submit', (e) => {
   else if (a === 'submit-edit-post') handleEditPostSubmit(form);
   else if (a === 'submit-verification-request') handleVerificationSubmit(form);
   else if (a === 'submit-gallery-item') submitGalleryItem(form);
+  else if (a === 'submit-edit-gallery-item') submitEditGalleryItem(form);
 });
 
-// ============================================================
 // KEYBOARD
-// ============================================================
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (state.lightbox) { closeLightbox(); return; }
@@ -663,19 +625,12 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (state.overlay?.type === 'story-viewer') {
-    if (e.key === 'ArrowRight') {
-      if (typeof stopStoryAutoAdvance === 'function') stopStoryAutoAdvance();
-      storyNext();
-    } else if (e.key === 'ArrowLeft') {
-      if (typeof stopStoryAutoAdvance === 'function') stopStoryAutoAdvance();
-      storyPrev();
-    }
+    if (e.key === 'ArrowRight') { if (typeof stopStoryAutoAdvance === 'function') stopStoryAutoAdvance(); storyNext(); }
+    else if (e.key === 'ArrowLeft') { if (typeof stopStoryAutoAdvance === 'function') stopStoryAutoAdvance(); storyPrev(); }
   }
 });
 
-// ============================================================
 // BOOTSTRAP
-// ============================================================
 async function bootstrap() {
   state.tab = restoreTab();
   getFeedTitle(state.tab);
@@ -704,13 +659,9 @@ async function bootstrap() {
             post.__comments = c.comments || [];
             post.comment_count = c.total || 0;
           } catch {}
-          if (post.media && post.media.length > 0) {
-            openLightbox(post.media, 0, post.text || '', post);
-          }
+          if (post.media && post.media.length > 0) openLightbox(post.media, 0, post.text || '', post);
         }
-      } catch (err) {
-        showToast(t('errors.loadPostsFailed'));
-      }
+      } catch (err) { showToast(t('errors.loadPostsFailed')); }
     }, 200);
   } else if (urlProfile) {
     clearUrlParams();
