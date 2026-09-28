@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { newId, normalizeHandle, validateHandle } from '../auth.js';
-import { escapeLike } from '../moderation.js';
-import { validateUpload } from '../moderation.js';
+import { escapeLike, validateUpload } from '../moderation.js';
 import { getUserBadges } from '../badges.js';
 
 export const profileRoutes = new Hono();
@@ -179,11 +178,8 @@ profileRoutes.patch('/me/settings', async (c) => {
   for (const k of allowed) if (k in body) settings[k] = !!body[k];
 
   if ('public_checkins' in body) {
-    try {
-      await c.env.DB.prepare(`UPDATE users SET public_checkins = ? WHERE id = ?`).bind(body.public_checkins ? 1 : 0, user.sub).run();
-    } catch {}
+    try { await c.env.DB.prepare(`UPDATE users SET public_checkins = ? WHERE id = ?`).bind(body.public_checkins ? 1 : 0, user.sub).run(); } catch {}
   }
-
   await c.env.DB.prepare(`UPDATE users SET settings_json = ? WHERE id = ?`).bind(JSON.stringify(settings), user.sub).run();
   return c.json({ ok: true, settings });
 });
@@ -228,7 +224,6 @@ profileRoutes.patch('/me/user', async (c) => {
   return c.json({ user: updated });
 });
 
-// Pridať ďalší podnik
 profileRoutes.post('/me/business', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
@@ -250,6 +245,9 @@ profileRoutes.post('/me/business', async (c) => {
   const district = (body.district || '').toString().trim().slice(0, 100);
   const city = (body.city || '').toString().trim().slice(0, 100) || null;
   const description = (body.description || '').toString().trim().slice(0, 500);
+  const geoLat = body.geo_lat != null && body.geo_lat !== '' ? parseFloat(body.geo_lat) : null;
+  const geoLng = body.geo_lng != null && body.geo_lng !== '' ? parseFloat(body.geo_lng) : null;
+  const address = (body.address || '').toString().trim().slice(0, 250) || null;
 
   if (!name || !type || !region || !district) {
     return c.json({ error: 'Vyplň názov, typ, kraj a okres.' }, 400);
@@ -260,21 +258,21 @@ profileRoutes.post('/me/business', async (c) => {
   try {
     if (kind === 'organizations') {
       await c.env.DB.prepare(
-        `INSERT INTO organizations (id, user_id, name, type, region, district, city, description, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(id, user.sub, name, type, region, district, city, description || '').run();
+        `INSERT INTO organizations (id, user_id, name, type, region, district, city, description, geo_lat, geo_lng, address, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, region, district, city, description || '', geoLat, geoLng, address).run();
     } else if (kind === 'accommodation') {
       const capacity = body.capacity ? parseInt(body.capacity, 10) : null;
       await c.env.DB.prepare(
-        `INSERT INTO accommodation (id, user_id, name, type, region, district, city, description, capacity, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(id, user.sub, name, type, region, district, city, description || '', capacity).run();
+        `INSERT INTO accommodation (id, user_id, name, type, region, district, city, description, capacity, geo_lat, geo_lng, address, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, region, district, city, description || '', capacity, geoLat, geoLng, address).run();
     } else {
       const cuisineType = (body.cuisine_type || '').toString().trim() || null;
       await c.env.DB.prepare(
-        `INSERT INTO restaurants (id, user_id, name, type, cuisine_type, region, district, city, description, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(id, user.sub, name, type, cuisineType, region, district, city, description || '').run();
+        `INSERT INTO restaurants (id, user_id, name, type, cuisine_type, region, district, city, description, geo_lat, geo_lng, address, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, cuisineType, region, district, city, description || '', geoLat, geoLng, address).run();
     }
   } catch (err) {
     console.error('[add business]', err);
@@ -294,7 +292,7 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
   if (!owned) return c.json({ error: 'Nenájdené.' }, 404);
   if (owned.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
 
-  const common = ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'type', 'opening_hours'];
+  const common = ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'type', 'opening_hours', 'address'];
   const allowedFields = table === 'restaurants'
     ? [...common, 'cuisine_type', 'price_level']
     : table === 'accommodation'
@@ -304,6 +302,10 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const sets = [], params = [];
   for (const f of allowedFields) if (f in body) { sets.push(`${f} = ?`); params.push(body[f] ?? null); }
+
+  if ('geo_lat' in body) { sets.push('geo_lat = ?'); params.push(body.geo_lat != null && body.geo_lat !== '' ? parseFloat(body.geo_lat) : null); }
+  if ('geo_lng' in body) { sets.push('geo_lng = ?'); params.push(body.geo_lng != null && body.geo_lng !== '' ? parseFloat(body.geo_lng) : null); }
+
   if (sets.length === 0) return c.json({ error: 'Žiadne polia.' }, 400);
   params.push(id);
   await c.env.DB.prepare(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run();
@@ -311,7 +313,57 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
   return c.json({ business: updated });
 });
 
-// Upload obrázka (avatar/cover/foto) — s MIME validáciou
+// Zmazanie podniku vlastníkom (len neverifikované, alebo admin)
+profileRoutes.delete('/me/business/:type/:id', async (c) => {
+  const user = c.get('user');
+  const table = TYPE_TO_TABLE[normalizeType(c.req.param('type'))];
+  const id = c.req.param('id');
+  if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
+
+  const biz = await c.env.DB.prepare(`SELECT user_id, is_verified, name FROM ${table} WHERE id = ?`).bind(id).first();
+  if (!biz) return c.json({ error: 'Nenájdené.' }, 404);
+  if (biz.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
+  if (Number(biz.is_verified) === 1 && user.role !== 'admin') {
+    return c.json({ error: 'Verifikovaný podnik nemôže byť zmazaný.' }, 403);
+  }
+
+  try {
+    const { results: galleryRows } = await c.env.DB.prepare(
+      `SELECT image_url FROM business_gallery WHERE business_id = ? AND business_kind = ?`
+    ).bind(id, table).all();
+    if (c.env.MEDIA && galleryRows?.length) {
+      const publicBase = c.env.R2_PUBLIC_BASE || '';
+      for (const g of galleryRows) {
+        try {
+          let key = g.image_url;
+          if (publicBase && key.startsWith(publicBase + '/')) key = key.slice(publicBase.length + 1);
+          if (key && !key.startsWith('http')) await c.env.MEDIA.delete(key);
+        } catch {}
+      }
+    }
+    await c.env.DB.prepare(`DELETE FROM business_gallery WHERE business_id = ? AND business_kind = ?`).bind(id, table).run();
+  } catch {}
+
+  try { await c.env.DB.prepare(`DELETE FROM verification_requests WHERE business_id = ? AND business_kind = ?`).bind(id, table).run(); } catch {}
+
+  try {
+    const { results: postRows } = await c.env.DB.prepare(`SELECT id FROM posts WHERE business_id = ?`).bind(id).all();
+    if (postRows?.length) {
+      for (const p of postRows) {
+        await c.env.DB.prepare(`DELETE FROM post_media WHERE post_id = ?`).bind(p.id).run();
+        await c.env.DB.prepare(`DELETE FROM post_hashtags WHERE post_id = ?`).bind(p.id).run();
+        await c.env.DB.prepare(`DELETE FROM comments WHERE post_id = ?`).bind(p.id).run();
+      }
+      await c.env.DB.prepare(`DELETE FROM posts WHERE business_id = ?`).bind(id).run();
+    }
+  } catch {}
+
+  try { await c.env.DB.prepare(`DELETE FROM events WHERE business_id = ? AND business_kind = ?`).bind(id, table).run(); } catch {}
+  await c.env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
+  return c.json({ ok: true });
+});
+
+// Upload obrázka
 profileRoutes.post('/me/upload', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -322,16 +374,9 @@ profileRoutes.post('/me/upload', async (c) => {
   if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
   if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
 
-  // MIME + size + magic bytes validácia
   const v = await validateUpload(file, 'image');
   if (!v.ok) {
-    const msgs = {
-      bad_type: 'Povolené sú len JPG, PNG, WebP alebo GIF.',
-      too_large: 'Fotka je príliš veľká (max 10 MB).',
-      bad_magic: 'Súbor nie je platná fotka.',
-      empty: 'Súbor je prázdny.',
-      no_file: 'Chýba súbor.',
-    };
+    const msgs = { bad_type: 'Povolené sú len JPG, PNG, WebP alebo GIF.', too_large: 'Fotka je príliš veľká (max 10 MB).', bad_magic: 'Súbor nie je platná fotka.', empty: 'Súbor je prázdny.', no_file: 'Chýba súbor.' };
     return c.json({ error: msgs[v.reason] || 'Neplatný súbor.' }, 400);
   }
 
@@ -355,7 +400,6 @@ profileRoutes.post('/me/upload', async (c) => {
   return c.json({ url, field: col });
 });
 
-// Upload verifikačného dokumentu — s MIME validáciou
 profileRoutes.post('/me/upload-verification-doc', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -363,16 +407,9 @@ profileRoutes.post('/me/upload-verification-doc', async (c) => {
   if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
   if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
 
-  // MIME + size + magic bytes validácia (PDF/JPG/PNG/WebP)
   const v = await validateUpload(file, 'document');
   if (!v.ok) {
-    const msgs = {
-      bad_type: 'Povolené formáty: PDF, JPG, PNG, WebP.',
-      too_large: 'Soubor je příliš velký (max 10 MB).',
-      bad_magic: 'Súbor nie je platný dokument.',
-      empty: 'Súbor je prázdny.',
-      no_file: 'Chýba súbor.',
-    };
+    const msgs = { bad_type: 'Povolené formáty: PDF, JPG, PNG, WebP.', too_large: 'Soubor je příliš velký (max 10 MB).', bad_magic: 'Súbor nie je platný dokument.', empty: 'Súbor je prázdny.', no_file: 'Chýba súbor.' };
     return c.json({ error: msgs[v.reason] || 'Neplatný súbor.' }, 400);
   }
 
@@ -428,7 +465,6 @@ profileRoutes.delete('/me/account', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
   if (body.confirm !== 'SMAZAT') return c.json({ error: 'Pro potvrzení napiš "SMAZAT".' }, 400);
-
   const now = new Date().toISOString();
   const anonEmail = `deleted+${user.sub}@naskraj.local`;
   await c.env.DB.prepare(
@@ -437,7 +473,6 @@ profileRoutes.delete('/me/account', async (c) => {
       password_hash = 'deleted', password_salt = 'deleted', totp_secret = NULL, totp_enabled = 0
      WHERE id = ?`,
   ).bind(now, anonEmail, user.sub).run();
-
   await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE user_id = ?`).bind(user.sub).run();
   await c.env.DB.prepare(`DELETE FROM follows WHERE follower_id = ? OR (target_type = 'users' AND target_id = ?)`).bind(user.sub, user.sub).run();
   return c.json({ ok: true });
@@ -569,27 +604,21 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
         try {
           const { verify } = await import('hono/jwt');
           user = await verify(token, c.env.JWT_SECRET, 'HS256');
-        } catch (e) { console.warn('stats token verify:', e.message); }
+        } catch (e) {}
       }
     }
     if (!user || !user.sub) return c.json({ error: 'Chýba prihlásenie.' }, 401);
 
     const biz = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(id).first();
     if (!biz) return c.json({ error: 'Nenalezeno.' }, 404);
-    if (biz.user_id !== user.sub && user.role !== 'admin') {
-      return c.json({ error: 'Nemáš oprávnění.' }, 403);
-    }
+    if (biz.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
 
     let posts = 0, events = 0, followers = 0, likes = 0, comments = 0, views = 0;
-
     try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).first(); posts = r?.n || 0; } catch {}
     try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM events WHERE business_id = ? AND status = 'published'`).bind(id).first(); events = r?.n || 0; } catch {}
     try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first(); followers = r?.n || 0; } catch {}
 
-    const { results: postRows } = await c.env.DB.prepare(
-      `SELECT id, created_at, view_count FROM posts WHERE business_id = ? AND status = 'published'`,
-    ).bind(id).all();
-
+    const { results: postRows } = await c.env.DB.prepare(`SELECT id, created_at, view_count FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).all();
     for (const p of postRows) {
       try { const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`); likes += raw ? parseInt(raw, 10) : 0; } catch {}
       try { const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first(); comments += cc?.n || 0; } catch {}
@@ -599,26 +628,16 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
     const days = 30;
     const dayList = [];
     const today = new Date();
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      dayList.push(d.toISOString().slice(0, 10));
-    }
+    for (let i = days - 1; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); dayList.push(d.toISOString().slice(0, 10)); }
 
     const postsByDay = {};
-    for (const p of postRows) {
-      const day = (p.created_at || '').slice(0, 10);
-      if (!day) continue;
-      postsByDay[day] = (postsByDay[day] || 0) + 1;
-    }
+    for (const p of postRows) { const day = (p.created_at || '').slice(0, 10); if (!day) continue; postsByDay[day] = (postsByDay[day] || 0) + 1; }
 
     const commentsByDay = {};
     try {
       const { results: cRows } = await c.env.DB.prepare(
-        `SELECT DATE(comments.created_at) AS day, COUNT(*) AS n
-         FROM comments JOIN posts ON posts.id = comments.post_id
-         WHERE posts.business_id = ? AND comments.created_at >= datetime('now','-${days} days')
-         GROUP BY day`,
+        `SELECT DATE(comments.created_at) AS day, COUNT(*) AS n FROM comments JOIN posts ON posts.id = comments.post_id
+         WHERE posts.business_id = ? AND comments.created_at >= datetime('now','-${days} days') GROUP BY day`,
       ).bind(id).all();
       for (const r of cRows) commentsByDay[r.day] = r.n;
     } catch {}
@@ -626,30 +645,19 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
     const eventsByDay = {};
     try {
       const { results: eRows } = await c.env.DB.prepare(
-        `SELECT DATE(created_at) AS day, COUNT(*) AS n
-         FROM events WHERE business_id = ? AND status = 'published' AND created_at >= datetime('now','-${days} days')
-         GROUP BY day`,
+        `SELECT DATE(created_at) AS day, COUNT(*) AS n FROM events WHERE business_id = ? AND status = 'published' AND created_at >= datetime('now','-${days} days') GROUP BY day`,
       ).bind(id).all();
       for (const r of eRows) eventsByDay[r.day] = r.n;
     } catch {}
 
     const likesByDay = {};
     for (const p of postRows) {
-      const day = (p.created_at || '').slice(0, 10);
-      if (!day) continue;
-      try {
-        const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`);
-        const l = raw ? parseInt(raw, 10) : 0;
-        likesByDay[day] = (likesByDay[day] || 0) + l;
-      } catch {}
+      const day = (p.created_at || '').slice(0, 10); if (!day) continue;
+      try { const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`); const l = raw ? parseInt(raw, 10) : 0; likesByDay[day] = (likesByDay[day] || 0) + l; } catch {}
     }
 
     const viewsByDay = {};
-    for (const p of postRows) {
-      const day = (p.created_at || '').slice(0, 10);
-      if (!day) continue;
-      viewsByDay[day] = (viewsByDay[day] || 0) + (p.view_count || 0);
-    }
+    for (const p of postRows) { const day = (p.created_at || '').slice(0, 10); if (!day) continue; viewsByDay[day] = (viewsByDay[day] || 0) + (p.view_count || 0); }
 
     const dailySeries = {
       posts: dayList.map((d) => ({ day: d, n: postsByDay[d] || 0 })),
@@ -659,15 +667,121 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
       events: dayList.map((d) => ({ day: d, n: eventsByDay[d] || 0 })),
     };
 
-    return c.json({
-      posts, events, followers, likes, comments, views,
-      daily: dailySeries,
-      last_30_days: dailySeries.posts,
-    });
+    return c.json({ posts, events, followers, likes, comments, views, daily: dailySeries, last_30_days: dailySeries.posts });
   } catch (err) {
     console.error('stats fatal:', err);
     return c.json({ error: 'Chyba při načítání statistik.', detail: err.message }, 500);
   }
+});
+
+// ============================================================
+// GALÉRIA "O NÁS"
+// ============================================================
+profileRoutes.get('/:type/:id/gallery', async (c) => {
+  const type = normalizeType(c.req.param('type'));
+  const id = c.req.param('id');
+  const table = TYPE_TO_TABLE[type];
+  if (!table || table === 'users') return c.json({ items: [] });
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, image_url, caption, sort_order, created_at FROM business_gallery
+     WHERE business_id = ? AND business_kind = ? ORDER BY sort_order ASC, created_at ASC`,
+  ).bind(id, table).all();
+  return c.json({ items: results || [] });
+});
+
+profileRoutes.post('/me/gallery/:type/:id', async (c) => {
+  const user = c.get('user');
+  const table = TYPE_TO_TABLE[normalizeType(c.req.param('type'))];
+  const id = c.req.param('id');
+  if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
+
+  const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(id).first();
+  if (!owned) return c.json({ error: 'Nenájdené.' }, 404);
+  if (owned.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
+
+  const countRow = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM business_gallery WHERE business_id = ? AND business_kind = ?`).bind(id, table).first();
+  if ((countRow?.n || 0) >= 6) return c.json({ error: 'Maximálne 6 fotiek v galérii.' }, 400);
+
+  const form = await c.req.parseBody();
+  const file = form.file;
+  const caption = (form.caption || '').toString().slice(0, 120);
+
+  if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
+  if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
+
+  const v = await validateUpload(file, 'image');
+  if (!v.ok) {
+    const msgs = { bad_type: 'Povolené sú len JPG, PNG, WebP alebo GIF.', too_large: 'Fotka je príliš veľká (max 10 MB).', bad_magic: 'Súbor nie je platná fotka.', empty: 'Súbor je prázdny.', no_file: 'Chýba súbor.' };
+    return c.json({ error: msgs[v.reason] || 'Neplatný súbor.' }, 400);
+  }
+
+  const publicBase = c.env.R2_PUBLIC_BASE || '';
+  const ext = ((file.name || 'x.jpg').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const key = `gallery/${newId()}.${ext}`;
+  await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type || 'image/jpeg' } });
+  const url = publicBase ? `${publicBase}/${key}` : key;
+
+  const galleryId = newId('gal');
+  const maxOrderRow = await c.env.DB.prepare(`SELECT MAX(sort_order) AS m FROM business_gallery WHERE business_id = ? AND business_kind = ?`).bind(id, table).first();
+  const nextOrder = (maxOrderRow?.m ?? -1) + 1;
+
+  await c.env.DB.prepare(
+    `INSERT INTO business_gallery (id, business_id, business_kind, image_url, caption, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).bind(galleryId, id, table, url, caption || null, nextOrder).run();
+
+  return c.json({ id: galleryId, image_url: url, caption, sort_order: nextOrder }, 201);
+});
+
+profileRoutes.patch('/me/gallery/:galleryId', async (c) => {
+  const user = c.get('user');
+  const galleryId = c.req.param('galleryId');
+
+  const row = await c.env.DB.prepare(`SELECT * FROM business_gallery WHERE id = ?`).bind(galleryId).first();
+  if (!row) return c.json({ error: 'Nenájdené.' }, 404);
+
+  const table = TYPE_TO_TABLE[normalizeType(row.business_kind)] || row.business_kind;
+  const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(row.business_id).first();
+  if (!owned || (owned.user_id !== user.sub && user.role !== 'admin')) return c.json({ error: 'Nemáš oprávnenie.' }, 403);
+
+  const body = await c.req.json().catch(() => ({}));
+  const caption = (body.caption ?? '').toString().slice(0, 120);
+  const sortOrder = Number.isFinite(body.sort_order) ? parseInt(body.sort_order, 10) : null;
+
+  const sets = [], params = [];
+  if ('caption' in body) { sets.push('caption = ?'); params.push(caption || null); }
+  if (sortOrder !== null) { sets.push('sort_order = ?'); params.push(sortOrder); }
+  if (sets.length === 0) return c.json({ error: 'Žiadne polia.' }, 400);
+
+  params.push(galleryId);
+  await c.env.DB.prepare(`UPDATE business_gallery SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run();
+
+  const updated = await c.env.DB.prepare(`SELECT * FROM business_gallery WHERE id = ?`).bind(galleryId).first();
+  return c.json({ item: updated });
+});
+
+profileRoutes.delete('/me/gallery/:galleryId', async (c) => {
+  const user = c.get('user');
+  const galleryId = c.req.param('galleryId');
+
+  const row = await c.env.DB.prepare(`SELECT * FROM business_gallery WHERE id = ?`).bind(galleryId).first();
+  if (!row) return c.json({ error: 'Nenájdené.' }, 404);
+
+  const table = TYPE_TO_TABLE[normalizeType(row.business_kind)] || row.business_kind;
+  const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(row.business_id).first();
+  if (!owned || (owned.user_id !== user.sub && user.role !== 'admin')) return c.json({ error: 'Nemáš oprávnenie.' }, 403);
+
+  if (c.env.MEDIA && row.image_url) {
+    try {
+      const publicBase = c.env.R2_PUBLIC_BASE || '';
+      let key = row.image_url;
+      if (publicBase && key.startsWith(publicBase + '/')) key = key.slice(publicBase.length + 1);
+      if (key && !key.startsWith('http')) await c.env.MEDIA.delete(key);
+    } catch {}
+  }
+
+  await c.env.DB.prepare(`DELETE FROM business_gallery WHERE id = ?`).bind(galleryId).run();
+  return c.json({ ok: true });
 });
 
 profileRoutes.get('/:type/:id', async (c) => {
@@ -690,19 +804,12 @@ profileRoutes.get('/:type/:id', async (c) => {
     } else if (user.role === 'hotelier') {
       const acc = await c.env.DB.prepare('SELECT id, name, type, region, district, city, is_verified FROM accommodation WHERE user_id = ?').bind(id).all();
       const rest = await c.env.DB.prepare('SELECT id, name, type, region, district, city, is_verified FROM restaurants WHERE user_id = ?').bind(id).all();
-      businesses = [
-        ...acc.results.map((r) => ({ ...r, kind: 'accommodation' })),
-        ...rest.results.map((r) => ({ ...r, kind: 'restaurants' })),
-      ];
+      businesses = [...acc.results.map((r) => ({ ...r, kind: 'accommodation' })), ...rest.results.map((r) => ({ ...r, kind: 'restaurants' }))];
     }
 
     const contrib = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM contributions WHERE user_id = ?`).bind(id).first();
     const followers = await getFollowCount(c.env, 'users', id);
-    return c.json({
-      type: 'user', profile: user, businesses,
-      stats: { contributions: contrib?.n || 0, followers },
-      is_following: false,
-    });
+    return c.json({ type: 'user', profile: user, businesses, stats: { contributions: contrib?.n || 0, followers }, is_following: false });
   }
 
   const business = await c.env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(id).first();
@@ -712,21 +819,15 @@ profileRoutes.get('/:type/:id', async (c) => {
   const logoUrl = business.logo_url || business.image_url || null;
 
   const { results: posts } = await c.env.DB.prepare(
-    `SELECT id, text_content, content_html, image_url, geo_place, geo_lat, geo_lng, created_at
-     FROM posts WHERE business_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 60`,
+    `SELECT id, text_content, content_html, image_url, geo_place, geo_lat, geo_lng, created_at FROM posts WHERE business_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 60`,
   ).bind(id).all();
 
   const ids = posts.map((p) => p.id);
   let mediaMap = {};
   if (ids.length > 0) {
     const ph = ids.map(() => '?').join(',');
-    const { results: mrows } = await c.env.DB.prepare(
-      `SELECT post_id, image_url FROM post_media WHERE post_id IN (${ph}) ORDER BY sort_order`,
-    ).bind(...ids).all();
-    for (const r of mrows) {
-      if (!mediaMap[r.post_id]) mediaMap[r.post_id] = [];
-      mediaMap[r.post_id].push(r.image_url);
-    }
+    const { results: mrows } = await c.env.DB.prepare(`SELECT post_id, image_url FROM post_media WHERE post_id IN (${ph}) ORDER BY sort_order`).bind(...ids).all();
+    for (const r of mrows) { if (!mediaMap[r.post_id]) mediaMap[r.post_id] = []; mediaMap[r.post_id].push(r.image_url); }
   }
 
   const postsWithMedia = await Promise.all(posts.map(async (p) => {
@@ -734,188 +835,32 @@ profileRoutes.get('/:type/:id', async (c) => {
     try { const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`); likes = raw ? parseInt(raw, 10) : 0; } catch {}
     try { const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first(); commentCount = cc?.n || 0; } catch {}
     try { const vr = await c.env.DB.prepare(`SELECT view_count FROM posts WHERE id = ?`).bind(p.id).first(); views = vr?.view_count || 0; } catch {}
-
     return {
-      id: p.id,
-      text: p.text_content,
-      html: p.content_html || escapePlain(p.text_content),
-      image_url: p.image_url,
+      id: p.id, text: p.text_content, html: p.content_html || escapePlain(p.text_content), image_url: p.image_url,
       media: mediaMap[p.id] || (p.image_url ? [p.image_url] : []),
-      created_at: p.created_at,
-      likes,
-      comment_count: commentCount,
-      views,
+      created_at: p.created_at, likes, comment_count: commentCount, views,
       geo: p.geo_place ? { place: p.geo_place, lat: p.geo_lat, lng: p.geo_lng } : null,
       business: {
-        id: business.id,
-        name: business.name,
-        type: business.type,
-        region: business.region,
-        district: business.district,
-        city: business.city,
-        is_verified: !!business.is_verified,
-        logo_url: logoUrl,
-        cuisine_type: business.cuisine_type || null,
+        id: business.id, name: business.name, type: business.type, region: business.region, district: business.district, city: business.city,
+        is_verified: !!business.is_verified, logo_url: logoUrl, cuisine_type: business.cuisine_type || null,
       },
       __feedKey: feedKey,
     };
   }));
 
-  const followers = await getFollowCount(c.env, type, id);
-  const kind = bizKindFromType(table);
-
-  // Galéria
   let gallery = [];
   try {
     const { results: galRows } = await c.env.DB.prepare(
-      `SELECT id, image_url, caption, sort_order FROM business_gallery
-       WHERE business_id = ? AND business_kind = ?
-       ORDER BY sort_order ASC, created_at ASC`,
+      `SELECT id, image_url, caption, sort_order FROM business_gallery WHERE business_id = ? AND business_kind = ? ORDER BY sort_order ASC, created_at ASC`,
     ).bind(id, table).all();
     gallery = galRows || [];
   } catch {}
+
+  const followers = await getFollowCount(c.env, type, id);
+  const kind = bizKindFromType(table);
 
   return c.json({
     type: 'business', kind, feedKey, profile: business, posts: postsWithMedia, gallery,
     stats: { followers, posts: postsWithMedia.length }, is_following: false,
   });
-});
-
-// ============================================================
-// GALÉRIA "O NÁS" — max 6 fotiek s popismi
-// ============================================================
-
-profileRoutes.get('/:type/:id/gallery', async (c) => {
-  const type = normalizeType(c.req.param('type'));
-  const id = c.req.param('id');
-  const table = TYPE_TO_TABLE[type];
-  if (!table || table === 'users') return c.json({ items: [] });
-
-  const { results } = await c.env.DB.prepare(
-    `SELECT id, image_url, caption, sort_order, created_at
-     FROM business_gallery
-     WHERE business_id = ? AND business_kind = ?
-     ORDER BY sort_order ASC, created_at ASC`,
-  ).bind(id, table).all();
-
-  return c.json({ items: results || [] });
-});
-
-profileRoutes.post('/me/gallery/:type/:id', async (c) => {
-  const user = c.get('user');
-  const table = TYPE_TO_TABLE[normalizeType(c.req.param('type'))];
-  const id = c.req.param('id');
-  if (!table || table === 'users') return c.json({ error: 'Neplatný typ.' }, 400);
-
-  // Oprávnenie
-  const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(id).first();
-  if (!owned) return c.json({ error: 'Nenájdené.' }, 404);
-  if (owned.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
-
-  // Limit 6
-  const countRow = await c.env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM business_gallery WHERE business_id = ? AND business_kind = ?`,
-  ).bind(id, table).first();
-  if ((countRow?.n || 0) >= 6) {
-    return c.json({ error: 'Maximálne 6 fotiek v galérii. Najprv nejakú odstráň.' }, 400);
-  }
-
-  const form = await c.req.parseBody();
-  const file = form.file;
-  const caption = (form.caption || '').toString().slice(0, 120);
-
-  if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
-  if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
-
-  const v = await validateUpload(file, 'image');
-  if (!v.ok) {
-    const msgs = {
-      bad_type: 'Povolené sú len JPG, PNG, WebP alebo GIF.',
-      too_large: 'Fotka je príliš veľká (max 10 MB).',
-      bad_magic: 'Súbor nie je platná fotka.',
-      empty: 'Súbor je prázdny.',
-      no_file: 'Chýba súbor.',
-    };
-    return c.json({ error: msgs[v.reason] || 'Neplatný súbor.' }, 400);
-  }
-
-  const publicBase = c.env.R2_PUBLIC_BASE || '';
-  const ext = ((file.name || 'x.jpg').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const key = `gallery/${newId()}.${ext}`;
-  await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type || 'image/jpeg' } });
-  const url = publicBase ? `${publicBase}/${key}` : key;
-
-  const galleryId = newId('gal');
-  const maxOrderRow = await c.env.DB.prepare(
-    `SELECT MAX(sort_order) AS m FROM business_gallery WHERE business_id = ? AND business_kind = ?`,
-  ).bind(id, table).first();
-  const nextOrder = (maxOrderRow?.m ?? -1) + 1;
-
-  await c.env.DB.prepare(
-    `INSERT INTO business_gallery (id, business_id, business_kind, image_url, caption, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).bind(galleryId, id, table, url, caption || null, nextOrder).run();
-
-  return c.json({ id: galleryId, image_url: url, caption, sort_order: nextOrder }, 201);
-});
-
-profileRoutes.patch('/me/gallery/:galleryId', async (c) => {
-  const user = c.get('user');
-  const galleryId = c.req.param('galleryId');
-
-  const row = await c.env.DB.prepare(
-    `SELECT * FROM business_gallery WHERE id = ?`,
-  ).bind(galleryId).first();
-  if (!row) return c.json({ error: 'Nenájdené.' }, 404);
-
-  const table = TYPE_TO_TABLE[normalizeType(row.business_kind)] || row.business_kind;
-  const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(row.business_id).first();
-  if (!owned || (owned.user_id !== user.sub && user.role !== 'admin')) {
-    return c.json({ error: 'Nemáš oprávnenie.' }, 403);
-  }
-
-  const body = await c.req.json().catch(() => ({}));
-  const caption = (body.caption || '').toString().slice(0, 120);
-  const sortOrder = Number.isFinite(body.sort_order) ? parseInt(body.sort_order, 10) : null;
-
-  const sets = [];
-  const params = [];
-  if ('caption' in body) { sets.push('caption = ?'); params.push(caption); }
-  if (sortOrder !== null) { sets.push('sort_order = ?'); params.push(sortOrder); }
-
-  if (sets.length === 0) return c.json({ error: 'Žiadne polia.' }, 400);
-  params.push(galleryId);
-  await c.env.DB.prepare(`UPDATE business_gallery SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run();
-
-  const updated = await c.env.DB.prepare(`SELECT * FROM business_gallery WHERE id = ?`).bind(galleryId).first();
-  return c.json({ item: updated });
-});
-
-profileRoutes.delete('/me/gallery/:galleryId', async (c) => {
-  const user = c.get('user');
-  const galleryId = c.req.param('galleryId');
-
-  const row = await c.env.DB.prepare(
-    `SELECT * FROM business_gallery WHERE id = ?`,
-  ).bind(galleryId).first();
-  if (!row) return c.json({ error: 'Nenájdené.' }, 404);
-
-  const table = TYPE_TO_TABLE[normalizeType(row.business_kind)] || row.business_kind;
-  const owned = await c.env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(row.business_id).first();
-  if (!owned || (owned.user_id !== user.sub && user.role !== 'admin')) {
-    return c.json({ error: 'Nemáš oprávnenie.' }, 403);
-  }
-
-  // Zmaž z R2
-  if (c.env.MEDIA && row.image_url) {
-    try {
-      const publicBase = c.env.R2_PUBLIC_BASE || '';
-      let key = row.image_url;
-      if (publicBase && key.startsWith(publicBase + '/')) key = key.slice(publicBase.length + 1);
-      if (key && !key.startsWith('http')) await c.env.MEDIA.delete(key);
-    } catch {}
-  }
-
-  await c.env.DB.prepare(`DELETE FROM business_gallery WHERE id = ?`).bind(galleryId).run();
-  return c.json({ ok: true });
 });
