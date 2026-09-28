@@ -1,5 +1,5 @@
 // ============================================================
-// SEKCE 5: MŮJ PROFIL
+// MŮJ PROFIL
 // ============================================================
 
 const accountFormState = {
@@ -10,10 +10,12 @@ const accountFormState = {
   formError: '',
   formBusy: false,
   _postFormOpen: false,
+  _postUploading: false,
+  _postCropping: false,
 };
 
-const POST_ASPECT = 4 / 3;   // 1.3333
-const POST_OUT_WIDTH = 1400; // → 1050 výška
+const POST_ASPECT = 4 / 3;
+const POST_OUT_WIDTH = 1400;
 
 function renderAccountPage() {
   if (!isLoggedIn()) {
@@ -109,58 +111,34 @@ function renderRegisterForm() {
   const kind = accountFormState.registerBusinessKind;
 
   const orgTypeOptions = [
-    { value: 'hrad', label: tType('hrad') },
-    { value: 'zamek', label: tType('zamek') },
-    { value: 'muzeum', label: tType('muzeum') },
-    { value: 'lyzarske_stredisko', label: tType('lyzarske_stredisko') },
-    { value: 'galerie', label: tType('galerie') },
-    { value: 'zoo', label: tType('zoo') },
-    { value: 'prirodni_pamatka', label: tType('prirodni_pamatka') },
-    { value: 'rozhledna', label: tType('rozhledna') },
-    { value: 'zricenina', label: tType('zricenina') },
-    { value: 'kostel', label: tType('kostel') },
-    { value: 'technicka_pamatka', label: tType('technicka_pamatka') },
-    { value: 'jine', label: tType('jine') },
+    { value: 'hrad', label: tType('hrad') }, { value: 'zamek', label: tType('zamek') },
+    { value: 'muzeum', label: tType('muzeum') }, { value: 'lyzarske_stredisko', label: tType('lyzarske_stredisko') },
+    { value: 'galerie', label: tType('galerie') }, { value: 'zoo', label: tType('zoo') },
+    { value: 'prirodni_pamatka', label: tType('prirodni_pamatka') }, { value: 'rozhledna', label: tType('rozhledna') },
+    { value: 'zricenina', label: tType('zricenina') }, { value: 'kostel', label: tType('kostel') },
+    { value: 'technicka_pamatka', label: tType('technicka_pamatka') }, { value: 'jine', label: tType('jine') },
   ];
-
   const accTypeOptions = [
-    { value: 'hotel', label: tType('hotel') },
-    { value: 'penzion', label: tType('penzion') },
-    { value: 'chata', label: tType('chata') },
-    { value: 'chalupa', label: tType('chalupa') },
-    { value: 'kemp', label: tType('kemp') },
-    { value: 'apartman', label: tType('apartman') },
-    { value: 'glamping', label: tType('glamping') },
-    { value: 'hostel', label: tType('hostel') },
-    { value: 'ubytovna', label: tType('ubytovna') },
-    { value: 'jine', label: tType('jine') },
+    { value: 'hotel', label: tType('hotel') }, { value: 'penzion', label: tType('penzion') },
+    { value: 'chata', label: tType('chata') }, { value: 'chalupa', label: tType('chalupa') },
+    { value: 'kemp', label: tType('kemp') }, { value: 'apartman', label: tType('apartman') },
+    { value: 'glamping', label: tType('glamping') }, { value: 'hostel', label: tType('hostel') },
+    { value: 'ubytovna', label: tType('ubytovna') }, { value: 'jine', label: tType('jine') },
   ];
-
   const restTypeOptions = [
-    { value: 'restaurace', label: tType('restaurace') },
-    { value: 'kavarna', label: tType('kavarna') },
-    { value: 'hospoda', label: tType('hospoda') },
-    { value: 'pivovar', label: tType('pivovar') },
-    { value: 'bistro', label: tType('bistro') },
-    { value: 'cukrarna', label: tType('cukrarna') },
-    { value: 'vinarna', label: tType('vinarna') },
-    { value: 'food_truck', label: tType('food_truck') },
+    { value: 'restaurace', label: tType('restaurace') }, { value: 'kavarna', label: tType('kavarna') },
+    { value: 'hospoda', label: tType('hospoda') }, { value: 'pivovar', label: tType('pivovar') },
+    { value: 'bistro', label: tType('bistro') }, { value: 'cukrarna', label: tType('cukrarna') },
+    { value: 'vinarna', label: tType('vinarna') }, { value: 'food_truck', label: tType('food_truck') },
     { value: 'jine', label: tType('jine') },
   ];
 
   let roleFields = '';
   if (role === 'organization') {
     roleFields = `
-      <div class="form-field">
-        <label class="form-label">${escapeHtml(t('auth.registerOrgName'))}</label>
-        <input class="form-input" name="orgName" required placeholder="${escapeAttr(t('auth.registerOrgNamePh'))}" />
-      </div>
-      <div class="form-field">
-        <label class="form-label">${escapeHtml(t('auth.registerType'))}</label>
-        <select class="form-select" name="orgType" required>
-          ${orgTypeOptions.map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}
-        </select>
-      </div>
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerOrgName'))}</label><input class="form-input" name="orgName" required placeholder="${escapeAttr(t('auth.registerOrgNamePh'))}" /></div>
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerType'))}</label>
+        <select class="form-select" name="orgType" required>${orgTypeOptions.map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}</select></div>
       ${renderRegionDistrictCityFields('reg')}
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDescription'))}</label><textarea class="form-textarea" name="description"></textarea></div>
     `;
@@ -172,25 +150,10 @@ function renderRegisterForm() {
         <button type="button" class="form-role-btn ${kind === 'gastro' ? 'is-selected' : ''}" data-action="set-business-kind" data-kind="gastro">${escapeHtml(t('nav.gastro'))}</button>
       </div>
       <input type="hidden" name="businessKind" value="${kind}" />
-      <div class="form-field">
-        <label class="form-label">${escapeHtml(t('auth.registerBusinessName'))}</label>
-        <input class="form-input" name="businessName" required placeholder="${escapeAttr(t('auth.registerBusinessNamePh'))}" />
-      </div>
-      <div class="form-field">
-        <label class="form-label">${escapeHtml(t('auth.registerType'))}</label>
-        <select class="form-select" name="businessType" required>
-          ${typeOpts.map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}
-        </select>
-      </div>
-      ${kind === 'gastro'
-        ? `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.cuisine'))}</label>
-            <select class="form-select" name="cuisineType">
-              <option value="ceska">${escapeHtml(tType('ceska'))}</option>
-              <option value="italska">${escapeHtml(tType('italska'))}</option>
-              <option value="asijska">${escapeHtml(tType('asijska'))}</option>
-              <option value="vegan">${escapeHtml(tType('vegan'))}</option>
-            </select></div>`
-        : `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.capacity'))}</label><input class="form-input" type="number" name="capacity" min="1" /></div>`}
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerBusinessName'))}</label><input class="form-input" name="businessName" required placeholder="${escapeAttr(t('auth.registerBusinessNamePh'))}" /></div>
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerType'))}</label>
+        <select class="form-select" name="businessType" required>${typeOpts.map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}</select></div>
+      ${kind === 'gastro' ? `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.cuisine'))}</label><select class="form-select" name="cuisineType"><option value="ceska">${escapeHtml(tType('ceska'))}</option><option value="italska">${escapeHtml(tType('italska'))}</option><option value="asijska">${escapeHtml(tType('asijska'))}</option><option value="vegan">${escapeHtml(tType('vegan'))}</option></select></div>` : `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.capacity'))}</label><input class="form-input" type="number" name="capacity" min="1" /></div>`}
       ${renderRegionDistrictCityFields('reg')}
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDescription'))}</label><textarea class="form-textarea" name="description"></textarea></div>
     `;
@@ -212,26 +175,16 @@ function renderRegisterForm() {
       </div>
 
       ${role === 'user'
-        ? `<div class="form-field">
-            <label class="form-label">${escapeHtml(t('auth.displayName'))}</label>
-            <input class="form-input" name="displayName" required placeholder="např. Jan Novák" />
-          </div>`
-        : `<div class="form-field">
-            <label class="form-label">${escapeHtml(t('auth.displayNameBusiness'))}</label>
-            <input class="form-input" name="displayName" required placeholder="např. Hrad Tematín, Hospoda pod Lipou" />
-            <p class="form-hint">${escapeHtml(t('auth.displayNameBusinessHint'))}</p>
-          </div>`}
+        ? `<div class="form-field"><label class="form-label">${escapeHtml(t('auth.displayName'))}</label><input class="form-input" name="displayName" required placeholder="např. Jan Novák" /></div>`
+        : `<div class="form-field"><label class="form-label">${escapeHtml(t('auth.displayNameBusiness'))}</label><input class="form-input" name="displayName" required placeholder="např. Hrad Tematín, Hospoda pod Lipou" /><p class="form-hint">${escapeHtml(t('auth.displayNameBusinessHint'))}</p></div>`}
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.email'))}</label><input class="form-input" type="email" name="email" required /></div>
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.password'))}</label><input class="form-input" type="password" name="password" required minlength="8" /><p class="form-hint">${escapeHtml(t('auth.passwordHint'))}</p></div>
       ${roleFields}
 
       <div class="form-field" style="display:flex;align-items:flex-start;gap:10px;">
         <input type="checkbox" name="ageConfirmed" id="age-checkbox" required style="margin-top:3px;width:16px;height:16px;flex-shrink:0;" />
-        <label for="age-checkbox" class="form-hint" style="margin-top:0;font-size:12.5px;line-height:1.5;">
-          Potvrzuji, že mi je alespoň <strong>15 let</strong>.
-        </label>
+        <label for="age-checkbox" class="form-hint" style="margin-top:0;font-size:12.5px;line-height:1.5;">Potvrzuji, že mi je alespoň <strong>15 let</strong>.</label>
       </div>
-
       <div class="form-field" style="display:flex;align-items:flex-start;gap:10px;">
         <input type="checkbox" name="termsAccepted" id="terms-checkbox" required style="margin-top:3px;width:16px;height:16px;flex-shrink:0;" />
         <label for="terms-checkbox" class="form-hint" style="margin-top:0;font-size:12.5px;line-height:1.5;">
@@ -290,12 +243,7 @@ async function handleLoginSubmit(form) {
   try {
     const recaptcha_token = await getRecaptchaToken('login');
     const data = await apiPost('/api/auth/login', { email: fd.get('email'), password: fd.get('password'), recaptcha_token });
-    if (data.twofa_required) {
-      state._twofaToken = data.twofa_token;
-      state._twofaStage = 'verify';
-      renderApp();
-      return;
-    }
+    if (data.twofa_required) { state._twofaToken = data.twofa_token; state._twofaStage = 'verify'; renderApp(); return; }
     finishLogin(data);
   } catch (err) {
     accountFormState.formError = err.message;
@@ -361,12 +309,7 @@ function handleLogout() {
 
 function renderAccountHeaderCard() {
   const initial = (state.user.display_name || state.user.email || '?').charAt(0).toUpperCase();
-  const roleLabel = {
-    user: t('auth.roleUser'),
-    organization: t('auth.roleOrg'),
-    hotelier: t('auth.roleHotelier'),
-    admin: t('auth.admin'),
-  }[state.user.role] || state.user.role;
+  const roleLabel = { user: t('auth.roleUser'), organization: t('auth.roleOrg'), hotelier: t('auth.roleHotelier'), admin: t('auth.admin') }[state.user.role] || state.user.role;
   const avatar = state.user.avatar_url
     ? `<img src="${state.user.avatar_url}" alt="" class="account-avatar" style="object-fit:cover" />`
     : `<div class="account-avatar">${initial}</div>`;
@@ -397,9 +340,7 @@ function renderUserAboutSection() {
       <h3 class="profile-section-title">${escapeHtml(t('profile.oMe'))}</h3>
       <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:16px;">
         ${u.handle ? `<p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:8px">@${escapeHtml(u.handle)}</p>` : ''}
-        ${u.bio
-          ? `<p style="font-size:14px;line-height:1.6">${escapeHtml(u.bio)}</p>`
-          : `<p style="color:var(--c-text-muted);font-size:13.5px">${escapeHtml(t('profile.noBio'))}</p>`}
+        ${u.bio ? `<p style="font-size:14px;line-height:1.6">${escapeHtml(u.bio)}</p>` : `<p style="color:var(--c-text-muted);font-size:13.5px">${escapeHtml(t('profile.noBio'))}</p>`}
         <div style="margin-top:14px">
           <button class="profile-action-btn" data-action="edit-profile" data-kind="user" data-id="${u.id}">${icon('edit', { size: 15 })} ${escapeHtml(t('profile.editProfile'))}</button>
         </div>
@@ -410,32 +351,27 @@ function renderUserAboutSection() {
       <h3 class="profile-section-title">${escapeHtml(t('profile.myActivity'))}</h3>
       <div class="stat-cards">
         <button class="stat-card" data-action="open-badges" style="cursor:pointer;text-align:left">
-          <div class="stat-card-value">${icon('chart', { size: 20 })}</div>
-          <div class="stat-card-label">${escapeHtml(t('profile.myBadges'))}</div>
+          <div class="stat-card-value">${icon('chart', { size: 20 })}</div><div class="stat-card-label">${escapeHtml(t('profile.myBadges'))}</div>
         </button>
         <button class="stat-card" data-action="open-create-story" style="cursor:pointer;text-align:left">
-          <div class="stat-card-value">${icon('camera', { size: 20 })}</div>
-          <div class="stat-card-label">${escapeHtml(t('stories.add'))}</div>
+          <div class="stat-card-value">${icon('camera', { size: 20 })}</div><div class="stat-card-label">${escapeHtml(t('stories.add'))}</div>
         </button>
         <button class="stat-card" data-action="open-user-checkins" data-id="${u.id}" style="cursor:pointer;text-align:left">
-          <div class="stat-card-value">${icon('location', { size: 20 })}</div>
-          <div class="stat-card-label">${escapeHtml(t('profile.visitedPlaces'))}</div>
+          <div class="stat-card-value">${icon('location', { size: 20 })}</div><div class="stat-card-label">${escapeHtml(t('profile.visitedPlaces'))}</div>
         </button>
         <button class="stat-card" data-action="open-wishlist" style="cursor:pointer;text-align:left">
-          <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
-          <div class="stat-card-label">${escapeHtml(t('profile.wantVisit'))}</div>
+          <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div><div class="stat-card-label">${escapeHtml(t('profile.wantVisit'))}</div>
         </button>
         <button class="stat-card" data-action="open-bookmarks" style="cursor:pointer;text-align:left">
-          <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div>
-          <div class="stat-card-label">${escapeHtml(t('profile.savedPosts'))}</div>
+          <div class="stat-card-value">${icon('bookmark', { size: 20 })}</div><div class="stat-card-label">${escapeHtml(t('profile.savedPosts'))}</div>
         </button>
       </div>
     </div>`;
 }
 
-// ------------------------------------------------------------------
-// Business dashboard — tlačidlá v stat-card štýle
-// ------------------------------------------------------------------
+// ============================================================
+// BUSINESS DASHBOARD — s delete button
+// ============================================================
 function renderBusinessDashboard() {
   const businesses = state.businesses || [];
   if (businesses.length === 0) return `<p class="empty-state">${escapeHtml(t('profile.noBusiness'))}</p>`;
@@ -456,20 +392,15 @@ function renderBusinessDashboard() {
   const postFormOpen = accountFormState._postFormOpen || false;
   const canAddMore = state.user.role === 'organization' || state.user.role === 'hotelier' || state.user.role === 'admin';
 
-  // Prepínač podnikov (business-chip) — jediná vec, ktorá ostáva "chip"
   const switcherHtml = businesses.length > 1 ? `
     <div class="business-picker" style="padding:0 16px 14px">
       ${businesses.map((b) => `<button class="business-chip ${b.id === selected.id ? 'is-selected' : ''}" data-action="select-business" data-id="${b.id}">${escapeHtml(b.name)} ${Number(b.is_verified) ? '✓' : ''}</button>`).join('')}
-    </div>
-  ` : '';
+    </div>` : '';
 
-  // Grid tlačidiel v štýle stat-cards (2-3 stĺpce)
   return `
     <div class="profile-section">
       <h3 class="profile-section-title">${escapeHtml(t('profile.yourBusiness'))}</h3>
-
       ${switcherHtml}
-
       <div class="biz-current-label">
         ${icon('landmark', { size: 14 })} <strong>${escapeHtml(selected.name)}</strong>
         ${isVerified ? `<span class="biz-verified-badge">✓ ${escapeHtml(t('profile.verifiedShort'))}</span>` : ''}
@@ -512,6 +443,12 @@ function renderBusinessDashboard() {
             <div class="biz-action-label">${escapeHtml(t('profile.addBusinessShort'))}</div>
           </button>
         ` : ''}
+        ${!isVerified ? `
+          <button class="biz-action-card biz-action-card--danger" data-action="open-delete-business" data-kind="${targetFeed}" data-id="${selected.id}" data-name="${escapeAttr(selected.name)}">
+            <div class="biz-action-icon">${icon('trash', { size: 22 })}</div>
+            <div class="biz-action-label">${escapeHtml(t('profile.deleteBusinessShort'))}</div>
+          </button>
+        ` : ''}
       </div>
 
       ${!isVerified && isPending ? `<p class="form-hint" style="padding:12px 16px 0;color:var(--c-gold);text-align:center">⏳ ${escapeHtml(t('profile.verificationPending'))}</p>` : ''}
@@ -520,22 +457,56 @@ function renderBusinessDashboard() {
     ${postFormOpen ? renderInlineBusinessPostForm(selected, targetFeed) : ''}`;
 }
 
+function openDeleteBusinessModal(kind, id, name) {
+  openModal({
+    title: t('profile.deleteBusiness'),
+    body: `
+      <p style="font-size:14px;line-height:1.6;margin-bottom:12px">
+        ${escapeHtml(t('profile.deleteBusinessText', { name: name || '' }))}
+      </p>
+      <div class="form-field">
+        <label class="form-label">${escapeHtml(t('profile.deleteBusinessConfirmLabel'))}</label>
+        <input class="form-input" name="confirm" autocomplete="off" required placeholder="${escapeAttr(name || '')}" />
+      </div>
+    `,
+    submitLabel: t('profile.deleteBusiness'),
+    danger: true,
+    onSubmit: async (data) => {
+      if ((data.confirm || '').trim() !== (name || '').trim()) {
+        showToast(t('profile.deleteBusinessMismatch'));
+        return;
+      }
+      state._modalLoading = true; renderApp();
+      try {
+        await apiDelete(`/api/profile/me/business/${kind}/${id}`);
+        state.businesses = (state.businesses || []).filter((b) => b.id !== id);
+        setStoredBusinesses(state.businesses);
+        if (accountFormState.postTargetBusiness === id) {
+          accountFormState.postTargetBusiness = state.businesses[0]?.id || null;
+        }
+        closeModal();
+        showToast(t('profile.deleteBusinessSuccess'));
+      } catch (err) {
+        showToast(err.message);
+        state._modalLoading = false;
+        renderApp();
+      }
+    },
+  });
+}
+
 function openAddBusinessModal() {
   const role = state.user.role;
   const isOrg = role === 'organization' || role === 'admin';
   const isHotelier = role === 'hotelier' || role === 'admin';
-
   const kindOptions = [];
   if (isOrg) kindOptions.push({ value: 'organizations', label: t('auth.roleOrg') });
   if (isHotelier) {
     kindOptions.push({ value: 'accommodation', label: t('nav.accommodation') });
     kindOptions.push({ value: 'restaurants', label: t('nav.gastro') });
   }
-
   const initialKind = kindOptions[0]?.value || 'organizations';
-  const initialTypeOptions = initialKind === 'organizations' ? TYPES.organization
-    : initialKind === 'accommodation' ? TYPES.accommodation
-    : TYPES.restaurant;
+  const initialTypeOptions = initialKind === 'organizations' ? TYPES.organization : initialKind === 'accommodation' ? TYPES.accommodation : TYPES.restaurant;
 
   openModal({
     title: t('profile.addBusinessTitle'),
@@ -546,55 +517,40 @@ function openAddBusinessModal() {
           <select class="form-select" name="kind" data-action="add-business-kind-change">
             ${kindOptions.map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}
           </select>
-        </div>
-      ` : `<input type="hidden" name="kind" value="${initialKind}" />`}
-
+        </div>` : `<input type="hidden" name="kind" value="${initialKind}" />`}
       <div class="form-field"><label class="form-label">Název</label><input class="form-input" name="name" required maxlength="200" /></div>
-
       <div class="form-field">
         <label class="form-label">${escapeHtml(t('profile.type'))}</label>
         <select class="form-select" name="type" id="add-business-type-select" required>
           ${initialTypeOptions.map((o) => `<option value="${o.value}">${escapeHtml(tType(o.value))}</option>`).join('')}
         </select>
       </div>
-
       <div class="form-field">
-        <label class="form-label">${escapeHtml(t('auth.registerRegion'))}</label>
+        <label class="form-label">${escapeHtml(t('events.addressLabel'))}</label>
+        <div class="post-place-input" style="position:relative">
+          <input class="form-input" name="address" data-add-business-address-input placeholder="${escapeAttr(t('events.addressPlaceholder'))}" />
+        </div>
+      </div>
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerRegion'))}</label>
         <select class="form-select" name="region" data-action="region-select-change" required>
           <option value="">${escapeHtml(t('auth.registerSelectRegion'))}</option>
           ${Object.keys(REGIONS).map((r) => `<option value="${r}">${r}</option>`).join('')}
-        </select>
-      </div>
-
-      <div class="form-field">
-        <label class="form-label">${escapeHtml(t('auth.registerDistrict'))}</label>
+        </select></div>
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDistrict'))}</label>
         <select class="form-select" name="district" data-action="district-change" required>
           <option value="">${escapeHtml(t('auth.registerFirstRegion'))}</option>
-        </select>
-      </div>
-
-      <div class="form-field">
-        <label class="form-label">${escapeHtml(t('auth.registerCity'))}</label>
+        </select></div>
+      <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerCity'))}</label>
         <select class="form-select" name="city">
           <option value="">${escapeHtml(t('auth.registerFirstDistrict'))}</option>
-        </select>
-      </div>
-
+        </select></div>
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDescription'))}</label><textarea class="form-textarea" name="description" maxlength="500"></textarea></div>
     `,
     submitLabel: t('profile.createBusiness'),
     onSubmit: async (data) => {
       state._modalLoading = true; renderApp();
       try {
-        const res = await apiPost('/api/profile/me/business', {
-          kind: data.kind,
-          name: data.name,
-          type: data.type,
-          region: data.region,
-          district: data.district,
-          city: data.city || null,
-          description: data.description || '',
-        });
+        const res = await apiPost('/api/profile/me/business', data);
         state.businesses = [...(state.businesses || []), res.business];
         setStoredBusinesses(state.businesses);
         accountFormState.postTargetBusiness = res.business.id;
@@ -608,17 +564,32 @@ function openAddBusinessModal() {
       }
     },
   });
+
+  setTimeout(() => {
+    const form = document.querySelector('.modal-form');
+    if (!form) return;
+    const input = form.querySelector('[data-add-business-address-input]');
+    if (input) {
+      attachPlaceSearch(input, {
+        onSelect: (item) => {
+          form.dataset.geoLat = String(item.lat);
+          form.dataset.geoLng = String(item.lng);
+        },
+      });
+    }
+  }, 60);
 }
 
 function updateAddBusinessTypeOptions(kind) {
   const sel = document.getElementById('add-business-type-select');
   if (!sel) return;
-  const typeOptions = kind === 'organizations' ? TYPES.organization
-    : kind === 'accommodation' ? TYPES.accommodation
-    : TYPES.restaurant;
+  const typeOptions = kind === 'organizations' ? TYPES.organization : kind === 'accommodation' ? TYPES.accommodation : TYPES.restaurant;
   sel.innerHTML = typeOptions.map((o) => `<option value="${o.value}">${escapeHtml(tType(o.value))}</option>`).join('');
 }
 
+// ============================================================
+// POST FORM — s place search + map picker (nie len aktuálna poloha)
+// ============================================================
 function renderInlineBusinessPostForm(selected, targetFeed) {
   const busy = accountFormState._postUploading || accountFormState._postCropping;
   return `
@@ -641,9 +612,24 @@ function renderInlineBusinessPostForm(selected, targetFeed) {
           </div>
         </div>
 
-        <div style="display:flex;gap:8px;margin-bottom:14px;">
-          <button type="button" class="profile-action-btn" data-action="attach-geo" data-geo-label>${icon('location', { size: 15 })} ${escapeHtml(t('post.addLocation'))}</button>
+        <div class="post-place-block">
+          <label class="form-label">${escapeHtml(t('post.locationLabel'))}</label>
+          <div class="post-place-input" style="position:relative">
+            <input class="form-input" data-post-place-input placeholder="${escapeAttr(t('post.searchPlace'))}" autocomplete="off" />
+          </div>
+          <div class="post-place-actions">
+            <button type="button" class="profile-action-btn" data-action="open-post-map">
+              ${icon('mapPin', { size: 15 })} ${escapeHtml(t('post.pickOnMap'))}
+            </button>
+            <button type="button" class="profile-action-btn" data-action="attach-geo" data-geo-label>
+              ${icon('location', { size: 15 })} ${escapeHtml(t('post.currentLocation'))}
+            </button>
+            <button type="button" class="profile-action-btn" data-action="clear-post-location" style="display:none;color:#B3273C">
+              ${icon('close', { size: 15 })} ${escapeHtml(t('post.clearLocation'))}
+            </button>
+          </div>
         </div>
+
         <button class="form-submit-btn" type="submit" ${busy ? 'disabled' : ''}>
           ${accountFormState._postUploading ? escapeHtml(t('common.uploading')) : accountFormState._postCropping ? escapeHtml(t('post.cropping')) : escapeHtml(t('post.publish'))}
         </button>
@@ -662,28 +648,21 @@ function selectBusiness(id) {
 async function onFilesSelected(inputEl) {
   const files = Array.from(inputEl.files || []).slice(0, 4);
   if (files.length === 0) return;
-
   const label = document.getElementById('file-drop-label');
   const drop = inputEl.closest('.file-drop');
   const grid = document.getElementById('file-preview-grid');
   if (!label || !drop || !grid) return;
-
   drop.classList.add('has-file');
   label.textContent = `${t('post.photoProcessing')} ${files.length}…`;
 
-  // 1) Kompresia
   const compressed = [];
   for (const f of files) {
     try {
       const c = await compressImage(f, { maxDim: 2400, quality: 0.92 });
       compressed.push(c);
-    } catch (err) {
-      console.error('Kompresia zlyhala:', err);
-      compressed.push(f);
-    }
+    } catch (err) { compressed.push(f); }
   }
 
-  // 2) Crop editor pre každú fotku (4:3)
   accountFormState._postCropping = true;
   renderApp();
 
@@ -691,13 +670,10 @@ async function onFilesSelected(inputEl) {
   try {
     for (let i = 0; i < compressed.length; i++) {
       const cropped = await openCropEditor(compressed[i], {
-        aspect: POST_ASPECT,
-        maxWidth: POST_OUT_WIDTH,
-        quality: 0.88,
+        aspect: POST_ASPECT, maxWidth: POST_OUT_WIDTH, quality: 0.88,
         label: `Post 4:3 (${i + 1}/${compressed.length})`,
       });
       if (cropped === null) {
-        // User zrušil
         accountFormState._postCropping = false;
         accountFormState.postFiles = [];
         renderApp();
@@ -706,20 +682,16 @@ async function onFilesSelected(inputEl) {
       croppedFiles.push(cropped);
     }
   } catch (err) {
-    console.error('Crop error:', err);
     accountFormState._postCropping = false;
     renderApp();
-    showToast('Nepodařilo se ořezat fotky.');
+    showToast(t('common.error'));
     return;
   }
 
   accountFormState._postCropping = false;
   accountFormState.postFiles = croppedFiles;
-
-  // Re-render — preview grid sa vytvorí v renderInlineBusinessPostForm
   renderApp();
 
-  // Update label
   setTimeout(() => {
     const lbl = document.getElementById('file-drop-label');
     const gr = document.getElementById('file-preview-grid');
@@ -762,7 +734,6 @@ async function handleBusinessPostSubmit(form) {
   fd.set('target_feed', targetFeed);
 
   let html = getEditorHtml(form);
-
   const linkUrl = (form.querySelector('[name="link_url"]')?.value || '').trim();
   const linkText = (form.querySelector('[name="link_text"]')?.value || '').trim();
   if (linkUrl) {
@@ -770,7 +741,6 @@ async function handleBusinessPostSubmit(form) {
     const label = linkText || safeUrl;
     html += `<p><a href="${escapeAttr(safeUrl)}">${escapeHtml(label)}</a></p>`;
   }
-
   fd.set('text_html', html);
   fd.set('text', html.replace(/<[^>]*>/g, ' ').trim());
 
@@ -784,32 +754,21 @@ async function handleBusinessPostSubmit(form) {
   accountFormState._postUploading = true;
   const btn = form.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = t('common.uploading'); }
-
   showUploadOverlay(t('common.uploading'));
 
   try {
-    const res = await uploadWithProgress('/api/posts', fd, (pct) => {
-      updateUploadOverlay(pct, `${t('common.uploading')} — ${pct.toFixed(0)} %`);
-    });
-
+    await uploadWithProgress('/api/posts', fd, (pct) => updateUploadOverlay(pct, `${t('common.uploading')} — ${pct.toFixed(0)} %`));
     updateUploadOverlay(100, t('common.processing'));
     await new Promise((r) => setTimeout(r, 200));
-
-    // KRITICKÉ: Skryť overlay PRED renderom
     hideUploadOverlay();
-
     showToast(t('toasts.postPublished'));
     if (state.socialFeeds[targetFeed]) state.socialFeeds[targetFeed].items = [];
-
     accountFormState.postFiles = [];
     accountFormState._postFormOpen = false;
     accountFormState._postUploading = false;
     accountFormState._postCropping = false;
-
     document.body.style.overflow = '';
     document.body.style.pointerEvents = '';
-    document.documentElement.style.pointerEvents = '';
-
     renderApp();
   } catch (err) {
     hideUploadOverlay();
@@ -834,20 +793,13 @@ function openCheckinCreate(kind, id, name) {
     onSubmit: async (data) => {
       state._modalLoading = true; renderApp();
       try {
-        const res = await apiPost('/api/checkins', {
-          business_id: id,
-          business_kind: kind,
-          note: data.note || null,
-        });
+        const res = await apiPost('/api/checkins', { business_id: id, business_kind: kind, note: data.note || null });
         closeModal();
         if (res.new_badges && res.new_badges.length > 0) {
           const list = res.new_badges.map((b) => `${tBadge(b.key, b.name)} L${b.level}`).join(', ');
           showToast(t('checkins.newBadge', { list }));
-        } else if (res.already) {
-          showToast(res.message || t('checkins.already'));
-        } else {
-          showToast(t('checkins.added'));
-        }
+        } else if (res.already) showToast(res.message || t('checkins.already'));
+        else showToast(t('checkins.added'));
         if (state.overlay?.type === 'profile') {
           delete state.profiles[`${state.overlay.kind}:${state.overlay.id}`];
           loadProfile(state.overlay.kind, state.overlay.id);
@@ -872,16 +824,12 @@ async function openProfileStats(kind, id) {
     const data = await apiGet(`/api/profile/${kind}/${id}/stats`);
     state._profileStats = data;
     renderApp();
-  } catch (err) {
-    showToast(err.message);
-    closeOverlay();
-  }
+  } catch (err) { showToast(err.message); closeOverlay(); }
 }
 
 function renderProfileStatsOverlay() {
   const s = state._profileStats;
   const view = state._profileStatsView || { metric: 'posts', period: 'week' };
-
   if (!s) return `<div class="page-scroll">${renderBackHeader(t('stats.title'))}<p class="empty-state">${escapeHtml(t('common.loading'))}</p></div>`;
 
   const daily = s.daily || {};
@@ -889,16 +837,11 @@ function renderProfileStatsOverlay() {
   const slice = view.period === 'week' ? allDays.slice(-7) : allDays.slice(-30);
   const metricKey = view.metric || 'posts';
   const series = (daily[metricKey] || allDays).slice(-slice.length);
-
   const maxN = Math.max(1, ...series.map((d) => d.n || 0));
   const totalN = series.reduce((sum, d) => sum + (d.n || 0), 0);
 
-  const chartWidth = 640;
-  const chartHeight = 220;
-  const paddingX = 20;
-  const paddingY = 30;
-  const innerW = chartWidth - paddingX * 2;
-  const innerH = chartHeight - paddingY * 2;
+  const chartWidth = 640, chartHeight = 220, paddingX = 20, paddingY = 30;
+  const innerW = chartWidth - paddingX * 2, innerH = chartHeight - paddingY * 2;
   const barGap = 3;
   const barW = series.length > 0 ? Math.max(4, (innerW - barGap * (series.length - 1)) / series.length) : 10;
 
@@ -913,23 +856,17 @@ function renderProfileStatsOverlay() {
   const labelsSvg = series.map((d, i) => {
     if (i % labelStep !== 0 && i !== series.length - 1) return '';
     const x = paddingX + i * (barW + barGap) + barW / 2;
-    const shortDay = (d.day || '').slice(8);
-    const month = (d.day || '').slice(5, 7);
-    return `<text x="${x.toFixed(1)}" y="${chartHeight - 8}" text-anchor="middle" font-size="10" fill="#64766D">${shortDay}.${month}.</text>`;
+    return `<text x="${x.toFixed(1)}" y="${chartHeight - 8}" text-anchor="middle" font-size="10" fill="#64766D">${(d.day || '').slice(8)}.${(d.day || '').slice(5, 7)}.</text>`;
   }).join('');
 
   const metricLabels = {
-    posts: t('stats.posts'),
-    likes: t('stats.likes'),
-    comments: t('stats.comments'),
-    views: t('stats.views'),
-    events: t('stats.events'),
+    posts: t('stats.posts'), likes: t('stats.likes'), comments: t('stats.comments'),
+    views: t('stats.views'), events: t('stats.events'),
   };
 
   return `
     <div class="page-scroll">
       ${renderBackHeader(t('stats.title'))}
-
       <div class="profile-section">
         <div class="stat-cards">
           <div class="stat-card"><div class="stat-card-value">${fmt(s.posts)}</div><div class="stat-card-label">${escapeHtml(t('stats.posts'))}</div></div>
@@ -940,10 +877,8 @@ function renderProfileStatsOverlay() {
           <div class="stat-card"><div class="stat-card-value">${fmt(s.views || 0)}</div><div class="stat-card-label">${escapeHtml(t('stats.views'))}</div></div>
         </div>
       </div>
-
       <div class="profile-section">
         <h3 class="profile-section-title">${escapeHtml(t('stats.chart'))}</h3>
-
         <div class="stats-controls">
           <div class="stats-control-group">
             <label class="stats-control-label">${escapeHtml(t('stats.metric'))}</label>
@@ -963,25 +898,18 @@ function renderProfileStatsOverlay() {
             </div>
           </div>
         </div>
-
         <div class="stats-chart-wrap">
           <div class="stats-chart-head">
             <span class="stats-chart-title">${escapeHtml(metricLabels[metricKey] || metricKey)} · ${view.period === 'week' ? escapeHtml(t('stats.last7days')) : escapeHtml(t('stats.last30days'))}</span>
             <span class="stats-chart-total"><strong>${fmt(totalN)}</strong> ${escapeHtml(t('stats.total')).toLowerCase()}</span>
           </div>
           <svg class="stats-chart-svg" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="none" role="img">
-            <defs>
-              <linearGradient id="statsGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#2FBF71" stop-opacity="1" />
-                <stop offset="100%" stop-color="#1B8F52" stop-opacity="0.85" />
-              </linearGradient>
-            </defs>
+            <defs><linearGradient id="statsGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2FBF71" stop-opacity="1" /><stop offset="100%" stop-color="#1B8F52" stop-opacity="0.85" /></linearGradient></defs>
             ${[0.25, 0.5, 0.75, 1].map((p) => {
               const y = chartHeight - paddingY - innerH * p;
               return `<line x1="${paddingX}" y1="${y.toFixed(1)}" x2="${chartWidth - paddingX}" y2="${y.toFixed(1)}" stroke="#E4ECE6" stroke-width="1" stroke-dasharray="3 3" />`;
             }).join('')}
-            ${barsSvg}
-            ${labelsSvg}
+            ${barsSvg}${labelsSvg}
           </svg>
           ${series.every((d) => !d.n) ? `<p class="stats-chart-empty">${escapeHtml(t('stats.noData'))}</p>` : ''}
         </div>
@@ -1042,10 +970,8 @@ async function handleResetSubmit(form) {
 }
 
 async function resendVerification() {
-  try {
-    await apiPost('/api/auth/resend-verification', {});
-    showToast(t('toasts.linkSent'));
-  } catch (err) { showToast(err.message); }
+  try { await apiPost('/api/auth/resend-verification', {}); showToast(t('toasts.linkSent')); }
+  catch (err) { showToast(err.message); }
 }
 
 function renderTwoFAOverlay() {
@@ -1070,31 +996,12 @@ async function handleTwoFALogin(form) {
 }
 
 // ============================================================
-// ADMIN
+// ADMIN — ponechané z pôvodnej verzie
 // ============================================================
-async function loadAdminPending() {
-  try { state.adminPending = await apiGet('/api/admin/pending'); }
-  catch { state.adminPending = { organizations: [], accommodation: [], restaurants: [] }; }
-  finally { state.adminPendingLoading = false; if (state.tab === 'account') renderApp(); }
-}
-
-async function loadAdminReports() {
-  try { const d = await apiGet('/api/admin/reports'); state.adminReports = d.reports; }
-  catch { state.adminReports = []; }
-  finally { state.adminReportsLoading = false; if (state.tab === 'account') renderApp(); }
-}
-
-async function loadAdminVerifications() {
-  try { const d = await apiGet('/api/admin/verifications'); state.adminVerifications = d.requests || []; }
-  catch { state.adminVerifications = []; }
-  finally { if (state.tab === 'account') renderApp(); }
-}
-
-async function loadAdminPosts() {
-  try { const d = await apiGet('/api/admin/posts'); state.adminPosts = d.posts || []; }
-  catch { state.adminPosts = []; }
-  finally { if (state.tab === 'account') renderApp(); }
-}
+async function loadAdminPending() { try { state.adminPending = await apiGet('/api/admin/pending'); } catch { state.adminPending = { organizations: [], accommodation: [], restaurants: [] }; } finally { state.adminPendingLoading = false; if (state.tab === 'account') renderApp(); } }
+async function loadAdminReports() { try { const d = await apiGet('/api/admin/reports'); state.adminReports = d.reports; } catch { state.adminReports = []; } finally { state.adminReportsLoading = false; if (state.tab === 'account') renderApp(); } }
+async function loadAdminVerifications() { try { const d = await apiGet('/api/admin/verifications'); state.adminVerifications = d.requests || []; } catch { state.adminVerifications = []; } finally { if (state.tab === 'account') renderApp(); } }
+async function loadAdminPosts() { try { const d = await apiGet('/api/admin/posts'); state.adminPosts = d.posts || []; } catch { state.adminPosts = []; } finally { if (state.tab === 'account') renderApp(); } }
 
 function renderAdminPanel() {
   if (state.adminPending === null && !state.adminPendingLoading) { state.adminPendingLoading = true; loadAdminPending(); }
@@ -1103,9 +1010,7 @@ function renderAdminPanel() {
   if (state.adminPosts === null) loadAdminPosts();
   if (state.adminUserReports === null) loadAdminUserReports();
   if (state.adminStats === null) loadAdminStats();
-
   const tab = state._adminTab || 'overview';
-
   return `
     <div class="admin-tabs">
       <button class="admin-tab ${tab === 'overview' ? 'is-active' : ''}" data-action="admin-tab" data-tab="overview">${escapeHtml(t('admin.overview'))}</button>
@@ -1120,8 +1025,7 @@ function renderAdminPanel() {
     ${tab === 'verifications' ? renderAdminVerifications() : ''}
     ${tab === 'reports' ? renderAdminReports() : ''}
     ${tab === 'posts' ? renderAdminPosts() : ''}
-    ${tab === 'tools' ? renderAdminTools() : ''}
-  `;
+    ${tab === 'tools' ? renderAdminTools() : ''}`;
 }
 
 function renderAdminOverview() {
@@ -1148,13 +1052,9 @@ function renderAdminOverview() {
         ${s.top_organizations.map((o) => `
           <div class="admin-user-row">
             <div class="admin-user-avatar">${(o.name || '?').charAt(0).toUpperCase()}</div>
-            <div class="admin-user-info">
-              <p class="admin-user-name">${escapeHtml(o.name)}</p>
-              <p class="admin-user-meta">${o.post_count} ${escapeHtml(t('admin.postsCount'))}</p>
-            </div>
+            <div class="admin-user-info"><p class="admin-user-name">${escapeHtml(o.name)}</p><p class="admin-user-meta">${o.post_count} ${escapeHtml(t('admin.postsCount'))}</p></div>
           </div>`).join('')}
-      </div>
-    ` : ''}
+      </div>` : ''}
     <div class="profile-section">
       <h3 class="profile-section-title">${escapeHtml(t('admin.advancedTools'))}</h3>
       <button class="settings-row" data-action="open-broadcast-push">${icon('bell', { size: 17 })} ${escapeHtml(t('admin.sendPush'))}</button>
@@ -1162,12 +1062,8 @@ function renderAdminOverview() {
 }
 
 function renderAdminUsers() {
-  const users = state.adminUsers;
-  const counts = state.adminUsersCounts;
-  const q = state._adminUserQuery || '';
-  const role = state._adminUserRole || '';
-  const status = state._adminUserStatus || '';
-
+  const users = state.adminUsers, counts = state.adminUsersCounts;
+  const q = state._adminUserQuery || '', role = state._adminUserRole || '', status = state._adminUserStatus || '';
   return `
     <div class="admin-search-bar">
       <input class="admin-search-input" type="search" placeholder="${escapeAttr(t('admin.searchUsers'))}" value="${escapeAttr(q)}" data-action="admin-user-search" />
@@ -1184,11 +1080,7 @@ function renderAdminUsers() {
         <option value="suspended" ${status === 'suspended' ? 'selected' : ''}>${escapeHtml(t('admin.stateSuspended'))}</option>
       </select>
     </div>
-    ${counts ? `
-      <p class="user-list-meta" style="padding:0 16px 12px">
-        ${escapeHtml(t('admin.totalLabel'))}: ${counts.total || 0} · ${escapeHtml(t('admin.userLabel'))}: ${counts.users || 0} · ${escapeHtml(t('admin.orgLabel'))}: ${counts.organizations || 0} · ${escapeHtml(t('admin.hotelierLabel'))}: ${counts.hoteliers || 0} · ${escapeHtml(t('admin.suspendedLabel'))}: ${counts.suspended || 0}
-      </p>
-    ` : ''}
+    ${counts ? `<p class="user-list-meta" style="padding:0 16px 12px">${escapeHtml(t('admin.totalLabel'))}: ${counts.total || 0} · ${escapeHtml(t('admin.userLabel'))}: ${counts.users || 0} · ${escapeHtml(t('admin.orgLabel'))}: ${counts.organizations || 0} · ${escapeHtml(t('admin.hotelierLabel'))}: ${counts.hoteliers || 0} · ${escapeHtml(t('admin.suspendedLabel'))}: ${counts.suspended || 0}</p>` : ''}
     ${users == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
       : users.length === 0 ? `<p class="empty-state">${escapeHtml(t('admin.noUsers'))}</p>`
       : users.map((u) => `
@@ -1200,11 +1092,8 @@ function renderAdminUsers() {
             <span class="admin-user-role role-${u.role}">${u.role}</span>
             ${u.status === 'suspended' ? `<span class="admin-user-role status-suspended" style="margin-left:4px">${escapeHtml(t('admin.stateSuspended'))}</span>` : ''}
           </div>
-          <div class="admin-user-actions">
-            <button data-action="admin-user-detail" data-id="${u.id}" title="Detail">${icon('more', { size: 16 })}</button>
-          </div>
-        </div>`).join('')}
-  `;
+          <div class="admin-user-actions"><button data-action="admin-user-detail" data-id="${u.id}" title="Detail">${icon('more', { size: 16 })}</button></div>
+        </div>`).join('')}`;
 }
 
 function renderAdminVerifications() {
@@ -1232,8 +1121,7 @@ function renderAdminVerifications() {
 }
 
 function renderAdminReports() {
-  const posts = state.adminReports;
-  const users = state.adminUserReports;
+  const posts = state.adminReports, users = state.adminUserReports;
   return `
     <div class="profile-section">
       <h3 class="profile-section-title">${escapeHtml(t('admin.postReports'))} (${posts ? posts.length : '…'})</h3>
@@ -1248,7 +1136,6 @@ function renderAdminReports() {
             <button class="admin-delete-btn" data-action="delete-reported-post" data-post-id="${r.post_id}" data-report-id="${r.id}">${escapeHtml(t('common.delete'))}</button>
           </div>`).join('')}
     </div>
-
     <div class="profile-section">
       <h3 class="profile-section-title">${escapeHtml(t('admin.userReports'))} (${users ? users.length : '…'})</h3>
       ${users === null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
@@ -1293,87 +1180,35 @@ function renderAdminTools() {
     </div>`;
 }
 
-async function loadAdminStats() {
-  try { state.adminStats = await apiGet('/api/admin/stats'); }
-  catch { state.adminStats = { totals: {} }; }
-  finally { if (state.tab === 'account') renderApp(); }
-}
-
+async function loadAdminStats() { try { state.adminStats = await apiGet('/api/admin/stats'); } catch { state.adminStats = { totals: {} }; } finally { if (state.tab === 'account') renderApp(); } }
 async function loadAdminUsers() {
-  const q = state._adminUserQuery || '';
-  const role = state._adminUserRole || '';
-  const status = state._adminUserStatus || '';
+  const q = state._adminUserQuery || '', role = state._adminUserRole || '', status = state._adminUserStatus || '';
   const params = new URLSearchParams();
-  if (q) params.set('q', q);
-  if (role) params.set('role', role);
-  if (status) params.set('status', status);
-  try {
-    const data = await apiGet(`/api/admin/users?${params.toString()}`);
-    state.adminUsers = data.users || [];
-    state.adminUsersCounts = data.counts || null;
-  } catch { state.adminUsers = []; }
+  if (q) params.set('q', q); if (role) params.set('role', role); if (status) params.set('status', status);
+  try { const data = await apiGet(`/api/admin/users?${params.toString()}`); state.adminUsers = data.users || []; state.adminUsersCounts = data.counts || null; }
+  catch { state.adminUsers = []; }
   finally { if (state.tab === 'account') renderApp(); }
 }
+async function loadAdminUserReports() { try { const d = await apiGet('/api/admin/user-reports'); state.adminUserReports = d.reports || []; } catch { state.adminUserReports = []; } finally { if (state.tab === 'account') renderApp(); } }
 
-async function loadAdminUserReports() {
-  try { const d = await apiGet('/api/admin/user-reports'); state.adminUserReports = d.reports || []; }
-  catch { state.adminUserReports = []; }
-  finally { if (state.tab === 'account') renderApp(); }
-}
-
-async function suspendUser(id) {
-  const reason = prompt('Důvod pozastavení (nepovinné):') || '';
-  try {
-    await apiPost(`/api/admin/users/${id}/suspend`, { reason });
-    showToast(t('admin.suspended'));
-    state.adminUsers = null;
-    loadAdminUsers();
-  } catch (err) { showToast(err.message); }
-}
-
-async function unsuspendUser(id) {
-  try {
-    await apiPost(`/api/admin/users/${id}/unsuspend`, {});
-    showToast(t('admin.unsuspended'));
-    state.adminUsers = null;
-    loadAdminUsers();
-  } catch (err) { showToast(err.message); }
-}
+async function suspendUser(id) { const reason = prompt('Důvod pozastavení (nepovinné):') || ''; try { await apiPost(`/api/admin/users/${id}/suspend`, { reason }); showToast(t('admin.suspended')); state.adminUsers = null; loadAdminUsers(); } catch (err) { showToast(err.message); } }
+async function unsuspendUser(id) { try { await apiPost(`/api/admin/users/${id}/unsuspend`, {}); showToast(t('admin.unsuspended')); state.adminUsers = null; loadAdminUsers(); } catch (err) { showToast(err.message); } }
 
 function changeUserRole(id) {
   openModal({
     title: t('admin.changeRole'),
-    body: `
-      <div class="form-field">
-        <label class="form-label">${escapeHtml(t('auth.registerRole'))}</label>
-        <select class="form-select" name="role" required>
-          <option value="user">${escapeHtml(t('admin.roleUser'))}</option>
-          <option value="organization">${escapeHtml(t('admin.roleOrg'))}</option>
-          <option value="hotelier">${escapeHtml(t('admin.roleHotelier'))}</option>
-          <option value="admin">${escapeHtml(t('admin.roleAdmin'))}</option>
-        </select>
-      </div>`,
+    body: `<div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerRole'))}</label><select class="form-select" name="role" required><option value="user">${escapeHtml(t('admin.roleUser'))}</option><option value="organization">${escapeHtml(t('admin.roleOrg'))}</option><option value="hotelier">${escapeHtml(t('admin.roleHotelier'))}</option><option value="admin">${escapeHtml(t('admin.roleAdmin'))}</option></select></div>`,
     submitLabel: t('common.save'),
     onSubmit: async (data) => {
       state._modalLoading = true; renderApp();
-      try {
-        await apiPost(`/api/admin/users/${id}/role`, { role: data.role });
-        closeModal();
-        showToast(t('admin.roleSaved'));
-        state.adminUsers = null;
-        loadAdminUsers();
-      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
+      try { await apiPost(`/api/admin/users/${id}/role`, { role: data.role }); closeModal(); showToast(t('admin.roleSaved')); state.adminUsers = null; loadAdminUsers(); }
+      catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
     },
   });
 }
 
 function openUserDetail(id) {
-  openModal({
-    title: t('admin.userDetail'),
-    body: `<div id="admin-user-detail-body" style="min-height:120px"><p style="color:var(--c-text-muted)">${escapeHtml(t('common.loading'))}</p></div>`,
-    submitLabel: t('admin.close'),
-    onSubmit: () => { closeModal(); },
-  });
+  openModal({ title: t('admin.userDetail'), body: `<div id="admin-user-detail-body" style="min-height:120px"><p style="color:var(--c-text-muted)">${escapeHtml(t('common.loading'))}</p></div>`, submitLabel: t('admin.close'), onSubmit: () => { closeModal(); } });
   setTimeout(async () => {
     const el = document.getElementById('admin-user-detail-body');
     if (!el) return;
@@ -1388,16 +1223,12 @@ function openUserDetail(id) {
           <div class="admin-stat-box"><div class="admin-stat-value">${d.stats.checkins}</div><div class="admin-stat-label">${escapeHtml(t('admin.checkinsCount'))}</div></div>
           <div class="admin-stat-box"><div class="admin-stat-value">${d.stats.followers}</div><div class="admin-stat-label">${escapeHtml(t('stats.followers'))}</div></div>
         </div>
-        <p style="font-size:12px;color:var(--c-text-muted)">${escapeHtml(t('auth.registerRole'))}: <strong>${d.user.role}</strong> · Status: <strong>${d.user.status}</strong></p>
-        <p style="font-size:12px;color:var(--c-text-muted)">${timeAgo(d.user.created_at)}</p>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
           ${d.user.status === 'suspended'
             ? `<button class="profile-action-btn" data-action="admin-unsuspend-user" data-id="${id}">${escapeHtml(t('admin.unsuspend'))}</button>`
             : `<button class="profile-action-btn" style="color:#B3273C" data-action="admin-suspend-user" data-id="${id}">${escapeHtml(t('admin.suspend'))}</button>`}
           <button class="profile-action-btn" data-action="admin-change-role" data-id="${id}">${escapeHtml(t('admin.changeRole'))}</button>
-          ${!d.user.email_verified ? `<button class="profile-action-btn" data-action="admin-force-verify-email" data-id="${id}">${escapeHtml(t('admin.forceVerify'))}</button>` : ''}
-        </div>
-      `;
+        </div>`;
     } catch (err) {
       el.innerHTML = `<p style="color:#B3273C">${escapeHtml(t('common.error'))}: ${escapeHtml(err.message)}</p>`;
     }
@@ -1414,112 +1245,36 @@ function openBroadcastPush() {
     submitLabel: t('admin.broadcastSend'),
     onSubmit: async (data) => {
       state._modalLoading = true; renderApp();
-      try {
-        const res = await apiPost('/api/admin/broadcast-push', data);
-        closeModal();
-        showToast(t('admin.broadcastSent', { sent: res.sent, total: res.users_targeted }));
-      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
+      try { const res = await apiPost('/api/admin/broadcast-push', data); closeModal(); showToast(t('admin.broadcastSent', { sent: res.sent, total: res.users_targeted })); }
+      catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
     },
   });
 }
 
-async function verifyBusiness(kind, id) {
-  try {
-    await apiPost(`/api/admin/verify/${kind}/${id}`, {});
-    showToast(t('admin.approved'));
-    state.adminPending = null;
-    state.adminPendingLoading = false;
-    renderApp();
-  } catch (err) { showToast(err.message); }
-}
+async function verifyBusiness(kind, id) { try { await apiPost(`/api/admin/verify/${kind}/${id}`, {}); showToast(t('admin.approved')); state.adminPending = null; state.adminPendingLoading = false; renderApp(); } catch (err) { showToast(err.message); } }
 
 function deleteReportedPost(postId, reportId) {
-  openModal({
-    title: t('post.deleteTitle'),
-    body: `<p style="font-size:14px;line-height:1.6">${escapeHtml(t('post.deleteText'))}</p>`,
-    submitLabel: t('common.delete'),
-    danger: true,
-    onSubmit: async () => {
-      state._modalLoading = true; renderApp();
-      try {
-        await apiDelete(`/api/admin/posts/${postId}`);
-        closeModal();
-        showToast(t('toasts.deleted'));
-        state.adminReports = null;
-        state.adminReportsLoading = false;
-        renderApp();
-      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
-    },
-  });
+  openModal({ title: t('post.deleteTitle'), body: `<p style="font-size:14px;line-height:1.6">${escapeHtml(t('post.deleteText'))}</p>`, submitLabel: t('common.delete'), danger: true, onSubmit: async () => {
+    state._modalLoading = true; renderApp();
+    try { await apiDelete(`/api/admin/posts/${postId}`); closeModal(); showToast(t('toasts.deleted')); state.adminReports = null; state.adminReportsLoading = false; renderApp(); }
+    catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
+  }});
 }
 
 function deleteAdminPost(postId) {
-  openModal({
-    title: t('post.deleteTitle'),
-    body: `
-      <p style="font-size:14px;line-height:1.6;margin-bottom:12px">${escapeHtml(t('post.deleteText'))}</p>
-      <div class="form-field">
-        <label class="form-label">Důvod (DSA — odešle se autorovi)</label>
-        <textarea class="form-textarea" name="reason" rows="3" maxlength="500" placeholder="Porušenie pravidiel platformy"></textarea>
-      </div>`,
-    submitLabel: t('common.delete'),
-    danger: true,
-    onSubmit: async (data) => {
-      state._modalLoading = true; renderApp();
-      try {
-        await apiDelete(`/api/admin/posts/${postId}`, { reason: data.reason || 'Porušenie pravidiel platformy' });
-        closeModal();
-        showToast(t('toasts.deleted'));
-        state.adminPosts = null;
-        renderApp();
-      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
-    },
-  });
+  openModal({ title: t('post.deleteTitle'), body: `<p style="font-size:14px;line-height:1.6;margin-bottom:12px">${escapeHtml(t('post.deleteText'))}</p><div class="form-field"><label class="form-label">Důvod (DSA — odešle se autorovi)</label><textarea class="form-textarea" name="reason" rows="3" maxlength="500"></textarea></div>`, submitLabel: t('common.delete'), danger: true, onSubmit: async (data) => {
+    state._modalLoading = true; renderApp();
+    try { await apiDelete(`/api/admin/posts/${postId}`, { reason: data.reason || 'Porušenie pravidiel platformy' }); closeModal(); showToast(t('toasts.deleted')); state.adminPosts = null; renderApp(); }
+    catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
+  }});
 }
 
-async function approveVerification(id) {
-  const note = prompt(t('admin.approveNote'), '') || '';
-  try {
-    await apiPost(`/api/admin/verifications/${id}/approve`, { note });
-    showToast(t('admin.approved'));
-    state.adminVerifications = null;
-    renderApp();
-  } catch (err) { showToast(err.message); }
-}
+async function approveVerification(id) { const note = prompt(t('admin.approveNote'), '') || ''; try { await apiPost(`/api/admin/verifications/${id}/approve`, { note }); showToast(t('admin.approved')); state.adminVerifications = null; renderApp(); } catch (err) { showToast(err.message); } }
+async function rejectVerification(id) { const note = prompt(t('admin.rejectNote'), '') || ''; try { await apiPost(`/api/admin/verifications/${id}/reject`, { note }); showToast(t('admin.rejected')); state.adminVerifications = null; renderApp(); } catch (err) { showToast(err.message); } }
 
-async function rejectVerification(id) {
-  const note = prompt(t('admin.rejectNote'), '') || '';
-  try {
-    await apiPost(`/api/admin/verifications/${id}/reject`, { note });
-    showToast(t('admin.rejected'));
-    state.adminVerifications = null;
-    renderApp();
-  } catch (err) { showToast(err.message); }
-}
-
-async function adminBackfillHandles() {
-  if (!confirm(t('admin.handlesQuestion'))) return;
-  try {
-    const r = await apiPost('/api/admin/backfill-handles', {});
-    showToast(t('admin.handlesDone', { updated: r.updated, total: r.total }));
-  } catch (err) { showToast(err.message); }
-}
-
-async function adminSeedTest() {
-  if (!confirm(t('admin.seedQuestion'))) return;
-  try {
-    const r = await apiPost('/api/admin/seed-test-content', {});
-    showToast(t('admin.seedDone', { users: r.users || 0, businesses: r.businesses || 0, posts: r.posts || 0 }));
-  } catch (err) { showToast(err.message); }
-}
-
-async function adminCleanupTest() {
-  if (!confirm(t('admin.cleanupQuestion'))) return;
-  try {
-    await apiPost('/api/admin/cleanup-test-content', {});
-    showToast(t('admin.cleanupDone'));
-  } catch (err) { showToast(err.message); }
-}
+async function adminBackfillHandles() { if (!confirm(t('admin.handlesQuestion'))) return; try { const r = await apiPost('/api/admin/backfill-handles', {}); showToast(t('admin.handlesDone', { updated: r.updated, total: r.total })); } catch (err) { showToast(err.message); } }
+async function adminSeedTest() { if (!confirm(t('admin.seedQuestion'))) return; try { const r = await apiPost('/api/admin/seed-test-content', {}); showToast(t('admin.seedDone', { users: r.users || 0, businesses: r.businesses || 0, posts: r.posts || 0 })); } catch (err) { showToast(err.message); } }
+async function adminCleanupTest() { if (!confirm(t('admin.cleanupQuestion'))) return; try { await apiPost('/api/admin/cleanup-test-content', {}); showToast(t('admin.cleanupDone')); } catch (err) { showToast(err.message); } }
 
 function openVerificationRequest(kind, id, name) {
   state.overlayStack.push(state.overlay);
@@ -1534,22 +1289,15 @@ function renderVerificationRequestOverlay() {
     <div class="page-scroll">
       ${renderBackHeader(t('verify.title'))}
       <div class="profile-section">
-        <p style="font-size:14px;line-height:1.6;margin-bottom:14px">
-          ${escapeHtml(t('verify.text1'))} <strong>${escapeHtml(o.name)}</strong>.
-        </p>
+        <p style="font-size:14px;line-height:1.6;margin-bottom:14px">${escapeHtml(t('verify.text1'))} <strong>${escapeHtml(o.name)}</strong>.</p>
         <p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:14px">📄 ${escapeHtml(t('verify.text2'))}</p>
         <form data-action="submit-verification-request" data-kind="${o.kind}" data-id="${o.id}">
           <div class="file-drop ${o.docFile ? 'has-file' : ''}" data-action="trigger-verif-doc">
             <input type="file" accept="application/pdf,image/*" id="verif-doc-input" data-action="verif-doc-selected" style="display:none" />
             ${o.docFile ? `✓ ${escapeHtml(o.docFile.name)}` : `${icon('image', { size: 24 })}<br/>${escapeHtml(t('verify.pickDoc'))}`}
           </div>
-          <div class="form-field">
-            <label class="form-label">${escapeHtml(t('verify.note'))}</label>
-            <textarea class="form-textarea" name="note" rows="3" maxlength="1000" placeholder="${escapeAttr(t('verify.notePh'))}"></textarea>
-          </div>
-          <button class="form-submit-btn" type="submit" ${o.uploading ? 'disabled' : ''}>
-            ${o.uploading ? escapeHtml(t('common.sending')) : escapeHtml(t('verify.submit'))}
-          </button>
+          <div class="form-field"><label class="form-label">${escapeHtml(t('verify.note'))}</label><textarea class="form-textarea" name="note" rows="3" maxlength="1000" placeholder="${escapeAttr(t('verify.notePh'))}"></textarea></div>
+          <button class="form-submit-btn" type="submit" ${o.uploading ? 'disabled' : ''}>${o.uploading ? escapeHtml(t('common.sending')) : escapeHtml(t('verify.submit'))}</button>
         </form>
       </div>
     </div>`;
@@ -1568,24 +1316,15 @@ async function handleVerificationSubmit(form) {
   if (!docFile) { showToast(t('verify.pickFile')); return; }
   state.overlay.uploading = true;
   renderApp();
-
   showUploadOverlay(t('common.uploading'));
-
   try {
     const fd = new FormData();
     fd.append('file', docFile);
-    const up = await uploadWithProgress('/api/profile/me/upload-verification-doc', fd, (pct) => {
-      updateUploadOverlay(pct);
-    });
-
+    const up = await uploadWithProgress('/api/profile/me/upload-verification-doc', fd, (pct) => updateUploadOverlay(pct));
     const fd2 = new FormData(form);
     await apiPost('/api/profile/me/request-verification', {
-      business_id: id,
-      business_kind: kind,
-      doc_url: up.url,
-      note: (fd2.get('note') || '').toString(),
+      business_id: id, business_kind: kind, doc_url: up.url, note: (fd2.get('note') || '').toString(),
     });
-
     hideUploadOverlay();
     showToast(t('toasts.verificationSent'));
     state.overlay = null;
