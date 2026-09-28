@@ -65,6 +65,7 @@ const state = {
   _onboarding: null,
   _cookieConsent: false,
   _cookieSettingsOpen: false,
+  _cookieForceShow: false,
   _cookieSettings: null,
   _pushSubscribed: null,
   _pushPrompted: false,
@@ -74,7 +75,6 @@ const state = {
   _modal: null,
   _modalLoading: false,
 
-  // Reply state v lightboxe
   _lightboxReplyTo: null,
 
   lightbox: null,
@@ -579,7 +579,7 @@ function switchTab(tab) {
 }
 
 // ============================================================
-// LIGHTBOX — s 3-stavovým panelom
+// LIGHTBOX — s panel states
 // ============================================================
 function openLightbox(images, index = 0, caption = '', post = null) {
   state.lightbox = {
@@ -643,33 +643,34 @@ function lightboxNext() {
   updateLightboxDOM();
 }
 
-function setLightboxPanelState(state_) {
+function setLightboxPanelState(s) {
   if (!state.lightbox) return;
-  state.lightbox.panelState = Math.max(0, Math.min(2, state_));
+  state.lightbox.panelState = Math.max(0, Math.min(2, s));
   applyLightboxPanelState();
 }
 
 function cycleLightboxPanelState() {
   if (!state.lightbox) return;
   const cur = state.lightbox.panelState || 0;
-  const next = (cur + 1) % 3;
-  setLightboxPanelState(next);
+  setLightboxPanelState((cur + 1) % 3);
 }
 
+// OPRAVA: triedy sa aplikujú na lightbox-inner + telo dostane data attr
 function applyLightboxPanelState() {
   const lb = state.lightbox;
   if (!lb) return;
   const inner = document.querySelector('.lightbox-inner');
+  const body = document.body;
   if (!inner) return;
   inner.classList.remove('lb-panel-0', 'lb-panel-1', 'lb-panel-2');
   inner.classList.add(`lb-panel-${lb.panelState || 0}`);
+  body.setAttribute('data-lb-panel', String(lb.panelState || 0));
 }
 
 let _lbDragHandlers = null;
 
 function setupLightboxDrag() {
   teardownLightboxDrag();
-
   const handle = document.querySelector('.lightbox-drag-handle');
   if (!handle) return;
 
@@ -683,31 +684,20 @@ function setupLightboxDrag() {
     moved = false;
     handle.classList.add('is-dragging');
   };
-
   const onTouchMove = (e) => {
     if (!state.lightbox) return;
     const dy = e.touches[0].clientY - startY;
     if (Math.abs(dy) > 6) moved = true;
   };
-
   const onTouchEnd = (e) => {
     handle.classList.remove('is-dragging');
     if (!state.lightbox) return;
     const dy = e.changedTouches[0].clientY - startY;
-
-    if (!moved || Math.abs(dy) < 20) {
-      cycleLightboxPanelState();
-      return;
-    }
-
+    if (!moved || Math.abs(dy) < 20) { cycleLightboxPanelState(); return; }
     if (dy < -40) setLightboxPanelState(Math.min(2, startState + 1));
     else if (dy > 40) setLightboxPanelState(Math.max(0, startState - 1));
   };
-
-  const onClick = (e) => {
-    e.preventDefault();
-    cycleLightboxPanelState();
-  };
+  const onClick = (e) => { e.preventDefault(); cycleLightboxPanelState(); };
 
   _lbDragHandlers = { onTouchStart, onTouchMove, onTouchEnd, onClick };
   handle.addEventListener('touchstart', onTouchStart, { passive: true });
@@ -728,13 +718,9 @@ function teardownLightboxDrag() {
   _lbDragHandlers = null;
 }
 
-// ============================================================
-// Render komentárov v lightboxe — s reply tlačidlom
-// ============================================================
 function renderLightboxComment(c, postId, feedKey, isReply = false) {
   const isMine = isLoggedIn() && state.user.id === c.user_id;
   const replies = (c.replies || []).map((r) => renderLightboxComment(r, postId, feedKey, true)).join('');
-
   const replyFormOpen = state._lightboxReplyTo === c.id;
 
   return `
@@ -749,32 +735,19 @@ function renderLightboxComment(c, postId, feedKey, isReply = false) {
         <span class="lightbox-comment-text">${escapeHtml(c.comment_text)}</span>
         <div class="lightbox-comment-meta">
           <span class="lightbox-comment-time">${timeAgo(c.created_at)}</span>
-          ${isLoggedIn() ? `
-            <button class="lightbox-comment-reply-btn" data-action="toggle-lightbox-reply" data-id="${c.id}">
-              ${escapeHtml(t('common.reply'))}
-            </button>
-          ` : ''}
-          ${isMine ? `
-            <button class="lightbox-comment-delete-btn" data-action="delete-lightbox-comment" data-id="${c.id}" data-post-id="${postId}" data-feed="${feedKey}">
-              ${escapeHtml(t('common.delete'))}
-            </button>
-          ` : ''}
+          ${isLoggedIn() ? `<button class="lightbox-comment-reply-btn" data-action="toggle-lightbox-reply" data-id="${c.id}">${escapeHtml(t('common.reply'))}</button>` : ''}
+          ${isMine ? `<button class="lightbox-comment-delete-btn" data-action="delete-lightbox-comment" data-id="${c.id}" data-post-id="${postId}" data-feed="${feedKey}">${escapeHtml(t('common.delete'))}</button>` : ''}
         </div>
         ${replyFormOpen ? `
           <div class="lightbox-reply-form-wrap">
             <input class="lightbox-comment-input" placeholder="${escapeAttr(t('post.writeComment'))}" data-lightbox-reply-input data-parent-id="${c.id}" />
-            <button type="button" class="lightbox-comment-send lightbox-reply-send" data-action="send-lightbox-reply" data-parent-id="${c.id}" data-post-id="${postId}" data-feed="${feedKey}">
-              ${icon('send', { size: 16 })}
-            </button>
-            <button type="button" class="lightbox-reply-cancel" data-action="cancel-lightbox-reply">
-              ${icon('close', { size: 16 })}
-            </button>
+            <button type="button" class="lightbox-comment-send lightbox-reply-send" data-action="send-lightbox-reply" data-parent-id="${c.id}" data-post-id="${postId}" data-feed="${feedKey}">${icon('send', { size: 16 })}</button>
+            <button type="button" class="lightbox-reply-cancel" data-action="cancel-lightbox-reply">${icon('close', { size: 16 })}</button>
           </div>
         ` : ''}
         ${replies ? `<div class="lightbox-comment-replies">${replies}</div>` : ''}
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 function updateLightboxDOM() {
@@ -797,7 +770,11 @@ function updateLightboxDOM() {
   if (info) {
     const post = lb.post;
     if (!post) {
-      info.innerHTML = lb.caption ? `<p class="lightbox-caption">${escapeHtml(lb.caption)}</p>` : '';
+      info.innerHTML = `
+        <div class="lightbox-drag-handle" role="button" aria-label="${escapeAttr(t('post.comments'))}">
+          <span class="lightbox-drag-handle-bar"></span>
+        </div>
+        ${lb.caption ? `<p class="lightbox-caption">${escapeHtml(lb.caption)}</p>` : ''}`;
     } else {
       const biz = post.business || {};
       const logo = biz.logo_url || biz.image_url;
@@ -809,17 +786,12 @@ function updateLightboxDOM() {
       const commentsReady = post.__comments != null;
       const commentsList = post.__comments || [];
       const feedKey = post.__feedKey || '';
-
       const commentsHtml = commentsList.map((c) => renderLightboxComment(c, post.id, feedKey, false)).join('');
 
       let commentsSection;
-      if (!commentsReady) {
-        commentsSection = `<p class="lightbox-comment-empty">${escapeHtml(t('common.loading'))}</p>`;
-      } else if (commentsList.length === 0) {
-        commentsSection = `<p class="lightbox-comment-empty">${escapeHtml(t('post.noComments'))}</p>`;
-      } else {
-        commentsSection = commentsHtml;
-      }
+      if (!commentsReady) commentsSection = `<p class="lightbox-comment-empty">${escapeHtml(t('common.loading'))}</p>`;
+      else if (commentsList.length === 0) commentsSection = `<p class="lightbox-comment-empty">${escapeHtml(t('post.noComments'))}</p>`;
+      else commentsSection = commentsHtml;
 
       info.innerHTML = `
         <div class="lightbox-drag-handle" role="button" aria-label="${escapeAttr(t('post.comments'))}">
@@ -846,16 +818,12 @@ function updateLightboxDOM() {
             ${icon('spark', { size: 22, filled: !!post.__liked })}
           </button>
           <span class="lightbox-stat">${fmt(post.likes || 0)} ${escapeHtml(t('post.like'))}</span>
-          <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(getPostText(post))}">
-            ${icon('share', { size: 21 })}
-          </button>
+          <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(getPostText(post))}">${icon('share', { size: 21 })}</button>
         </div>
 
         <div class="lightbox-comments-section">
           <p class="lightbox-comments-title">${escapeHtml(t('post.comments'))} (${post.comment_count || 0})</p>
-          <div class="lightbox-comments-list" id="lightbox-comments-list">
-            ${commentsSection}
-          </div>
+          <div class="lightbox-comments-list" id="lightbox-comments-list">${commentsSection}</div>
           ${isLoggedIn() ? `
             <form class="lightbox-comment-form" data-action="submit-lightbox-comment" data-id="${post.id}" data-feed="${feedKey}">
               <input class="lightbox-comment-input" placeholder="${escapeAttr(t('post.writeComment'))}" data-lightbox-comment-input />
@@ -868,23 +836,17 @@ function updateLightboxDOM() {
           `}
         </div>
       `;
-
-      setTimeout(() => {
-        setupLightboxDrag();
-        applyLightboxPanelState();
-      }, 0);
     }
   }
+
+  setTimeout(() => {
+    setupLightboxDrag();
+    applyLightboxPanelState();
+  }, 0);
 }
 
-function getPostText(post) {
-  return post.text || post.text_content || '';
-}
-
-function htmlToPlain(html) {
-  if (!html) return '';
-  return String(html).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-}
+function getPostText(post) { return post.text || post.text_content || ''; }
+function htmlToPlain(html) { if (!html) return ''; return String(html).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(); }
 
 function renderLightbox() {
   return `
@@ -915,9 +877,7 @@ async function openNotification(notifId) {
     state.unreadNotifications = Math.max(0, (state.unreadNotifications || 0) - 1);
   }
 
-  if (state.overlay?.type === 'notifications') {
-    state.overlay = state.overlayStack.pop() || null;
-  }
+  if (state.overlay?.type === 'notifications') state.overlay = state.overlayStack.pop() || null;
 
   const t2 = n.type;
   const entType = n.entity_type;
@@ -926,56 +886,24 @@ async function openNotification(notifId) {
   if ((t2 === 'like' || t2 === 'comment' || t2 === 'reply' || t2 === 'mention') && entType === 'post' && entId) {
     try {
       const data = await apiGet(`/api/feed/post-by-id/${encodeURIComponent(entId)}`);
-      if (!data.post) {
-        showToast(t('common.notFound'));
-        renderApp();
-        return;
-      }
+      if (!data.post) { showToast(t('common.notFound')); renderApp(); return; }
       const post = data.post;
-      try {
-        const c = await apiGet(`/api/feed/${post.id}/comments`);
-        post.__comments = c.comments || [];
-        post.comment_count = c.total || 0;
-      } catch {}
-
-      if (!post.media || post.media.length === 0) {
-        showToast(t('toasts.noPhoto'));
-        renderApp();
-        return;
-      }
-
+      try { const c = await apiGet(`/api/feed/${post.id}/comments`); post.__comments = c.comments || []; post.comment_count = c.total || 0; } catch {}
+      if (!post.media || post.media.length === 0) { showToast(t('toasts.noPhoto')); renderApp(); return; }
       renderApp();
       openLightbox(post.media, 0, post.text || '', post);
-    } catch (err) {
-      showToast(t('errors.loadFailed'));
-      renderApp();
-    }
+    } catch (err) { showToast(t('errors.loadFailed')); renderApp(); }
     return;
   }
 
-  if (t2 === 'dm' && entType === 'thread' && entId) {
-    renderApp();
-    openThreadById(entId);
-    return;
-  }
-
-  if ((t2 === 'follow' || t2 === 'story_reply' || t2 === 'story_like') && n.actor_id) {
-    renderApp();
-    openProfile('user', n.actor_id);
-    return;
-  }
-
-  if (t2 === 'verification_approved' || t2 === 'verification_rejected') {
-    renderApp();
-    switchTab('account');
-    return;
-  }
-
+  if (t2 === 'dm' && entType === 'thread' && entId) { renderApp(); openThreadById(entId); return; }
+  if ((t2 === 'follow' || t2 === 'story_reply' || t2 === 'story_like') && n.actor_id) { renderApp(); openProfile('user', n.actor_id); return; }
+  if (t2 === 'verification_approved' || t2 === 'verification_rejected') { renderApp(); switchTab('account'); return; }
   renderApp();
 }
 
 // ============================================================
-// GDPR COOKIES V2
+// COOKIES — opravený open + force show
 // ============================================================
 const COOKIE_CONSENT_VERSION = '2';
 
@@ -993,25 +921,17 @@ function setCookieConsentShared(value, settings) {
     const maxAge = 365 * 24 * 60 * 60;
     document.cookie = `naskraj_cookies=${encodeURIComponent(json)}; path=/; max-age=${maxAge}; domain=.vandro.cz; SameSite=Lax; Secure`;
   } catch {}
-  try {
-    document.cookie = `naskraj_cookies=${encodeURIComponent(json)}; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax`;
-  } catch {}
+  try { document.cookie = `naskraj_cookies=${encodeURIComponent(json)}; path=/; max-age=${365 * 24 * 60 * 60}; SameSite=Lax`; } catch {}
 }
 
 function getCookieConsentShared() {
   try {
     const m = document.cookie.match(/(?:^|; )naskraj_cookies=([^;]+)/);
-    if (m) {
-      const parsed = JSON.parse(decodeURIComponent(m[1]));
-      if (parsed && parsed.v === COOKIE_CONSENT_VERSION) return parsed;
-    }
+    if (m) { const parsed = JSON.parse(decodeURIComponent(m[1])); if (parsed && parsed.v === COOKIE_CONSENT_VERSION) return parsed; }
   } catch {}
   try {
     const raw = localStorage.getItem('naskraj_cookies');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.v === COOKIE_CONSENT_VERSION) return parsed;
-    }
+    if (raw) { const parsed = JSON.parse(raw); if (parsed && parsed.v === COOKIE_CONSENT_VERSION) return parsed; }
   } catch {}
   return null;
 }
@@ -1022,6 +942,7 @@ function acceptCookies() {
   setCookieConsentShared('1', { analytics: true, marketing: true });
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
+  state._cookieForceShow = false;
   document.getElementById('cookie-banner')?.remove();
 }
 
@@ -1029,14 +950,26 @@ function rejectCookies() {
   setCookieConsentShared('0', { analytics: false, marketing: false });
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
+  state._cookieForceShow = false;
   document.getElementById('cookie-banner')?.remove();
 }
 
+// OPRAVA: vždy zobrazí banner, aj keď už súhlas existuje
 function openCookieSettings() {
   state._cookieSettingsOpen = true;
+  state._cookieForceShow = true;
+  state._cookieConsent = false;
   const existing = getCookieConsentShared();
   state._cookieSettings = existing || { necessary: true, analytics: false, marketing: false };
+  // Zavri settings overlay, aby banner bol viditeľný
+  if (state.overlay?.type === 'settings') {
+    state.overlay = null;
+    state.overlayStack = [];
+  }
   renderApp();
+  setTimeout(() => {
+    document.getElementById('cookie-banner')?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, 50);
 }
 
 function toggleCookieSetting(key, value) {
@@ -1048,19 +981,20 @@ function saveCookieSettings() {
   setCookieConsentShared('1', { analytics: s.analytics, marketing: s.marketing });
   state._cookieConsent = true;
   state._cookieSettingsOpen = false;
+  state._cookieForceShow = false;
   document.getElementById('cookie-banner')?.remove();
 }
 
 function renderCookieBanner() {
-  if (state._cookieConsent) return '';
+  if (state._cookieConsent && !state._cookieForceShow) return '';
   const existing = getCookieConsentShared();
-  if (existing) { state._cookieConsent = true; return ''; }
+  if (existing && !state._cookieForceShow) { state._cookieConsent = true; return ''; }
 
   const settings = state._cookieSettings || { necessary: true, analytics: false, marketing: false };
   const showSettings = state._cookieSettingsOpen;
 
   return `
-    <div class="cookie-banner" id="cookie-banner" role="dialog" aria-modal="true" aria-label="${escapeAttr(t('cookie.title'))}">
+    <div class="cookie-banner ${state._cookieForceShow ? 'is-forced' : ''}" id="cookie-banner" role="dialog" aria-modal="true" aria-label="${escapeAttr(t('cookie.title'))}">
       <div class="cookie-body">
         <p class="cookie-text">
           <strong>${escapeHtml(t('cookie.title'))}</strong>
@@ -1069,18 +1003,9 @@ function renderCookieBanner() {
         </p>
         ${showSettings ? `
           <div class="cookie-settings">
-            <label class="cookie-toggle">
-              <span>${escapeHtml(t('cookie.necessary'))}</span>
-              <input type="checkbox" checked disabled />
-            </label>
-            <label class="cookie-toggle">
-              <span>${escapeHtml(t('cookie.analytics'))}</span>
-              <input type="checkbox" data-action="cookie-setting" data-key="analytics" ${settings.analytics ? 'checked' : ''} />
-            </label>
-            <label class="cookie-toggle">
-              <span>${escapeHtml(t('cookie.marketing'))}</span>
-              <input type="checkbox" data-action="cookie-setting" data-key="marketing" ${settings.marketing ? 'checked' : ''} />
-            </label>
+            <label class="cookie-toggle"><span>${escapeHtml(t('cookie.necessary'))}</span><input type="checkbox" checked disabled /></label>
+            <label class="cookie-toggle"><span>${escapeHtml(t('cookie.analytics'))}</span><input type="checkbox" data-action="cookie-setting" data-key="analytics" ${settings.analytics ? 'checked' : ''} /></label>
+            <label class="cookie-toggle"><span>${escapeHtml(t('cookie.marketing'))}</span><input type="checkbox" data-action="cookie-setting" data-key="marketing" ${settings.marketing ? 'checked' : ''} /></label>
           </div>
         ` : ''}
         <div class="cookie-actions">
@@ -1142,12 +1067,8 @@ function maybeRequestPushPermission() {
     try {
       const perm = await Notification.requestPermission();
       if (perm === 'granted') {
-        if (typeof enablePushNotifications === 'function') {
-          await enablePushNotifications();
-        }
+        if (typeof enablePushNotifications === 'function') await enablePushNotifications();
       }
-    } catch (err) {
-      console.warn('[push-prompt] zlyhalo:', err);
-    }
+    } catch (err) { console.warn('[push-prompt]', err); }
   }, 8000);
 }
