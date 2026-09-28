@@ -1,12 +1,11 @@
 // ============================================================
-// PROFILOVÉ STRÁNKY — i18n verzia
+// PROFILOVÉ STRÁNKY
 // ============================================================
 
 async function loadProfile(kind, id) {
   const cacheKey = `${kind}:${id}`;
   try {
     const data = await apiGet(`/api/profile/${kind}/${id}`);
-
     if (kind === 'user' && data.type === 'user' && Array.isArray(data.businesses) && data.businesses.length > 0) {
       const b = data.businesses[0];
       state.profiles[cacheKey] = data;
@@ -23,7 +22,6 @@ async function loadProfile(kind, id) {
       await loadProfile(b.kind, b.id);
       return;
     }
-
     state.profiles[cacheKey] = data;
     if (isLoggedIn()) {
       try {
@@ -47,12 +45,8 @@ function renderProfileOverlay() {
     loadProfile(kind, id);
     return `<div class="page-scroll">${renderBackHeader(t('profile.myProfile'))}<p class="empty-state">${escapeHtml(t('common.loading'))}</p></div>`;
   }
-  if (data.__error) {
-    return `<div class="page-scroll">${renderBackHeader(t('profile.myProfile'))}<p class="empty-state">${escapeHtml(data.__error)}</p></div>`;
-  }
-  if (state.overlay.edit) {
-    return `<div class="page-scroll">${renderBackHeader(t('profile.editProfile'))}${renderEditProfileForm()}</div>`;
-  }
+  if (data.__error) return `<div class="page-scroll">${renderBackHeader(t('profile.myProfile'))}<p class="empty-state">${escapeHtml(data.__error)}</p></div>`;
+  if (state.overlay.edit) return `<div class="page-scroll">${renderBackHeader(t('profile.editProfile'))}${renderEditProfileForm()}</div>`;
   if (data.type === 'user') return renderUserProfile(data, id);
   return renderBusinessProfile(data, id, kind);
 }
@@ -61,12 +55,7 @@ function renderUserProfile(data, id) {
   const p = data.profile;
   const isOwn = isLoggedIn() && state.user.id === id;
   const initial = (p.display_name || '?').charAt(0).toUpperCase();
-  const roleLabel = {
-    user: t('auth.roleUser'),
-    organization: t('auth.roleOrg'),
-    hotelier: t('auth.roleHotelier'),
-    admin: t('auth.admin'),
-  }[p.role] || p.role;
+  const roleLabel = { user: t('auth.roleUser'), organization: t('auth.roleOrg'), hotelier: t('auth.roleHotelier'), admin: t('auth.admin') }[p.role] || p.role;
 
   const infoRows = [
     p.location ? { icon: 'location', label: t('profile.location'), value: p.location } : null,
@@ -77,9 +66,7 @@ function renderUserProfile(data, id) {
   const showCheckins = isOwn || p.public_checkins;
   if (showCheckins && state._userProfileCheckins === undefined) {
     state._userProfileCheckins = null;
-    apiGet(`/api/checkins/user/${id}`)
-      .then((r) => { state._userProfileCheckins = r.checkins || []; renderApp(); })
-      .catch(() => { state._userProfileCheckins = []; });
+    apiGet(`/api/checkins/user/${id}`).then((r) => { state._userProfileCheckins = r.checkins || []; renderApp(); }).catch(() => { state._userProfileCheckins = []; });
   }
 
   const businessesHtml = (data.businesses || []).map((b) => `
@@ -163,9 +150,7 @@ function renderUserProfile(data, id) {
               : `<div class="user-checkin-grid">
                   ${state._userProfileCheckins.slice(0, 6).map((c) => `
                     <button class="user-checkin-item" data-action="open-profile" data-kind="${c.business_kind}" data-id="${c.business_id}">
-                      ${c.business_logo
-                        ? `<img src="${c.business_logo}" alt="" />`
-                        : `<span class="user-checkin-initial">${(c.business_name || '?').charAt(0).toUpperCase()}</span>`}
+                      ${c.business_logo ? `<img src="${c.business_logo}" alt="" />` : `<span class="user-checkin-initial">${(c.business_name || '?').charAt(0).toUpperCase()}</span>`}
                       <span class="user-checkin-overlay">
                         <span class="user-checkin-name">${escapeHtml(c.business_name || '')}</span>
                         <span class="user-checkin-time">${timeAgo(c.visited_at)}</span>
@@ -216,13 +201,10 @@ function renderBusinessProfile(data, id, kind) {
   let tabContent = '';
   if (activeTab === 'posts') {
     const posts = data.posts || [];
-    if (posts.length === 0) {
-      tabContent = `<p class="empty-state">${escapeHtml(t('profile.noPosts'))}</p>`;
-    } else {
+    if (posts.length === 0) tabContent = `<p class="empty-state">${escapeHtml(t('profile.noPosts'))}</p>`;
+    else {
       const postsWithFeed = posts.map((p) => ({ ...p, __feedKey: feedKey }));
-      tabContent = `<div class="profile-post-feed">
-        ${postsWithFeed.map((p) => renderSocialPostCard(p, feedKey)).join('')}
-      </div>`;
+      tabContent = `<div class="profile-post-feed">${postsWithFeed.map((p) => renderSocialPostCard(p, feedKey)).join('')}</div>`;
     }
   } else if (activeTab === 'events') {
     const events = state._bizEvents;
@@ -235,7 +217,7 @@ function renderBusinessProfile(data, id, kind) {
     tabContent = renderReviewsTab();
   } else if (activeTab === 'about') {
     const infoRows = [
-      b.city || b.region ? { icon: 'location', label: t('profile.address'), value: [b.city, b.district, b.region].filter(Boolean).join(', ') } : null,
+      (b.address || b.city || b.region) ? { icon: 'location', label: t('profile.address'), value: [b.address, b.city, b.district, b.region].filter(Boolean).join(', ') } : null,
       b.phone ? { icon: 'phone', label: t('profile.phone'), value: b.phone, href: `tel:${b.phone}` } : null,
       b.website ? { icon: 'globe', label: t('profile.website'), value: b.website.replace(/^https?:\/\//i, '').replace(/\/$/, ''), href: b.website } : null,
       b.type ? { icon: 'bookmark', label: t('profile.type'), value: tType(b.type) } : null,
@@ -248,11 +230,7 @@ function renderBusinessProfile(data, id, kind) {
 
     tabContent = `
       <div class="profile-section about-tab">
-        ${b.description ? `
-          <div class="about-intro">
-            <p>${escapeHtml(b.description)}</p>
-          </div>
-        ` : ''}
+        ${b.description ? `<div class="about-intro"><p>${escapeHtml(b.description)}</p></div>` : ''}
 
         ${infoRows.length > 0 ? `
           <div class="about-info-card">
@@ -291,10 +269,7 @@ function renderBusinessProfile(data, id, kind) {
             </div>
             ${(state._reviews.reviews || []).slice(0, 2).map((r) => `
               <div class="about-review-item">
-                <div class="about-review-head">
-                  <strong>${escapeHtml(r.display_name || t('common.user'))}</strong>
-                  ${renderStars(r.rating, 12)}
-                </div>
+                <div class="about-review-head"><strong>${escapeHtml(r.display_name || t('common.user'))}</strong>${renderStars(r.rating, 12)}</div>
                 ${r.text ? `<p class="about-review-text">${escapeHtml(r.text.slice(0, 140))}${r.text.length > 140 ? '…' : ''}</p>` : ''}
               </div>
             `).join('')}
@@ -330,7 +305,6 @@ function renderBusinessProfile(data, id, kind) {
   const summary = state._reviews?.summary;
   const avg = summary?.average;
   const ratingHtml = avg ? `<div class="profile-rating-row">${renderStars(avg, 16)} <span style="font-size:13px;color:var(--c-text-muted)">${avg.toFixed(1)} (${summary.total})</span></div>` : '';
-
   const checkinStatus = state._checkinStatus;
   const wishStatus = state._wishlistStatus;
 
@@ -365,7 +339,7 @@ function renderBusinessProfile(data, id, kind) {
             ${isVerified ? icon('check', { size: 15, className: 'verified-badge-inline profile-verified-badge' }) : ''}
           </p>
           <p class="profile-biz-type">${escapeHtml(kindLabel)} · ${escapeHtml(tType(b.type) || '')}</p>
-          <p class="profile-biz-loc">${[b.city, b.district, b.region].filter(Boolean).map(escapeHtml).join(' · ')}</p>
+          <p class="profile-biz-loc">${[b.address, b.city, b.district, b.region].filter(Boolean).map(escapeHtml).join(' · ')}</p>
           ${ratingHtml}
           ${b.verification_status === 'pending' ? `<p style="font-size:12px;color:var(--c-gold);margin-top:4px">⏳ ${escapeHtml(t('profile.verificationPending'))}</p>` : ''}
         </div>
@@ -398,7 +372,7 @@ function renderBusinessProfile(data, id, kind) {
 }
 
 // ============================================================
-// GALÉRIA "O NÁS"
+// GALÉRIA "O NÁS" — s editovateľným popisom každej fotky
 // ============================================================
 function renderGallerySection(gallery, isOwn, kind, id) {
   const items = gallery || [];
@@ -425,16 +399,29 @@ function renderGallerySection(gallery, isOwn, kind, id) {
                       data-caption="${escapeAttr(g.caption || '')}">
                 <img src="${escapeAttr(g.image_url)}" alt="${escapeAttr(g.caption || '')}" loading="lazy" />
               </button>
-              ${g.caption ? `<p class="about-gallery-caption">${escapeHtml(g.caption)}</p>` : ''}
+              ${g.caption
+                ? `<p class="about-gallery-caption" ${isOwn ? `data-action="edit-gallery-caption" data-gallery-id="${g.id}" data-caption="${escapeAttr(g.caption)}" data-kind="${kind}" data-id="${id}"` : ''}>${escapeHtml(g.caption)}</p>`
+                : (isOwn ? `<button type="button" class="about-gallery-caption-add" data-action="edit-gallery-caption" data-gallery-id="${g.id}" data-caption="" data-kind="${kind}" data-id="${id}">+ ${escapeHtml(t('profile.aboutGalleryCaptionShort'))}</button>` : '')}
               ${isOwn ? `
-                <button type="button" class="about-gallery-delete"
-                        data-action="delete-gallery-item"
-                        data-gallery-id="${g.id}"
-                        data-kind="${kind}"
-                        data-id="${id}"
-                        aria-label="${escapeAttr(t('profile.aboutGalleryDelete'))}">
-                  ${icon('trash', { size: 14 })}
-                </button>
+                <div class="about-gallery-item-actions">
+                  <button type="button" class="about-gallery-edit"
+                          data-action="edit-gallery-caption"
+                          data-gallery-id="${g.id}"
+                          data-caption="${escapeAttr(g.caption || '')}"
+                          data-kind="${kind}"
+                          data-id="${id}"
+                          aria-label="${escapeAttr(t('profile.aboutGalleryEditCaption'))}">
+                    ${icon('edit', { size: 14 })}
+                  </button>
+                  <button type="button" class="about-gallery-delete"
+                          data-action="delete-gallery-item"
+                          data-gallery-id="${g.id}"
+                          data-kind="${kind}"
+                          data-id="${id}"
+                          aria-label="${escapeAttr(t('profile.aboutGalleryDelete'))}">
+                    ${icon('trash', { size: 14 })}
+                  </button>
+                </div>
               ` : ''}
             </div>
           `).join('')}
@@ -447,7 +434,7 @@ function renderGallerySection(gallery, isOwn, kind, id) {
             <input type="file" name="file" accept="image/*" style="display:none" id="gallery-file-input" data-action="gallery-file-selected" />
             <span id="gallery-file-label">${icon('plus', { size: 16 })} ${escapeHtml(t('profile.aboutGalleryAdd'))}</span>
           </div>
-          <input class="form-input" name="caption" maxlength="120" placeholder="${escapeAttr(t('profile.aboutGalleryCaptionShort'))}" />
+          <input class="form-input" name="caption" maxlength="120" placeholder="${escapeAttr(t('profile.aboutGalleryCaption'))}" />
           <button type="submit" class="form-submit-btn form-submit-btn--small">${escapeHtml(t('profile.aboutGallerySave'))}</button>
         </form>
       ` : ''}
@@ -468,10 +455,6 @@ async function submitGalleryItem(form) {
 
   if (!file) { showToast(t('common.error')); return; }
 
-  const fd = new FormData();
-  fd.append('file', file);
-  fd.append('caption', caption);
-
   showUploadOverlay(t('profile.aboutGalleryUploading'));
   try {
     const compressed = await compressImage(file, { maxDim: 1600, quality: 0.88 });
@@ -479,12 +462,9 @@ async function submitGalleryItem(form) {
     fd2.append('file', compressed, compressed.name || 'gallery.jpg');
     fd2.append('caption', caption);
 
-    await uploadWithProgress(`/api/profile/me/gallery/${kind}/${id}`, fd2, (pct) => {
-      updateUploadOverlay(pct);
-    });
+    await uploadWithProgress(`/api/profile/me/gallery/${kind}/${id}`, fd2, (pct) => updateUploadOverlay(pct));
     hideUploadOverlay();
 
-    // Refresh profil
     delete state.profiles[`${kind}:${id}`];
     await loadProfile(kind, id);
     showToast(t('toasts.saved'));
@@ -501,9 +481,7 @@ async function deleteGalleryItem(galleryId, kind, id) {
     delete state.profiles[`${kind}:${id}`];
     await loadProfile(kind, id);
     showToast(t('toasts.deleted'));
-  } catch (err) {
-    showToast(err.message);
-  }
+  } catch (err) { showToast(err.message); }
 }
 
 async function switchBizProfileTab(tab) {
@@ -562,10 +540,11 @@ function renderEditProfileForm() {
   const isOrg = kind === 'organizations';
 
   return `
-    <form data-action="submit-edit-profile" data-kind="${kind}" data-id="${id}" class="edit-profile-form edit-profile-form--centered">
+    <form data-action="submit-edit-profile" data-kind="${kind}" data-id="${id}" class="edit-profile-form edit-profile-form--centered"
+          data-geo-lat="${escapeAttr(p.geo_lat ?? '')}" data-geo-lng="${escapeAttr(p.geo_lng ?? '')}">
       <div class="form-section">
         <h3 class="form-section-title">${escapeHtml(t('profile.informations'))}</h3>
-        <div class="form-field"><label class="form-label">Název</label><input class="form-input" name="name" value="${escapeAttr(p.name || '')}" required /></div>
+        <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerBusinessName') || 'Název')}</label><input class="form-input" name="name" value="${escapeAttr(p.name || '')}" required /></div>
         <div class="form-field"><label class="form-label">${escapeHtml(t('events.description'))}</label><textarea class="form-textarea" name="description" maxlength="500">${escapeHtml(p.description || '')}</textarea></div>
         ${isGastro ? `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.cuisine'))}</label><select class="form-select" name="cuisine_type">
           ${TYPES.cuisine.map((t2) => `<option value="${t2.value}" ${p.cuisine_type === t2.value ? 'selected' : ''}>${escapeHtml(tType(t2.value))}</option>`).join('')}</select></div>` : ''}
@@ -574,6 +553,18 @@ function renderEditProfileForm() {
 
       <div class="form-section">
         <h3 class="form-section-title">${escapeHtml(t('profile.address'))}</h3>
+        <div class="form-field">
+          <label class="form-label">${escapeHtml(t('events.addressLabel'))}</label>
+          <div class="post-place-input" style="position:relative">
+            <input class="form-input" name="address" data-business-address-input value="${escapeAttr(p.address || '')}" placeholder="${escapeAttr(t('events.addressPlaceholder'))}" />
+          </div>
+          <p class="form-hint" data-business-geo-label>${p.geo_lat && p.geo_lng ? `📍 ${Number(p.geo_lat).toFixed(4)}, ${Number(p.geo_lng).toFixed(4)}` : ''}</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <button type="button" class="profile-action-btn" data-action="edit-profile-map-picker">
+            ${icon('location', { size: 15 })} ${escapeHtml(t('geo.pickOnMap'))}
+          </button>
+        </div>
         ${renderEditRegionDistrictCity(p)}
       </div>
 
@@ -589,12 +580,7 @@ function renderEditProfileForm() {
           <label class="form-label">${escapeHtml(t('profile.openingHours'))}</label>
           <input class="form-input" name="opening_hours" value="${escapeAttr(p.opening_hours || '')}" placeholder="např. Po–Pá 9:00–17:00, So–Ne 10:00–18:00" maxlength="200" />
         </div>
-        ${isOrg ? `
-          <div class="form-field">
-            <label class="form-label">${escapeHtml(t('profile.admission'))}</label>
-            <input class="form-input" name="admission" value="${escapeAttr(p.admission || '')}" placeholder="např. Dospělí 150 Kč, děti 80 Kč" maxlength="200" />
-          </div>
-        ` : ''}
+        ${isOrg ? `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.admission'))}</label><input class="form-input" name="admission" value="${escapeAttr(p.admission || '')}" placeholder="např. Dospělí 150 Kč, děti 80 Kč" maxlength="200" /></div>` : ''}
         ${(isGastro || isAcc) ? `
           <div class="form-field">
             <label class="form-label">${escapeHtml(t('profile.priceLevel'))}</label>
@@ -632,6 +618,9 @@ async function handleEditProfileSubmit(form) {
   const id = form.dataset.id;
   const fd = new FormData(form);
   const body = Object.fromEntries(fd.entries());
+  if (form.dataset.geoLat) body.geo_lat = form.dataset.geoLat;
+  if (form.dataset.geoLng) body.geo_lng = form.dataset.geoLng;
+
   const btn = form.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = t('common.saving'); }
 
@@ -705,7 +694,7 @@ async function uploadProfileImage(targetType, targetId, field) {
 }
 
 // ============================================================
-// SETTINGS — dostupné aj bez prihlásenia (jazyk + cookies)
+// SETTINGS — dostupné aj bez prihlásenia
 // ============================================================
 async function loadSettings() {
   if (!isLoggedIn()) {
@@ -743,8 +732,9 @@ function renderSettingsOverlay() {
       </div>
 
       <div class="profile-section">
-        <h3 class="profile-section-title">${escapeHtml(t('cookie.title'))}</h3>
-        <button class="settings-row" data-action="open-cookie-settings">${icon('shield', { size: 17 })} ${escapeHtml(t('cookie.settings'))}</button>
+        <h3 class="profile-section-title">${escapeHtml(t('settings.cookiesPrivacy'))}</h3>
+        <button class="settings-row" data-action="open-cookie-settings">${icon('shield', { size: 17 })} ${escapeHtml(t('settings.cookieSettings'))}</button>
+        <a class="settings-row" href="/ochrana-osobnich-udaju.html" target="_blank" rel="noopener">${icon('help', { size: 17 })} ${escapeHtml(t('settings.privacyPolicy'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
       </div>
 
       ${logged ? `
@@ -760,10 +750,7 @@ function renderSettingsOverlay() {
           <h3 class="profile-section-title">${escapeHtml(t('settings.privacy'))}</h3>
           <label class="settings-toggle"><span>${escapeHtml(t('settings.publicProfile'))}</span><input type="checkbox" data-action="setting-toggle" data-key="public_profile" ${s.public_profile ? 'checked' : ''} /></label>
           <label class="settings-toggle"><span>${escapeHtml(t('settings.showPosts'))}</span><input type="checkbox" data-action="setting-toggle" data-key="show_contributions" ${s.show_contributions ? 'checked' : ''} /></label>
-          <label class="settings-toggle">
-            <span>${escapeHtml(t('settings.showCheckins'))}</span>
-            <input type="checkbox" data-action="setting-toggle" data-key="public_checkins" ${s.public_checkins ? 'checked' : ''} />
-          </label>
+          <label class="settings-toggle"><span>${escapeHtml(t('settings.showCheckins'))}</span><input type="checkbox" data-action="setting-toggle" data-key="public_checkins" ${s.public_checkins ? 'checked' : ''} /></label>
         </div>
 
         <div class="profile-section">
@@ -781,7 +768,6 @@ function renderSettingsOverlay() {
           <h3 class="profile-section-title">${escapeHtml(t('settings.gdpr'))}</h3>
           <button class="settings-row" data-action="export-data">${icon('download', { size: 17 })} ${escapeHtml(t('settings.downloadData'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
           <a class="settings-row" href="/obchodni-podminky.html" target="_blank" rel="noopener">${icon('help', { size: 17 })} ${escapeHtml(t('settings.terms'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
-          <a class="settings-row" href="/ochrana-osobnich-udaju.html" target="_blank" rel="noopener">${icon('help', { size: 17 })} ${escapeHtml(t('settings.privacyPolicy'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
           <button class="settings-row" data-action="delete-account" style="color:#B3273C">${icon('trash', { size: 17 })} ${escapeHtml(t('settings.deleteAccount'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
         </div>
 
@@ -790,7 +776,7 @@ function renderSettingsOverlay() {
         </div>
       ` : `
         <div class="profile-section">
-          <p class="form-hint" style="text-align:center;padding:12px;">${escapeHtml(t('auth.registerPublicNote'))}</p>
+          <p class="form-hint" style="text-align:center;padding:12px;">${escapeHtml(t('settings.publicSettingsNote'))}</p>
           <button class="settings-row" data-action="set-tab" data-tab="account" style="justify-content:center">${icon('user', { size: 17 })} ${escapeHtml(t('auth.loginTab'))}</button>
         </div>
       `}
@@ -853,7 +839,6 @@ async function start2FASetup() {
     renderApp();
   } catch (err) { showToast(err.message); }
 }
-
 async function submitEnable2FA(form) {
   const code = form.querySelector('input[name="code"]').value;
   try {
@@ -864,9 +849,7 @@ async function submitEnable2FA(form) {
     renderApp();
   } catch (err) { showToast(err.message); }
 }
-
 function finish2FASetup() { state._totpSetup = { stage: 'idle' }; renderApp(); }
-
 async function submitDisable2FA(form) {
   const code = form.querySelector('input[name="code"]').value;
   try {
@@ -883,7 +866,6 @@ async function loadLoginLogs() {
   catch { state._loginLogs = []; }
   if (state.overlay?.type === 'login-logs') renderApp();
 }
-
 function renderLoginLogsOverlay() {
   const logs = state._loginLogs;
   return `
@@ -904,15 +886,11 @@ function renderLoginLogsOverlay() {
     </div>`;
 }
 
-// ============================================================
-// FOLLOWERS / FOLLOWING / BLOCKS
-// ============================================================
 async function loadFollowers(kind, id) {
   try { const data = await apiGet(`/api/profile/${kind}/${id}/followers`); state._followers = data.users || []; }
   catch { state._followers = []; }
   if (state.overlay?.type === 'followers') renderApp();
 }
-
 function renderFollowersOverlay() {
   const list = state._followers;
   return `
@@ -940,7 +918,6 @@ async function loadFollowing() {
   catch { state._following = []; }
   if (state.overlay?.type === 'following') renderApp();
 }
-
 function renderFollowingOverlay() {
   const list = state._following;
   return `
@@ -970,7 +947,6 @@ async function loadBlocks() {
   catch { state._blocks = []; }
   if (state.overlay?.type === 'blocks') renderApp();
 }
-
 function renderBlocksOverlay() {
   const list = state._blocks;
   return `
@@ -990,12 +966,8 @@ function renderBlocksOverlay() {
 }
 
 async function unblockUser(id) {
-  try {
-    await apiDelete(`/api/profile/block/${id}`);
-    state._blocks = null;
-    loadBlocks();
-    showToast(t('toasts.unblocked'));
-  } catch (err) { showToast(err.message); }
+  try { await apiDelete(`/api/profile/block/${id}`); state._blocks = null; loadBlocks(); showToast(t('toasts.unblocked')); }
+  catch (err) { showToast(err.message); }
 }
 
 function blockUser(id) {
@@ -1006,23 +978,12 @@ function blockUser(id) {
     danger: true,
     onSubmit: async () => {
       state._modalLoading = true; renderApp();
-      try {
-        await apiPost(`/api/profile/block/${id}`, {});
-        closeModal();
-        showToast(t('toasts.blocked'));
-        closeOverlay();
-      } catch (err) {
-        showToast(err.message);
-        state._modalLoading = false;
-        renderApp();
-      }
+      try { await apiPost(`/api/profile/block/${id}`, {}); closeModal(); showToast(t('toasts.blocked')); closeOverlay(); }
+      catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
     },
   });
 }
 
-// ============================================================
-// NOTIFIKÁCIE
-// ============================================================
 async function loadNotifications() {
   if (!isLoggedIn()) return;
   try {
@@ -1032,26 +993,17 @@ async function loadNotifications() {
     if (state.overlay?.type === 'notifications' || state.tab === 'account') renderApp();
   } catch {}
 }
-
 function renderNotificationsOverlay() {
   const list = state.notifications;
-
   const notifText = (n) => {
-    const textKey = {
-      like: 'notifications.like',
-      comment: 'notifications.comment',
-      reply: 'notifications.reply',
-      follow: 'notifications.follow',
-      mention: 'notifications.mention',
-      dm: 'notifications.dm',
-      story_reply: 'notifications.storyReply',
-      story_like: 'notifications.storyLike',
-      verification_approved: 'notifications.verificationApproved',
-      verification_rejected: 'notifications.verificationRejected',
+    const key = {
+      like: 'notifications.like', comment: 'notifications.comment', reply: 'notifications.reply',
+      follow: 'notifications.follow', mention: 'notifications.mention', dm: 'notifications.dm',
+      story_reply: 'notifications.storyReply', story_like: 'notifications.storyLike',
+      verification_approved: 'notifications.verificationApproved', verification_rejected: 'notifications.verificationRejected',
     }[n.type];
-    return textKey ? t(textKey) : (n.text || '');
+    return key ? t(key) : (n.text || '');
   };
-
   return `
     <div class="page-scroll">
       ${renderBackHeader(t('notifications.title'), list && list.some((n) => !n.read_at)
@@ -1072,18 +1024,13 @@ function renderNotificationsOverlay() {
       </div>
     </div>`;
 }
-
 async function markAllNotificationsRead() {
   try { await apiPost('/api/profile/me/notifications/read-all', {}); } catch {}
   state.unreadNotifications = 0;
   loadNotifications();
 }
 
-// ============================================================
-// SEARCH
-// ============================================================
 let _searchTimer = null;
-
 function renderSearchOverlay() {
   return `
     <div class="page-scroll">
@@ -1099,10 +1046,7 @@ function renderSearchOverlay() {
           : state._searchResults.map((r) => {
             let kind = r.kind;
             if (kind === 'restaurants') kind = 'gastro';
-            const typeLabel = r.kind === 'users' ? t('search.typeUser')
-              : r.kind === 'organizations' ? t('search.typeOrg')
-              : r.kind === 'accommodation' ? t('search.typeAcc')
-              : t('search.typeGastro');
+            const typeLabel = r.kind === 'users' ? t('search.typeUser') : r.kind === 'organizations' ? t('search.typeOrg') : r.kind === 'accommodation' ? t('search.typeAcc') : t('search.typeGastro');
             return `<button class="user-list-item" data-action="open-profile" data-kind="${kind}" data-id="${r.id}">
               <span class="user-list-avatar user-list-avatar-init">${(r.name || '?').charAt(0).toUpperCase()}</span>
               <div style="flex:1">
@@ -1116,23 +1060,17 @@ function renderSearchOverlay() {
       </div>
     </div>`;
 }
-
 function onGlobalSearchInput(value) {
   state._searchQuery = value;
   clearTimeout(_searchTimer);
   if (!value || value.length < 2) { state._searchResults = null; renderApp(); return; }
   _searchTimer = setTimeout(async () => {
-    try {
-      const data = await apiGet(`/api/profile/search?q=${encodeURIComponent(value)}`);
-      state._searchResults = data.results || [];
-    } catch { state._searchResults = []; }
+    try { const data = await apiGet(`/api/profile/search?q=${encodeURIComponent(value)}`); state._searchResults = data.results || []; }
+    catch { state._searchResults = []; }
     renderApp();
   }, 350);
 }
 
-// ============================================================
-// GDPR
-// ============================================================
 async function exportMyData() {
   try {
     const data = await apiGet('/api/profile/me/export');
@@ -1152,33 +1090,17 @@ function promptDeleteAccount() {
     title: t('settings.deleteAccount'),
     body: `
       <p style="font-size:14px;line-height:1.6;margin-bottom:12px">${escapeHtml(t('post.deleteText'))}</p>
-      <div class="form-field">
-        <label class="form-label">SMAZAT</label>
-        <input class="form-input" name="confirm" autocomplete="off" required />
-      </div>`,
+      <div class="form-field"><label class="form-label">SMAZAT</label><input class="form-input" name="confirm" autocomplete="off" required /></div>`,
     submitLabel: t('settings.deleteAccount'),
     danger: true,
     onSubmit: async (data) => {
-      if ((data.confirm || '').trim() !== 'SMAZAT') {
-        showToast('SMAZAT');
-        return;
-      }
+      if ((data.confirm || '').trim() !== 'SMAZAT') { showToast('SMAZAT'); return; }
       state._modalLoading = true; renderApp();
-      try {
-        await apiDelete('/api/profile/me/account', { confirm: 'SMAZAT' });
-      } catch (err) {
-        showToast(err.message);
-        state._modalLoading = false;
-        renderApp();
-        return;
-      }
-      clearToken();
-      clearStoredUser();
-      state.token = null;
-      state.user = null;
-      state.businesses = [];
-      closeModal();
-      showToast(t('toasts.accountDeleted'));
+      try { await apiDelete('/api/profile/me/account', { confirm: 'SMAZAT' }); }
+      catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); return; }
+      clearToken(); clearStoredUser();
+      state.token = null; state.user = null; state.businesses = [];
+      closeModal(); showToast(t('toasts.accountDeleted'));
     },
   });
 }
