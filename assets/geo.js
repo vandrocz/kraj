@@ -1,195 +1,299 @@
-import { Hono } from 'hono';
+// ============================================================
+// GEO — poloha, place search, map picker
+// ============================================================
 
-export const geoRoutes = new Hono();
+let _geoWatchId = null;
 
-// Nominatim reverse
-geoRoutes.get('/reverse', async (c) => {
-  const lat = parseFloat(c.req.query('lat') || '');
-  const lng = parseFloat(c.req.query('lng') || '');
-  if (isNaN(lat) || isNaN(lng)) return c.json({ error: 'Neplatné souřadnice.' }, 400);
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=cs`,
-      { headers: { 'User-Agent': 'Naskraj/1.0 (naskraj.vandro.cz)' } },
+async function getCurrentLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('Geolokace není podporována.'));
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => reject(new Error('Nepodařilo se získat polohu.')),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
     );
-    if (!res.ok) throw new Error('Nominatim ' + res.status);
-    const data = await res.json();
-    const a = data.address || {};
-    const place = a.city || a.town || a.village || a.municipality || a.county || a.state || '';
-    const region = a.state || '';
-    return c.json({ place, region, lat, lng });
-  } catch (err) {
-    return c.json({ place: '', region: '', lat, lng, error: err.message });
-  }
-});
-
-geoRoutes.post('/save', async (c) => {
-  const user = c.get('user');
-  const body = await c.req.json().catch(() => ({}));
-  const lat = parseFloat(body.lat), lng = parseFloat(body.lng);
-  const place = (body.place || '').toString().slice(0, 120);
-  if (isNaN(lat) || isNaN(lng)) return c.json({ error: 'Neplatné souřadnice.' }, 400);
-  await c.env.DB.prepare(`UPDATE users SET geo_lat = ?, geo_lng = ?, geo_city = ? WHERE id = ?`)
-    .bind(lat, lng, place, user.sub).run();
-  return c.json({ ok: true, place });
-});
-
-// ============================================================
-// OBCE — Overpass + Nominatim kombinácia
-// ============================================================
-
-async function fetchOverpassCz(areaQuery, userAgent) {
-  const ovQuery = `[out:json][timeout:30];
-${areaQuery}
-node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|quarter)$"](area.a);
-out tags 500;`;
-
-  const res = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    headers: {
-      'User-Agent': userAgent,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: 'data=' + encodeURIComponent(ovQuery),
   });
-  if (!res.ok) throw new Error('Overpass ' + res.status);
-  const data = await res.json();
-  return data.elements || [];
 }
 
-async function findOverpassAreaForDistrict(district, userAgent) {
-  // 1) Skús priamo známe názvy area
-  const areaNames = [`Okres ${district}`, district];
-
-  for (const name of areaNames) {
-    try {
-      const els = await fetchOverpassCz(
-        `area["name"="${name.replace(/"/g, '')}"]->.a;`,
-        userAgent,
-      );
-      if (els.length > 0) return els;
-    } catch (err) {
-      console.warn('Overpass area name failed for', name, err.message);
-    }
-  }
-
-  // 2) Nominatim — nájdi okres, potom použi jeho relation ID
+async function reverseGeocode(lat, lng) {
   try {
-    const nomRes = await fetch(
-      `https://nominatim.openstreetmap.org/search?` + new URLSearchParams({
-        q: `okres ${district}, Czech Republic`,
-        format: 'json',
-        limit: '1',
-        addressdetails: '1',
-      }),
-      { headers: { 'User-Agent': userAgent } },
-    );
-    if (!nomRes.ok) throw new Error('Nominatim ' + nomRes.status);
-    const arr = await nomRes.json();
-
-    if (arr && arr.length > 0) {
-      const rel = arr[0];
-      const osmId = rel.osm_id;
-      const osmType = rel.osm_type;
-      if (osmId && osmType === 'relation') {
-        const areaId = 3600000000 + osmId;
-        const els = await fetchOverpassCz(`area(${areaId})->.a;`, userAgent);
-        if (els.length > 0) return els;
-      }
-    }
-  } catch (err) {
-    console.warn('Nominatim lookup failed:', err.message);
+    const data = await apiGet(`/api/geo/reverse?lat=${lat}&lng=${lng}`);
+    return data.place || data.region || `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+  } catch {
+    return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
   }
-
-  return [];
 }
 
-// Fallback: zoznam najväčších miest v okrese (z Nominatim search s q="<district>")
-async function fetchCitiesFromNominatim(district, userAgent) {
+// ------------------------------------------------------------
+// Place search — Nominatim cez náš backend
+// Vracia: [{ display_name, name, lat, lng, type, address }]
+// ------------------------------------------------------------
+let _placeSearchTimers = {};
+
+async function searchPlaces(query, opts = {}) {
+  const q = String(query || '').trim();
+  if (q.length < 3) return [];
+  const limit = opts.limit || 8;
+  const countryFilter = opts.countryFilter || 'cz,sk';
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?` + new URLSearchParams({
-        q: district,
-        format: 'json',
-        limit: '20',
-        addressdetails: '1',
-        countrycodes: 'cz,sk',
-      }),
-      { headers: { 'User-Agent': userAgent } },
-    );
-    if (!res.ok) throw new Error('Nominatim ' + res.status);
-    const arr = await res.json();
-    return (arr || []).map((r) => r.display_name?.split(',')[0]).filter(Boolean);
+    const url = `/api/geo/search?q=${encodeURIComponent(q)}&limit=${limit}&cc=${encodeURIComponent(countryFilter)}`;
+    const data = await apiGet(url);
+    return Array.isArray(data.results) ? data.results : [];
   } catch (err) {
-    console.warn('Nominatim cities fallback failed:', err.message);
+    console.warn('[geo] searchPlaces zlyhal:', err.message);
     return [];
   }
 }
 
-geoRoutes.get('/cities', async (c) => {
-  const district = (c.req.query('district') || '').trim();
-  const q = (c.req.query('q') || '').trim().toLowerCase();
-  const debug = c.req.query('debug') === '1';
-
-  if (!district) return c.json({ cities: [] });
-
-  const cacheKey = `cities:v5:${district}`;
-  let cities = null;
-
-  try {
-    const cached = await c.env.NASKRAJ_LAJKY.get(cacheKey);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) cities = parsed;
-    }
-  } catch {}
-
-  if (!cities || cities.length === 0) {
-    const userAgent = 'Naskraj/1.0 (naskraj.vandro.cz)';
-    let elements = [];
-
-    try {
-      elements = await findOverpassAreaForDistrict(district, userAgent);
-    } catch (err) {
-      console.error('cities fetch error:', err);
-    }
-
-    const seen = new Set();
-    cities = elements
-      .map((el) => el.tags?.name)
-      .filter((name) => name && !seen.has(name) && (seen.add(name), true))
-      .sort((a, b) => a.localeCompare(b, 'cs'));
-
-    // OPRAVA: Ak Overpass zlyhal, skús fallback cez Nominatim search
-    if (cities.length === 0) {
-      console.warn(`[geo] Overpass vrátil 0 obcí pre okres "${district}", skúšam Nominatim fallback.`);
-      const fb = await fetchCitiesFromNominatim(district, userAgent);
-      const seenFb = new Set();
-      cities = fb.filter((n) => n && !seenFb.has(n) && (seenFb.add(n), true));
-    }
-
-    // Posledný fallback: aspoň okresné mesto (zvyčajne rovnaké ako okres)
-    if (cities.length === 0) {
-      cities = [district];
-    }
-
-    if (cities.length > 0) {
-      try { await c.env.NASKRAJ_LAJKY.put(cacheKey, JSON.stringify(cities), { expirationTtl: 2592000 }); } catch {}
-    }
+// Debounced live search pri písaní
+function attachPlaceSearch(inputEl, opts = {}) {
+  if (!inputEl) return;
+  const wrapperId = inputEl.dataset.placeWrapper || inputEl.id;
+  const listId = `place-suggest-${wrapperId}`;
+  let listEl = document.getElementById(listId);
+  if (!listEl) {
+    listEl = document.createElement('div');
+    listEl.id = listId;
+    listEl.className = 'place-suggest-list';
+    inputEl.parentNode.style.position = 'relative';
+    inputEl.parentNode.appendChild(listEl);
   }
+  listEl.style.display = 'none';
 
-  let out = cities || [];
-  if (q) out = out.filter((name) => name.toLowerCase().includes(q));
+  const renderList = (items) => {
+    if (!items.length) { listEl.style.display = 'none'; listEl.innerHTML = ''; return; }
+    listEl.innerHTML = items.map((it, i) => `
+      <button type="button" class="place-suggest-item" data-place-idx="${i}">
+        <span class="place-suggest-name">${escapeHtml(it.name || it.display_name)}</span>
+        <span class="place-suggest-meta">${escapeHtml(it.display_name || '')}</span>
+      </button>`).join('');
+    listEl.style.display = 'block';
+    listEl.querySelectorAll('[data-place-idx]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const item = items[parseInt(btn.dataset.placeIdx, 10)];
+        if (!item) return;
+        inputEl.value = item.name || item.display_name;
+        if (opts.onSelect) opts.onSelect(item);
+        listEl.style.display = 'none';
+        listEl.innerHTML = '';
+      });
+    });
+  };
 
-  if (debug) {
-    return c.json({
-      cities: out.slice(0, 300),
-      _debug: {
-        district,
-        total: cities.length,
-        source: cities.length > 0 ? 'overpass/nominatim' : 'empty',
+  const key = wrapperId;
+  inputEl.addEventListener('input', () => {
+    clearTimeout(_placeSearchTimers[key]);
+    const val = inputEl.value;
+    if (val.length < 3) { renderList([]); return; }
+    listEl.style.display = 'block';
+    listEl.innerHTML = `<div class="place-suggest-loading">${escapeHtml(t('common.loading'))}</div>`;
+    _placeSearchTimers[key] = setTimeout(async () => {
+      const items = await searchPlaces(val, opts);
+      renderList(items);
+    }, 320);
+  });
+
+  inputEl.addEventListener('blur', () => {
+    setTimeout(() => { listEl.style.display = 'none'; }, 180);
+  });
+}
+
+// ------------------------------------------------------------
+// Map picker — otvorí modal s mapou (Leaflet/Google embed)
+// Používateľ klikne, dostane lat/lng + adresu, potvrdí
+// Vracia: Promise<{ lat, lng, place } | null>
+// ------------------------------------------------------------
+function openMapPicker(opts = {}) {
+  return new Promise((resolve) => {
+    const initialLat = opts.lat || 49.8175;
+    const initialLng = opts.lng || 15.4730;
+    const initialZoom = opts.zoom || 12;
+
+    const modal = document.createElement('div');
+    modal.className = 'map-picker-modal';
+    modal.innerHTML = `
+      <div class="map-picker-head">
+        <button type="button" class="map-picker-btn" data-map-cancel>${escapeHtml(t('common.cancel'))}</button>
+        <span class="map-picker-title">${escapeHtml(opts.title || t('geo.pickOnMap'))}</span>
+        <button type="button" class="map-picker-btn map-picker-btn-primary" data-map-confirm>${escapeHtml(t('common.confirm'))}</button>
+      </div>
+      <div class="map-picker-search">
+        <input type="text" class="map-picker-search-input" placeholder="${escapeAttr(t('geo.searchPlaceholder'))}" data-map-search />
+        <div class="place-suggest-list" data-map-suggest-list style="display:none"></div>
+      </div>
+      <div class="map-picker-map" data-map-canvas></div>
+      <div class="map-picker-info">
+        <div class="map-picker-info-row">
+          <span class="map-picker-info-label">${escapeHtml(t('geo.latLng'))}</span>
+          <span class="map-picker-info-value" data-map-latlng>${initialLat.toFixed(5)}, ${initialLng.toFixed(5)}</span>
+        </div>
+        <div class="map-picker-info-row">
+          <span class="map-picker-info-label">${escapeHtml(t('geo.address'))}</span>
+          <span class="map-picker-info-value" data-map-address>${escapeHtml(t('common.loading'))}</span>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.classList.add('is-open');
+    document.body.style.overflow = 'hidden';
+
+    const canvasEl = modal.querySelector('[data-map-canvas]');
+    const latlngEl = modal.querySelector('[data-map-latlng]');
+    const addressEl = modal.querySelector('[data-map-address]');
+    const searchInput = modal.querySelector('[data-map-search]');
+    const suggestList = modal.querySelector('[data-map-suggest-list]');
+
+    let map = null;
+    let marker = null;
+    let currentLat = initialLat;
+    let currentLng = initialLng;
+    let currentPlace = '';
+
+    // Leaflet — načítame dynamicky, ak nie je
+    function loadLeaflet() {
+      return new Promise((res, rej) => {
+        if (window.L) return res(window.L);
+        // CSS
+        if (!document.getElementById('leaflet-css')) {
+          const link = document.createElement('link');
+          link.id = 'leaflet-css';
+          link.rel = 'stylesheet';
+          link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+          document.head.appendChild(link);
+        }
+        // JS
+        if (!document.getElementById('leaflet-js')) {
+          const s = document.createElement('script');
+          s.id = 'leaflet-js';
+          s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+          s.onload = () => res(window.L);
+          s.onerror = rej;
+          document.head.appendChild(s);
+        } else {
+          const check = setInterval(() => { if (window.L) { clearInterval(check); res(window.L); } }, 50);
+        }
+      });
+    }
+
+    function setMarker(lat, lng) {
+      currentLat = lat;
+      currentLng = lng;
+      if (latlngEl) latlngEl.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      if (marker && map) marker.setLatLng([lat, lng]);
+      else if (map) {
+        marker = window.L.marker([lat, lng], { draggable: true }).addTo(map);
+        marker.on('dragend', async () => {
+          const pos = marker.getLatLng();
+          setMarker(pos.lat, pos.lng);
+          currentPlace = await reverseGeocode(pos.lat, pos.lng);
+          if (addressEl) addressEl.textContent = currentPlace || '—';
+        });
+      }
+      reverseGeocode(lat, lng).then((place) => {
+        currentPlace = place || '';
+        if (addressEl) addressEl.textContent = currentPlace || '—';
+      });
+    }
+
+    loadLeaflet().then((L) => {
+      map = L.map(canvasEl, { zoomControl: true, attributionControl: false }).setView([initialLat, initialLng], initialZoom);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+      setMarker(initialLat, initialLng);
+      map.on('click', (e) => {
+        setMarker(e.latlng.lat, e.latlng.lng);
+      });
+      setTimeout(() => map.invalidateSize(), 100);
+    }).catch((err) => {
+      canvasEl.innerHTML = `<div style="padding:20px;text-align:center;color:var(--c-text-muted)">${escapeHtml(t('errors.loadFailed'))}</div>`;
+      console.warn('Leaflet load failed:', err);
+    });
+
+    // Search v pickeri
+    let searchTimer = null;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      const val = searchInput.value.trim();
+      if (val.length < 3) { suggestList.style.display = 'none'; return; }
+      suggestList.style.display = 'block';
+      suggestList.innerHTML = `<div class="place-suggest-loading">${escapeHtml(t('common.loading'))}</div>`;
+      searchTimer = setTimeout(async () => {
+        const items = await searchPlaces(val, { limit: 6 });
+        if (!items.length) {
+          suggestList.innerHTML = `<div class="place-suggest-loading">${escapeHtml(t('search.nothingFound'))}</div>`;
+          return;
+        }
+        suggestList.innerHTML = items.map((it, i) => `
+          <button type="button" class="place-suggest-item" data-map-suggest-idx="${i}">
+            <span class="place-suggest-name">${escapeHtml(it.name || it.display_name)}</span>
+            <span class="place-suggest-meta">${escapeHtml(it.display_name || '')}</span>
+          </button>`).join('');
+        suggestList.querySelectorAll('[data-map-suggest-idx]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const item = items[parseInt(btn.dataset.mapSuggestIdx, 10)];
+            if (!item) return;
+            setMarker(item.lat, item.lng);
+            if (map) map.setView([item.lat, item.lng], 15);
+            suggestList.style.display = 'none';
+            searchInput.value = item.name || item.display_name;
+          });
+        });
+      }, 300);
+    });
+
+    modal.querySelector('[data-map-cancel]').addEventListener('click', () => {
+      modal.classList.remove('is-open');
+      setTimeout(() => modal.remove(), 200);
+      document.body.style.overflow = '';
+      resolve(null);
+    });
+    modal.querySelector('[data-map-confirm]').addEventListener('click', () => {
+      modal.classList.remove('is-open');
+      setTimeout(() => modal.remove(), 200);
+      document.body.style.overflow = '';
+      resolve({ lat: currentLat, lng: currentLng, place: currentPlace });
+    });
+  });
+}
+
+// ------------------------------------------------------------
+// Pomocná — pripojí place-search input + tlačidlo na mapu
+// ------------------------------------------------------------
+function attachPlacePicker(inputEl, mapBtnEl, onSelect) {
+  if (inputEl) {
+    inputEl.dataset.placeWrapper = inputEl.id || ('place-' + Math.random().toString(36).slice(2, 8));
+    attachPlaceSearch(inputEl, {
+      onSelect: (item) => {
+        if (onSelect) onSelect({ lat: item.lat, lng: item.lng, place: item.name || item.display_name });
       },
     });
   }
-  return c.json({ cities: out.slice(0, 300) });
-});
+  if (mapBtnEl) {
+    mapBtnEl.addEventListener('click', async () => {
+      const result = await openMapPicker({ title: t('geo.pickOnMap') });
+      if (!result) return;
+      if (inputEl) inputEl.value = result.place || `${result.lat.toFixed(5)}, ${result.lng.toFixed(5)}`;
+      if (onSelect) onSelect(result);
+    });
+  }
+}
+
+async function attachLocationToPost() {
+  try {
+    const { lat, lng } = await getCurrentLocation();
+    const place = await reverseGeocode(lat, lng);
+    return { lat, lng, place };
+  } catch (err) {
+    showToast(err.message);
+    return null;
+  }
+}
+
+async function saveMyLocation() {
+  try {
+    const { lat, lng } = await getCurrentLocation();
+    const place = await reverseGeocode(lat, lng);
+    await apiPost('/api/geo/save', { lat, lng, place: place || '' });
+    if (state.user) { state.user.geo_city = place || ''; setStoredUser(state.user); }
+    showToast(t('toasts.locationSaved'));
+  } catch (err) { showToast(err.message); }
+}
