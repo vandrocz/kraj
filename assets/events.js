@@ -34,8 +34,13 @@ document.addEventListener('click', (e) => {
 
     case 'open-notification': openNotification(el.dataset.notifId); break;
     case 'open-add-business': openAddBusinessModal(); break;
+    case 'open-delete-business':
+      openDeleteBusinessModal(el.dataset.kind, el.dataset.id, el.dataset.name);
+      break;
 
+    // ====================================================
     // STORIES
+    // ====================================================
     case 'open-create-story': {
       const bizId = el.dataset.businessId || null;
       const bizName = el.dataset.businessName || null;
@@ -76,7 +81,9 @@ document.addEventListener('click', (e) => {
       document.getElementById('story-file-input')?.click();
       break;
 
+    // ====================================================
     // LIGHTBOX
+    // ====================================================
     case 'open-lightbox': {
       e.preventDefault();
       const postId = el.dataset.postId;
@@ -159,7 +166,9 @@ document.addEventListener('click', (e) => {
       break;
     }
 
+    // ====================================================
     // POSTY
+    // ====================================================
     case 'toggle-post-like': togglePostLike(el.dataset.id, el.dataset.feed, el); break;
     case 'toggle-bookmark': toggleBookmark(el.dataset.id, el); break;
     case 'share-post': sharePost(el.dataset.id, el.dataset.text); break;
@@ -168,7 +177,22 @@ document.addEventListener('click', (e) => {
     case 'delete-post': deletePost(el.dataset.id, el.dataset.feed); break;
     case 'delete-comment': deleteComment(el.dataset.id, el.dataset.feed, el.dataset.postId); break;
 
+    // ====================================================
+    // GALÉRIA "O NÁS"
+    // ====================================================
+    case 'trigger-gallery-file':
+      document.getElementById('gallery-file-input')?.click();
+      break;
+    case 'open-gallery-image':
+      openLightbox([el.dataset.url], 0, el.dataset.caption || '');
+      break;
+    case 'delete-gallery-item':
+      deleteGalleryItem(el.dataset.galleryId, el.dataset.kind, el.dataset.id);
+      break;
+
+    // ====================================================
     // PROFIL
+    // ====================================================
     case 'open-profile': if (el.dataset.id) openProfile(el.dataset.kind, el.dataset.id); break;
     case 'close-overlay': closeOverlay(); break;
     case 'clear-overlay': clearOverlay(); break;
@@ -224,7 +248,9 @@ document.addEventListener('click', (e) => {
       uploadProfileImage(el.dataset.target, el.dataset.targetId, el.dataset.field);
       break;
 
+    // ====================================================
     // AUTH
+    // ====================================================
     case 'set-auth-view':
       state.authView = el.dataset.view;
       accountFormState.formError = '';
@@ -242,7 +268,9 @@ document.addEventListener('click', (e) => {
       handleLogout();
       break;
 
-    // BUSINESS
+    // ====================================================
+    // BUSINESS DASHBOARD
+    // ====================================================
     case 'select-business': selectBusiness(el.dataset.id); break;
     case 'trigger-file-input': document.getElementById('post-file-input')?.click(); break;
     case 'remove-post-file': removePostFile(el.dataset.name); break;
@@ -261,7 +289,9 @@ document.addEventListener('click', (e) => {
       })();
       break;
 
+    // ====================================================
     // RICH EDITOR
+    // ====================================================
     case 'rich-cmd': richCmd(el.dataset.cmd); break;
     case 'rich-link': richLink(); break;
     case 'rich-emoji': richEmoji(); break;
@@ -284,7 +314,9 @@ document.addEventListener('click', (e) => {
       })();
       break;
 
+    // ====================================================
     // EVENTY
+    // ====================================================
     case 'open-event': openEventDetail(el.dataset.id); break;
     case 'open-event-create': openCreateEvent(); break;
     case 'delete-event': deleteEvent(el.dataset.id); break;
@@ -298,7 +330,9 @@ document.addEventListener('click', (e) => {
     case 'trigger-event-file': document.getElementById('event-file-input')?.click(); break;
     case 'remove-event-file': removeEventFile(el.dataset.name); break;
 
+    // ====================================================
     // PROFIL TABS & STATS
+    // ====================================================
     case 'biz-profile-tab': switchBizProfileTab(el.dataset.tab); break;
     case 'open-profile-stats': openProfileStats(el.dataset.kind, el.dataset.id); break;
     case 'stats-period':
@@ -308,38 +342,52 @@ document.addEventListener('click', (e) => {
       }
       break;
 
+    // ====================================================
     // NEARBY
+    // ====================================================
     case 'open-nearby': openNearby(); break;
     case 'nearby-refresh': loadNearby(); break;
 
+    // ====================================================
     // WISHLIST
+    // ====================================================
     case 'open-wishlist': openWishlist(); break;
     case 'toggle-wishlist': toggleWishlist(el.dataset.kind, el.dataset.id, el); break;
 
+    // ====================================================
     // BADGES & CHECKINS
+    // ====================================================
     case 'open-badges': openBadges(); break;
     case 'open-user-checkins': openUserCheckins(el.dataset.id); break;
     case 'open-business-checkins': openBusinessCheckins(el.dataset.kind, el.dataset.id); break;
     case 'open-create-checkin': openCheckinCreate(el.dataset.kind, el.dataset.id, el.dataset.name); break;
 
+    // ====================================================
     // REVIEWS
+    // ====================================================
     case 'open-create-review': openCreateReview(el.dataset.kind, el.dataset.id); break;
     case 'set-review-rating': setReviewRating(parseInt(el.dataset.value, 10)); break;
 
+    // ====================================================
     // ONBOARDING
+    // ====================================================
     case 'onboarding-next': onboardingNext(); break;
     case 'onboarding-skip': onboardingSkip(); break;
     case 'onboarding-toggle-biz': onboardingToggleBiz(el.dataset.kind, el.dataset.id, el.dataset.name); break;
     case 'onboarding-avatar-pick': onboardingAvatarPick(); break;
     case 'onboarding-finish': finishOnboarding(false); break;
 
+    // ====================================================
     // VERIFICATION
+    // ====================================================
     case 'open-verification-request': openVerificationRequest(el.dataset.kind, el.dataset.id, el.dataset.name); break;
     case 'trigger-verif-doc': document.getElementById('verif-doc-input')?.click(); break;
     case 'approve-verification': approveVerification(el.dataset.id); break;
     case 'reject-verification': rejectVerification(el.dataset.id); break;
 
+    // ====================================================
     // ADMIN
+    // ====================================================
     case 'admin-tab':
       state._adminTab = el.dataset.tab;
       if (el.dataset.tab === 'users' && state.adminUsers === null) loadAdminUsers();
@@ -372,19 +420,27 @@ document.addEventListener('click', (e) => {
     case 'admin-seed-test': adminSeedTest(); break;
     case 'admin-cleanup-test': adminCleanupTest(); break;
 
+    // ====================================================
     // PUSH
+    // ====================================================
     case 'push-test': testPush(); break;
 
+    // ====================================================
     // COOKIES
+    // ====================================================
     case 'accept-cookies': acceptCookies(); break;
     case 'reject-cookies': rejectCookies(); break;
     case 'open-cookie-settings': openCookieSettings(); break;
     case 'save-cookie-settings': saveCookieSettings(); break;
 
+    // ====================================================
     // HASHTAGS
+    // ====================================================
     case 'open-hashtag': openHashtag(el.dataset.tag); break;
 
+    // ====================================================
     // MODAL
+    // ====================================================
     case 'close-modal-scrim':
       if (e.target.classList.contains('modal-scrim') || e.target.closest('.modal-scrim') === e.target) {
         closeModal();
@@ -394,6 +450,7 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// Detail modal (starý) — zatvorenie klikom mimo
 document.addEventListener('click', (e) => {
   if (e.target.id === 'detail-modal') {
     e.target.classList.remove('is-open');
@@ -401,6 +458,7 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// Carousel — aktívna bodka podľa scrollu
 document.addEventListener('scroll', (e) => {
   const track = e.target.closest?.('[data-carousel-track]');
   if (!track) return;
@@ -412,7 +470,9 @@ document.addEventListener('scroll', (e) => {
   });
 }, true);
 
-// CHANGE
+// ============================================================
+// CHANGE HANDLERS
+// ============================================================
 document.addEventListener('change', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
@@ -429,15 +489,32 @@ document.addEventListener('change', (e) => {
   else if (a === 'files-selected') onFilesSelected(el);
   else if (a === 'event-files-selected') onEventFilesSelected(el);
   else if (a === 'file-selected') onFileSelected(el);
-  else if (a === 'admin-user-role-filter') { state._adminUserRole = el.value; state.adminUsers = null; loadAdminUsers(); }
-  else if (a === 'admin-user-status-filter') { state._adminUserStatus = el.value; state.adminUsers = null; loadAdminUsers(); }
+  else if (a === 'admin-user-role-filter') {
+    state._adminUserRole = el.value;
+    state.adminUsers = null;
+    loadAdminUsers();
+  }
+  else if (a === 'admin-user-status-filter') {
+    state._adminUserStatus = el.value;
+    state.adminUsers = null;
+    loadAdminUsers();
+  }
   else if (a === 'cookie-setting') toggleCookieSetting(el.dataset.key, el.checked);
   else if (a === 'setting-toggle') toggleSetting(el.dataset.key, el.checked);
   else if (a === 'story-file-selected') onStoryFileSelected(el);
   else if (a === 'event-filter') onEventFilterChange(el.dataset.field, el.value);
-  else if (a === 'event-business-select') { state.overlay.businessId = el.value; renderApp(); }
-  else if (a === 'nearby-radius') { state.nearby.radius = parseInt(el.value, 10); loadNearby(); }
-  else if (a === 'nearby-kind') { state.nearby.kind = el.value; loadNearby(); }
+  else if (a === 'event-business-select') {
+    state.overlay.businessId = el.value;
+    renderApp();
+  }
+  else if (a === 'nearby-radius') {
+    state.nearby.radius = parseInt(el.value, 10);
+    loadNearby();
+  }
+  else if (a === 'nearby-kind') {
+    state.nearby.kind = el.value;
+    loadNearby();
+  }
   else if (a === 'onboarding-avatar-change') onboardingAvatarChange(el);
   else if (a === 'verif-doc-selected') onVerifDocSelected(el);
   else if (a === 'push-toggle') handlePushToggle(el.checked);
@@ -450,6 +527,18 @@ document.addEventListener('change', (e) => {
   }
   else if (a === 'lang-select') {
     if (typeof setLanguage === 'function') setLanguage(el.value);
+  }
+  else if (a === 'gallery-file-selected') {
+    // Aktualizuj label s názvom vybraného súboru
+    const label = document.getElementById('gallery-file-label');
+    const file = el.files?.[0];
+    if (label) {
+      if (file) {
+        label.innerHTML = `✓ ${escapeHtml(file.name)}`;
+      } else {
+        label.innerHTML = `${icon('plus', { size: 16 })} ${escapeHtml(t('profile.aboutGalleryAdd'))}`;
+      }
+    }
   }
   else if (a === 'district-change') {
     const form = el.closest('form');
@@ -472,13 +561,21 @@ document.addEventListener('change', (e) => {
   }
 });
 
-// INPUT
+// ============================================================
+// INPUT HANDLERS
+// ============================================================
 document.addEventListener('input', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el) return;
 
-  if (el.dataset.action === 'search-change') { onSearchChange(el.dataset.feed, el.value); return; }
-  if (el.dataset.action === 'search-global') { onGlobalSearchInput(el.value); return; }
+  if (el.dataset.action === 'search-change') {
+    onSearchChange(el.dataset.feed, el.value);
+    return;
+  }
+  if (el.dataset.action === 'search-global') {
+    onGlobalSearchInput(el.value);
+    return;
+  }
   if (el.dataset.action === 'event-search') {
     state.events.search = el.value;
     state.events.next_cursor = null;
@@ -486,7 +583,10 @@ document.addEventListener('input', (e) => {
     window._eventSearchTimer = setTimeout(() => loadEvents(), 400);
     return;
   }
-  if (el.dataset.action === 'onboarding-bio') { state.overlay.bio = el.value; return; }
+  if (el.dataset.action === 'onboarding-bio') {
+    state.overlay.bio = el.value;
+    return;
+  }
   if (el.dataset.action === 'admin-user-search') {
     state._adminUserQuery = el.value;
     clearTimeout(window._adminUserSearchTimer);
@@ -498,7 +598,9 @@ document.addEventListener('input', (e) => {
   }
 });
 
-// SUBMIT
+// ============================================================
+// SUBMIT HANDLERS
+// ============================================================
 document.addEventListener('submit', (e) => {
   const form = e.target.closest('[data-action]');
   if (!form) return;
@@ -540,9 +642,12 @@ document.addEventListener('submit', (e) => {
   else if (a === 'submit-review') handleReviewSubmit(form);
   else if (a === 'submit-edit-post') handleEditPostSubmit(form);
   else if (a === 'submit-verification-request') handleVerificationSubmit(form);
+  else if (a === 'submit-gallery-item') submitGalleryItem(form);
 });
 
+// ============================================================
 // KEYBOARD
+// ============================================================
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (state.lightbox) { closeLightbox(); return; }
@@ -568,7 +673,9 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// ============================================================
 // BOOTSTRAP
+// ============================================================
 async function bootstrap() {
   state.tab = restoreTab();
   getFeedTitle(state.tab);
