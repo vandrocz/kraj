@@ -28,7 +28,6 @@ document.addEventListener('click', (e) => {
       renderApp();
       setTimeout(() => {
         document.getElementById('inline-post-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        // Pripoj place-search na nové pole
         if (typeof attachPostPlacePicker === 'function') attachPostPlacePicker();
       }, 60);
       break;
@@ -255,7 +254,7 @@ document.addEventListener('click', (e) => {
     case 'rich-emoji': richEmoji(); break;
     case 'close-emoji': closeEmojiPicker(); break;
     case 'insert-emoji': insertEmoji(el.dataset.emoji); break;
-    case 'insert-mention': insertMention(el.dataset.name); break;
+    case 'insert-mention': insertMention(el.dataset.name, el.dataset.handle); break;
 
     // GEO / POLOHA
     case 'attach-geo':
@@ -323,7 +322,7 @@ document.addEventListener('click', (e) => {
     case 'open-badges': openBadges(); break;
     case 'open-user-checkins': openUserCheckins(el.dataset.id); break;
     case 'open-business-checkins': openBusinessCheckins(el.dataset.kind, el.dataset.id); break;
-    case 'open-create-checkin': openCheckinCreate(el.dataset.kind, el.dataset.id, el.dataset.name); break;
+    case 'open-create-checkin': openCheckinCreateOverlay(el.dataset.kind, el.dataset.id, el.dataset.name); break;
 
     // REVIEWS
     case 'open-create-review': openCreateReview(el.dataset.kind, el.dataset.id); break;
@@ -379,9 +378,12 @@ document.addEventListener('click', (e) => {
     // HASHTAG
     case 'open-hashtag': openHashtag(el.dataset.tag); break;
 
+    // ZBIERKY
+    case 'like-collection': likeCollection(el.dataset.id, el); break;
+
     // MODAL
     case 'close-modal-scrim':
-      if (e.target.classList.contains('modal-scrim') || e.target.closest('.modal-scrim') === e.target) closeModal();
+      if (e.target.classList?.contains('modal-scrim')) closeModal();
       break;
     case 'close-modal': closeModal(); break;
   }
@@ -467,7 +469,7 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Carousel
+// Carousel — scroll detekcia
 document.addEventListener('scroll', (e) => {
   const track = e.target.closest?.('[data-carousel-track]');
   if (!track) return;
