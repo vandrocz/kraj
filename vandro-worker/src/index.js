@@ -18,7 +18,9 @@ import { reviewsRoutes } from './routes/reviews.js';
 import { wishlistRoutes } from './routes/wishlist.js';
 import { nearbyRoutes } from './routes/nearby.js';
 import { pushRoutes } from './routes/push.js';
-import { runDailyDistribution, ensureActiveProjectRotation, cleanupOrphanedR2 } from './cron.js';
+import { groupsRoutes } from './routes/groups.js';
+import { messagesRoutes } from './routes/messages.js';
+import { runDailyDistribution, ensureActiveProjectRotation, cleanupOrphanedR2, deleteExpiredStories } from './cron.js';
 import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUISINE_TYPES } from './regions.js';
 import { rateLimit } from './ratelimit.js';
 
@@ -67,9 +69,7 @@ app.route('/api/seo', seoRoutes);
 app.route('/api/auth', authRoutes);
 app.route('/api/auth', authGoogleRoutes);
 
-// ============================================================
-// RATE LIMIT pre view (pred feedRoutes)
-// ============================================================
+// Rate limit pre view
 app.use('/api/feed/:id/view', async (c, next) => {
   const ip = c.req.header('cf-connecting-ip') || 'unknown';
   const rl = await rateLimit(c.env, 'view', ip, 120, 60);
@@ -100,7 +100,7 @@ app.post('/api/user/wallet/topup', requireAuth, async (c) => {
   return c.json({ credit_balance: row.credit_balance });
 });
 
-// Feed
+// Feed — requireAuth pre akcie, GET verejné
 app.use('/api/feed/collections/:id/like', requireAuth);
 app.use('/api/feed/:id/comment', requireAuth);
 app.use('/api/feed/:id/report', requireAuth);
@@ -116,7 +116,7 @@ app.route('/api/feed', feedRoutes);
 app.use('/api/posts', requireAuth);
 app.route('/api/posts', postsRoutes);
 
-// Events
+// Events — GET verejné, ostatné auth
 app.use('/api/events', async (c, next) => {
   if (c.req.method === 'GET') return next();
   return requireAuth(c, next);
@@ -127,7 +127,7 @@ app.route('/api/events', eventsApiRoutes);
 app.post('/api/geo/save', requireAuth);
 app.route('/api/geo', geoRoutes);
 
-// Mentions
+// Mentions & Hashtags
 app.route('/api/mentions', mentionsRoutes);
 app.route('/api/hashtags', hashtagsRoutes);
 
@@ -162,7 +162,17 @@ app.use('/api/push/unsubscribe', requireAuth);
 app.use('/api/push/test', requireAuth);
 app.route('/api/push', pushRoutes);
 
-// Profile — search s rate limitom
+// Messages (DM)
+app.use('/api/messages/*', requireAuth);
+app.use('/api/messages', requireAuth);
+app.route('/api/messages', messagesRoutes);
+
+// Groups
+app.use('/api/groups/*', requireAuth);
+app.use('/api/groups', requireAuth);
+app.route('/api/groups', groupsRoutes);
+
+// Profile
 app.use('/api/profile/me/*', requireAuth);
 app.use('/api/profile/me', requireAuth);
 app.use('/api/profile/follow', requireAuth);
@@ -181,10 +191,11 @@ app.route('/api/profile', profileRoutes);
 // Stories
 app.use('/api/stories/feed', requireAuth);
 app.use('/api/stories/upload', requireAuth);
+app.use('/api/stories/upload-video', requireAuth);
 app.use('/api/stories', requireAuth);
 app.route('/api/stories', storiesRoutes);
 
-// Admin cron
+// Admin cron (bez JWT, chránené X-Cron-Secret)
 app.post('/api/admin/run-distribution-now', async (c) => {
   const key = c.req.header('X-Cron-Secret');
   if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
@@ -197,6 +208,7 @@ app.post('/api/admin/r2-cleanup', async (c) => {
   return c.json(await cleanupOrphanedR2(c.env));
 });
 
+// Admin (vyžaduje JWT)
 app.use('/api/admin/*', requireAuth);
 app.route('/api/admin', adminRoutes);
 
@@ -209,25 +221,17 @@ app.onError((err, c) => {
 export default {
   fetch: app.fetch,
   async scheduled(event, env, ctx) {
-    if (event.cron === '0 8 * * *') ctx.waitUntil(runDailyDistribution(env));
-    else if (event.cron === '0 4 * * *') ctx.waitUntil(cleanupOrphanedR2(env));
-    else ctx.waitUntil(ensureActiveProjectRotation(env));
+    if (event.cron === '0 8 * * *') {
+      ctx.waitUntil(runDailyDistribution(env));
+    } else if (event.cron === '0 4 * * *') {
+      ctx.waitUntil((async () => {
+        await deleteExpiredStories(env);
+        await cleanupOrphanedR2(env);
+      })());
+    } else if (event.cron === '30 */6 * * *') {
+      ctx.waitUntil(deleteExpiredStories(env));
+    } else {
+      ctx.waitUntil(ensureActiveProjectRotation(env));
+    }
   },
 };
-
-import { runDailyDistribution, ensureActiveProjectRotation, cleanupOrphanedR2, deleteExpiredStories } from './cron.js';
-
-// ... v export default:
-
-async scheduled(event, env, ctx) {
-  if (event.cron === '0 8 * * *') ctx.waitUntil(runDailyDistribution(env));
-  else if (event.cron === '0 4 * * *') {
-    // Nočný cleanup — najprv stories, potom siroty
-    ctx.waitUntil((async () => {
-      await deleteExpiredStories(env);
-      await cleanupOrphanedR2(env);
-    })());
-  }
-  else if (event.cron === '30 */6 * * *') ctx.waitUntil(deleteExpiredStories(env));
-  else ctx.waitUntil(ensureActiveProjectRotation(env));
-}
