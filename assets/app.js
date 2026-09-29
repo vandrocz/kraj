@@ -82,6 +82,9 @@ const state = {
 
   _mapNavCollapsed: true,
   _historyPushed: false,
+
+  // Zbierky (feed, detail)
+  collections: null,
 };
 
 let _mapIframeCache = null;
@@ -367,6 +370,7 @@ function renderApp() {
   }
 
   const root = document.getElementById('root');
+  if (!root) return;
 
   const liveMapIframe = document.getElementById('vandro-map-iframe');
   if (liveMapIframe) {
@@ -441,6 +445,9 @@ function renderApp() {
   }
 
   applySeo();
+
+  // Rich editor bind
+  bindAllRichEditors(root);
 
   if (state.lightbox && state.lightbox.images && state.lightbox.images.length > 0 && !hideLightbox) {
     const lbEl = document.getElementById('lightbox');
@@ -526,6 +533,7 @@ function openProfile(kind, id) {
 
 function closeOverlay(fromHistory = false) {
   if (typeof stopStoryAutoAdvance === 'function') stopStoryAutoAdvance();
+  if (typeof stopThreadPolling === 'function') stopThreadPolling();
   const prev = state.overlayStack.pop();
   state.overlay = prev || null;
   if (!fromHistory && state._historyPushed) clearHistoryState();
@@ -566,6 +574,7 @@ function switchTab(tab) {
   state.overlayStack = [];
   if (state.lightbox) closeLightbox(true);
   if (typeof stopStoryAutoAdvance === 'function') stopStoryAutoAdvance();
+  if (typeof stopThreadPolling === 'function') stopThreadPolling();
   if (state._historyPushed) { state._historyPushed = false; }
   state.tab = tab;
   persistTab(tab);
@@ -655,7 +664,6 @@ function cycleLightboxPanelState() {
   setLightboxPanelState((cur + 1) % 3);
 }
 
-// OPRAVA: triedy sa aplikujú na lightbox-inner + telo dostane data attr
 function applyLightboxPanelState() {
   const lb = state.lightbox;
   if (!lb) return;
@@ -903,7 +911,7 @@ async function openNotification(notifId) {
 }
 
 // ============================================================
-// COOKIES — opravený open + force show
+// COOKIES
 // ============================================================
 const COOKIE_CONSENT_VERSION = '2';
 
@@ -954,14 +962,12 @@ function rejectCookies() {
   document.getElementById('cookie-banner')?.remove();
 }
 
-// OPRAVA: vždy zobrazí banner, aj keď už súhlas existuje
 function openCookieSettings() {
   state._cookieSettingsOpen = true;
   state._cookieForceShow = true;
   state._cookieConsent = false;
   const existing = getCookieConsentShared();
   state._cookieSettings = existing || { necessary: true, analytics: false, marketing: false };
-  // Zavri settings overlay, aby banner bol viditeľný
   if (state.overlay?.type === 'settings') {
     state.overlay = null;
     state.overlayStack = [];
@@ -1054,21 +1060,4 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') lightboxPrev();
 });
 
-function maybeRequestPushPermission() {
-  if (!isLoggedIn()) return;
-  if (state._pushPrompted) return;
-  if (!('Notification' in window)) return;
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-  if (Notification.permission === 'granted') return;
-  if (Notification.permission === 'denied') return;
-  state._pushPrompted = true;
-  setTimeout(async () => {
-    if (!isLoggedIn()) return;
-    try {
-      const perm = await Notification.requestPermission();
-      if (perm === 'granted') {
-        if (typeof enablePushNotifications === 'function') await enablePushNotifications();
-      }
-    } catch (err) { console.warn('[push-prompt]', err); }
-  }, 8000);
-}
+// POZNÁMKA: maybeRequestPushPermission žije v push.js (jedna verzia, žiadny duplikát)
