@@ -129,7 +129,6 @@ async function openEventDetail(id) {
   renderApp();
   try {
     const data = await apiGet(`/api/events/${id}`);
-    // Guard: overlay sa medzitým mohol zmeniť
     if (state.overlay?.type !== 'event-detail' || state.overlay.id !== id) return;
     state._eventDetail = data.event;
     renderApp();
@@ -237,20 +236,10 @@ function renderEventDetailOverlay() {
     </div>`;
 }
 
-// ============================================================
-// KALENDÁR
-// ============================================================
 function openCalendarChoice(eventId) {
-  // Guard: musíme mať načítaný detail eventu
   const ev = state._eventDetail;
-  if (!ev || ev.id !== eventId) {
-    showToast(t('common.error'));
-    return;
-  }
-  if (!ev.start_at) {
-    showToast(t('events.dateNotSpecified'));
-    return;
-  }
+  if (!ev || ev.id !== eventId) { showToast(t('common.error')); return; }
+  if (!ev.start_at) { showToast(t('events.dateNotSpecified')); return; }
   openModal({
     title: t('events.addToCalendar'),
     body: `
@@ -289,13 +278,12 @@ function getEventEndDate(ev) {
   }
   const start = new Date((String(ev.start_at).replace(' ', 'T')) + 'Z');
   if (isNaN(start.getTime())) return null;
-  return new Date(start.getTime() + 2 * 60 * 60 * 1000); // +2h default
+  return new Date(start.getTime() + 2 * 60 * 60 * 1000);
 }
 
 function addEventToGoogleCalendar(eventId) {
   const ev = state._eventDetail;
   if (!ev || ev.id !== eventId || !ev.start_at) return;
-
   const start = formatCalDate(ev.start_at);
   const endDate = getEventEndDate(ev);
   const end = endDate ? formatCalDate(endDate.toISOString()) : '';
@@ -313,7 +301,6 @@ function addEventToGoogleCalendar(eventId) {
 function downloadEventIcs(eventId) {
   const ev = state._eventDetail;
   if (!ev || ev.id !== eventId || !ev.start_at) return;
-
   const start = formatCalDate(ev.start_at);
   const endDate = getEventEndDate(ev);
   const end = endDate ? formatCalDate(endDate.toISOString()) : '';
@@ -348,7 +335,6 @@ function downloadEventIcs(eventId) {
 function addEventToOutlook(eventId) {
   const ev = state._eventDetail;
   if (!ev || ev.id !== eventId || !ev.start_at) return;
-
   const startDate = new Date((String(ev.start_at).replace(' ', 'T')) + 'Z');
   if (isNaN(startDate.getTime())) { showToast(t('events.dateNotSpecified')); return; }
   const endDate = getEventEndDate(ev) || new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
@@ -409,7 +395,6 @@ function renderCreateEventOverlay() {
   const selected = businesses.find((b) => b.id === state.overlay.businessId) || businesses[0];
   const KIND_MAP = { organization: 'organizations', accommodation: 'accommodation', gastro: 'restaurants' };
   const eventFiles = state.overlay.eventFiles || [];
-
   const bizAddr = [selected.address, selected.city, selected.district, selected.region].filter(Boolean).join(', ');
 
   return `
@@ -433,18 +418,18 @@ function renderCreateEventOverlay() {
             <h3 class="form-section-title">${escapeHtml(t('events.addressLabel'))}</h3>
             <div class="form-field">
               <div class="post-place-input" style="position:relative">
-                <input class="form-input" name="address" data-event-address-input value="${escapeAttr(bizAddr)}" placeholder="${escapeAttr(t('events.addressPlaceholder'))}" autocomplete="off" />
+                <input class="form-input" name="address" data-place-input data-event-address-input value="${escapeAttr(bizAddr)}" placeholder="${escapeAttr(t('events.addressPlaceholder'))}" autocomplete="off" />
               </div>
             </div>
             <div class="post-place-actions" style="margin-bottom:10px">
-              <button type="button" class="profile-action-btn" data-action="event-map-picker">
+              <button type="button" class="profile-action-btn" data-action="pick-place-on-map">
                 ${icon('mapPin', { size: 15 })} ${escapeHtml(t('events.pickOnMap'))}
               </button>
               <button type="button" class="profile-action-btn" data-action="event-address-from-business" data-business-id="${escapeAttr(selected.id)}">
                 ${icon('landmark', { size: 15 })} ${escapeHtml(t('events.addressFromBusiness'))}
               </button>
             </div>
-            <p class="form-hint" data-event-geo-label>${selected.geo_lat && selected.geo_lng ? `📍 ${Number(selected.geo_lat).toFixed(4)}, ${Number(selected.geo_lng).toFixed(4)}` : ''}</p>
+            <p class="form-hint" data-place-geo-label>${selected.geo_lat && selected.geo_lng ? `📍 ${Number(selected.geo_lat).toFixed(4)}, ${Number(selected.geo_lng).toFixed(4)}` : ''}</p>
             <div class="form-field"><label class="form-label">${escapeHtml(t('events.locationName'))}</label><input class="form-input" name="location_name" placeholder="${escapeAttr(t('events.locationPh'))}" /></div>
             <div class="form-field"><label class="form-label">${escapeHtml(t('events.region'))}</label>
               <select class="form-select" name="region">
@@ -485,10 +470,7 @@ async function onEventFilesSelected(inputEl) {
     try { compressed.push(await compressImage(f, { maxDim: 1600, quality: 0.82 })); }
     catch { compressed.push(f); }
   }
-  if (compressed.length === 0) {
-    showToast(t('common.error'));
-    return;
-  }
+  if (compressed.length === 0) { showToast(t('common.error')); return; }
   state.overlay.eventFiles = compressed;
   renderApp();
 }
@@ -514,6 +496,7 @@ async function handleCreateEventSubmit(form) {
 
     if (form.dataset.geoLat) fd.set('geo_lat', form.dataset.geoLat);
     if (form.dataset.geoLng) fd.set('geo_lng', form.dataset.geoLng);
+    if (form.dataset.geoPlace) fd.set('geo_place', form.dataset.geoPlace);
 
     await apiPost('/api/events', fd);
     showToast(t('events.published'));
@@ -528,14 +511,6 @@ async function handleCreateEventSubmit(form) {
     state.overlay.uploading = false;
     renderApp();
   }
-}
-
-async function onEventFileSelected(inputEl) {
-  const file = inputEl.files?.[0];
-  if (!file) return;
-  const compressed = await compressImage(file, { maxDim: 1600, quality: 0.82 });
-  state.overlay = { ...state.overlay, file: compressed, previewUrl: URL.createObjectURL(compressed) };
-  renderApp();
 }
 
 async function deleteEvent(id) {
