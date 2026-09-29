@@ -106,6 +106,25 @@ function renderLoginForm() {
     </form>`;
 }
 
+// ============================================================
+// Adresa + mapa — sdílený blok pro registraci a přidání podniku
+// ============================================================
+function renderAddressWithMapBlock() {
+  return `
+    <div class="form-field">
+      <label class="form-label">${escapeHtml(t('events.addressLabel'))}</label>
+      <div class="post-place-input" style="position:relative">
+        <input class="form-input" name="address" data-place-input placeholder="${escapeAttr(t('events.addressPlaceholder'))}" autocomplete="off" />
+      </div>
+      <div class="post-place-actions" style="margin-top:6px">
+        <button type="button" class="profile-action-btn" data-action="pick-place-on-map">
+          ${icon('mapPin', { size: 14 })} ${escapeHtml(t('geo.pickOnMap'))}
+        </button>
+      </div>
+      <p class="form-hint" data-place-geo-label style="margin-top:6px"></p>
+    </div>`;
+}
+
 function renderRegisterForm() {
   const role = accountFormState.registerRole;
   const kind = accountFormState.registerBusinessKind;
@@ -139,6 +158,7 @@ function renderRegisterForm() {
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerOrgName'))}</label><input class="form-input" name="orgName" required placeholder="${escapeAttr(t('auth.registerOrgNamePh'))}" /></div>
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerType'))}</label>
         <select class="form-select" name="orgType" required>${orgTypeOptions.map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}</select></div>
+      ${renderAddressWithMapBlock()}
       ${renderRegionDistrictCityFields('reg')}
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDescription'))}</label><textarea class="form-textarea" name="description"></textarea></div>
     `;
@@ -153,7 +173,8 @@ function renderRegisterForm() {
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerBusinessName'))}</label><input class="form-input" name="businessName" required placeholder="${escapeAttr(t('auth.registerBusinessNamePh'))}" /></div>
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerType'))}</label>
         <select class="form-select" name="businessType" required>${typeOpts.map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}</select></div>
-      ${kind === 'gastro' ? `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.cuisine'))}</label><select class="form-select" name="cuisineType"><option value="ceska">${escapeHtml(tType('ceska'))}</option><option value="italska">${escapeHtml(tType('italska'))}</option><option value="asijska">${escapeHtml(tType('asijska'))}</option><option value="vegan">${escapeHtml(tType('vegan'))}</option><option value="jina">${escapeHtml(tType('jina'))}</option></select></div>` : `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.capacity'))}</label><input class="form-input" type="number" name="capacity" min="1" /></div>`}
+      ${kind === 'gastro' ? `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.cuisine'))}</label><select class="form-select" name="cuisineType"><option value="ceska">${escapeHtml(tType('ceska'))}</option><option value="slovenska">${escapeHtml(tType('slovenska'))}</option><option value="italska">${escapeHtml(tType('italska'))}</option><option value="asijska">${escapeHtml(tType('asijska'))}</option><option value="vegan">${escapeHtml(tType('vegan'))}</option><option value="jina">${escapeHtml(tType('jina'))}</option></select></div>` : `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.capacity'))}</label><input class="form-input" type="number" name="capacity" min="1" /></div>`}
+      ${renderAddressWithMapBlock()}
       ${renderRegionDistrictCityFields('reg')}
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDescription'))}</label><textarea class="form-textarea" name="description"></textarea></div>
     `;
@@ -271,6 +292,13 @@ function finishLogin(data) {
 async function handleRegisterSubmit(form) {
   const fd = new FormData(form);
   const body = Object.fromEntries(fd.entries());
+
+  // Geo data z formuláře (place search / map picker)
+  if (form.dataset.geoLat) body.geo_lat = form.dataset.geoLat;
+  if (form.dataset.geoLng) body.geo_lng = form.dataset.geoLng;
+  if (form.dataset.geoPlace) body.geo_place = form.dataset.geoPlace;
+  if (form.dataset.geoCountry) body.country_code = form.dataset.geoCountry;
+
   const btn = form.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = t('common.sending'); }
   try {
@@ -525,12 +553,11 @@ function openAddBusinessModal() {
           ${initialTypeOptions.map((o) => `<option value="${o.value}">${escapeHtml(tType(o.value))}</option>`).join('')}
         </select>
       </div>
-      <div class="form-field">
-        <label class="form-label">${escapeHtml(t('events.addressLabel'))}</label>
-        <div class="post-place-input" style="position:relative">
-          <input class="form-input" name="address" data-add-business-address-input placeholder="${escapeAttr(t('events.addressPlaceholder'))}" />
-        </div>
-      </div>
+      ${renderAddressWithMapBlock()}
+      <input type="hidden" name="geo_lat" />
+      <input type="hidden" name="geo_lng" />
+      <input type="hidden" name="geo_place" />
+      <input type="hidden" name="country_code" />
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerRegion'))}</label>
         <select class="form-select" name="region" data-action="region-select-change" required>
           <option value="">${escapeHtml(t('auth.registerSelectRegion'))}</option>
@@ -564,20 +591,6 @@ function openAddBusinessModal() {
       }
     },
   });
-
-  setTimeout(() => {
-    const form = document.querySelector('.modal-form');
-    if (!form) return;
-    const input = form.querySelector('[data-add-business-address-input]');
-    if (input) {
-      attachPlaceSearch(input, {
-        onSelect: (item) => {
-          form.dataset.geoLat = String(item.lat);
-          form.dataset.geoLng = String(item.lng);
-        },
-      });
-    }
-  }, 60);
 }
 
 function updateAddBusinessTypeOptions(kind) {
