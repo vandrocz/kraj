@@ -3,7 +3,7 @@
 // ============================================================
 
 const STORY_MAX_DURATION = 10000;
-const STORY_PHOTO_DURATION = 5000; // zosúladené s CSS animáciou (storyProgressFill 5s)
+const STORY_PHOTO_DURATION = 5000;
 const STORY_ASPECT = 9 / 16;
 const STORY_OUT_WIDTH = 1080;
 
@@ -18,9 +18,6 @@ async function loadStoriesFeed() {
   if (['organizations', 'accommodation', 'gastro'].includes(state.tab)) renderApp();
 }
 
-// ============================================================
-// Stories bar
-// ============================================================
 function renderStoriesBar() {
   if (!isLoggedIn()) return '';
 
@@ -31,7 +28,6 @@ function renderStoriesBar() {
 
   const circles = [];
 
-  // 1) Osobný "me" circle
   if (state.user.role !== 'admin') {
     circles.push(`
       <button class="story-circle story-circle--me"
@@ -48,7 +44,6 @@ function renderStoriesBar() {
     `);
   }
 
-  // 2) Business circles
   const myBusinesses = state.businesses || [];
   for (const biz of myBusinesses) {
     const bizGroup = myBizGroups.find((g) => g.business_id === biz.id);
@@ -71,7 +66,6 @@ function renderStoriesBar() {
     `);
   }
 
-  // 3) Sledovaní
   for (const g of others) {
     const storyThumb = getFirstStoryThumb(g);
     circles.push(`
@@ -132,14 +126,14 @@ function startStoryAutoAdvance() {
   stopStoryAutoAdvance();
   _storyTimer = setInterval(() => {
     if (state.overlay?.type !== 'story-viewer') { stopStoryAutoAdvance(); return; }
-    if (document.hidden) return; // šetrí CPU, keď je tab skrytý
+    if (document.hidden) return;
 
     const groups = state.stories?.groups || [];
     const group = groups.find((g) => g.key === state.overlay.groupKey);
     if (!group) return;
     const story = group.stories[state.overlay.index];
     if (!story) return;
-    if (story.media_type === 'video') return; // video si riadi sám cez onended
+    if (story.media_type === 'video') return;
 
     const storyMediaList = getStoryMediaList(story);
     const elapsed = Date.now() - (state.overlay.slideStartAt || Date.now());
@@ -189,7 +183,6 @@ function renderStoryViewerOverlay() {
   const currentMedia = storyMediaList[mediaIndex] || storyMediaList[0];
   const isVideo = story.media_type === 'video' || (currentMedia || '').match(/\.(mp4|webm|mov)$/i);
 
-  // Video: bezpečný fallback cez addEventListener (nie inline onended, aby nezávisel na globálnom scope)
   const mediaHtml = isVideo
     ? `<video src="${escapeAttr(currentMedia)}" class="story-viewer-media" autoplay muted playsinline data-story-video></video>`
     : `<img src="${escapeAttr(currentMedia)}" alt="" class="story-viewer-media" />`;
@@ -237,40 +230,32 @@ function renderStoryViewerOverlay() {
 
       ${!isMe ? `
         <button class="story-like-btn ${liked ? 'is-liked' : ''}" data-action="story-like" data-id="${story.id}">
-          ${icon('spark', { size: 22, filled: liked })}
+          ${icon('clover', { size: 22, filled: liked })}
           <span class="story-like-count">${story.likes || 0}</span>
         </button>
       ` : ''}
     </div>`;
 }
 
-// ============================================================
-// Video autoplay + fallback (po každom renderi)
-// ============================================================
 function bindStoryVideo() {
   const v = document.querySelector('[data-story-video]');
   if (!v) return;
-  stopStoryAutoAdvance(); // pri videu interval nechceme
+  stopStoryAutoAdvance();
 
   const goNext = () => {
     if (state.overlay?.type === 'story-viewer') storyNext();
   };
   v.addEventListener('ended', goNext, { once: true });
 
-  // Fallback ak video zamrzne (max 15s)
   _storyVideoTimeout = setTimeout(() => {
     if (state.overlay?.type === 'story-viewer') goNext();
   }, 15000);
 
-  // Ak sa video neprehrá (autoplay blokovaný), posuň po 2s
   v.play?.().catch(() => {
     _storyVideoTimeout = setTimeout(goNext, 2000);
   });
 }
 
-// ============================================================
-// Story swipe handling
-// ============================================================
 let _storySwipeSetup = false;
 
 function setupStorySwipe() {
