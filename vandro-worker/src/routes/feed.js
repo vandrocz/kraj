@@ -280,10 +280,10 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
   if (sort === 'trending') {
     out = out.map((p) => ({ ...p, __score: scorePostForUser(p, {}) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
-  } else if (sort === 'for_you') {
+    } else if (sort === 'for_you') {
     out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedIds, userCity, userRegion }) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
-  } else {
+    } else {
     const hasMore = out.length > limit;
     out = out.slice(0, limit);
     const last = out[out.length - 1];
