@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { newId } from '../auth.js';
-import { checkText, flagContent, sanitizeHtml, htmlToPlain } from '../moderation.js';
+import { checkText, flagContent, sanitizeHtml, htmlToPlain, validateUpload } from '../moderation.js';
 import { rateLimit } from '../ratelimit.js';
 
 export const eventsApiRoutes = new Hono();
@@ -16,9 +16,13 @@ const MAX_EVENT_PHOTOS = 4;
 function parseGallery(ev) {
   if (!ev) return [];
   if (ev.gallery_json) {
-    try { const a = JSON.parse(ev.gallery_json); if (Array.isArray(a)) return a; } catch {}
+    try {
+      const a = JSON.parse(ev.gallery_json);
+      if (Array.isArray(a)) return a;
+    } catch (err) {
+      console.warn('[events] invalid gallery_json for', ev.id, err.message);
+    }
   }
-  // Fallback: vráť cover ako prvú fotku
   return ev.cover_image_url ? [ev.cover_image_url] : [];
 }
 
@@ -87,11 +91,28 @@ eventsApiRoutes.post('/', async (c) => {
   const rl = await rateLimit(c.env, 'event', user.sub, 30, 3600);
   if (!rl.ok) return c.json({ error: 'Příliš mnoho akcí. Zkus to za hodinu.' }, 429);
 
+  if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
+
   const form = await c.req.parseBody({ all: true });
   const rawFiles = form.file;
   const fileList = (Array.isArray(rawFiles) ? rawFiles : rawFiles ? [rawFiles] : [])
     .filter((f) => f && typeof f !== 'string' && f.size > 0)
     .slice(0, MAX_EVENT_PHOTOS);
+
+  // MIME + size + magic bytes validácia PRED uploadom
+  for (const file of fileList) {
+    const v = await validateUpload(file, 'image');
+    if (!v.ok) {
+      const msgs = {
+        bad_type: 'Povolené sú len JPG, PNG, WebP alebo GIF.',
+        too_large: 'Fotka je príliš veľká (max 10 MB).',
+        bad_magic: 'Súbor nie je platná fotka.',
+        empty: 'Súbor je prázdny.',
+        no_file: 'Chýba súbor.',
+      };
+      return c.json({ error: msgs[v.reason] || 'Neplatný súbor.' }, 400);
+    }
+  }
 
   const rawHtml = (form.description_html || form.description || '').toString();
   const contentHtml = sanitizeHtml(rawHtml);
@@ -111,6 +132,7 @@ eventsApiRoutes.post('/', async (c) => {
   if (!title) return c.json({ error: 'Chýba název.' }, 400);
   if (!startAt) return c.json({ error: 'Chýba datum začátku.' }, 400);
   if (!businessId || !BUSINESS_TABLE[businessKind]) return c.json({ error: 'Chýba podnik.' }, 400);
+  if (plain && plain.length > 5000) return c.json({ error: 'Popis je příliš dlouhý.' }, 400);
 
   const mod = checkText(`${title} ${plain}`);
   if (!mod.clean && mod.severity >= 2) {
@@ -122,14 +144,14 @@ eventsApiRoutes.post('/', async (c) => {
   if (!biz) return c.json({ error: 'Podnik nenájdený.' }, 404);
   if (biz.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
 
+  const publicBase = c.env.R2_PUBLIC_BASE || 'https://media.vandro.cz';
   const galleryUrls = [];
   for (const f of fileList) {
     try {
-      const ext = ((f.name || 'x.jpg').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const ext = ((f.name || 'x.jpg').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
       const key = `events/${newId()}.${ext}`;
       await c.env.MEDIA.put(key, await f.arrayBuffer(), { httpMetadata: { contentType: f.type || 'image/jpeg' } });
-      const publicBase = c.env.R2_PUBLIC_BASE || '';
-      galleryUrls.push(publicBase ? `${publicBase}/${key}` : key);
+      galleryUrls.push(`${publicBase}/${key}`);
     } catch (err) {
       console.error('[events] R2 upload zlyhal:', err);
     }
