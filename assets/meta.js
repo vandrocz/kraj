@@ -24,6 +24,11 @@ const FALLBACK_TYPES = {
     { value: 'galerie', label: 'Galerie' },
     { value: 'zoo', label: 'ZOO' },
     { value: 'prirodni_pamatka', label: 'Přírodní památka' },
+    { value: 'rozhledna', label: 'Rozhledna' },
+    { value: 'zricenina', label: 'Zřícenina' },
+    { value: 'kostel', label: 'Kostel / klášter' },
+    { value: 'technicka_pamatka', label: 'Technická památka' },
+    { value: 'jine', label: 'Jiné' },
   ],
   accommodation: [
     { value: 'hotel', label: 'Hotel' },
@@ -35,12 +40,18 @@ const FALLBACK_TYPES = {
     { value: 'glamping', label: 'Glamping' },
     { value: 'hostel', label: 'Hostel' },
     { value: 'ubytovna', label: 'Ubytovna' },
+    { value: 'jine', label: 'Jiné' },
   ],
   restaurant: [
     { value: 'restaurace', label: 'Restaurace' },
     { value: 'kavarna', label: 'Kavárna' },
     { value: 'hospoda', label: 'Hospoda' },
     { value: 'pivovar', label: 'Pivovar' },
+    { value: 'bistro', label: 'Bistro' },
+    { value: 'cukrarna', label: 'Cukrárna' },
+    { value: 'vinarna', label: 'Vinárna' },
+    { value: 'food_truck', label: 'Food truck' },
+    { value: 'jine', label: 'Jiné' },
   ],
   cuisine: [
     { value: 'ceska', label: 'Česká' },
@@ -68,7 +79,7 @@ async function loadMetaFromApi() {
 }
 
 // ============================================================
-// OBCE — s opravou: retry, fallback, cache aj v localStorage
+// OBCE — retry, fallback, cache aj v localStorage
 // ============================================================
 const _citiesCache = {};
 
@@ -76,7 +87,6 @@ async function loadCitiesForDistrict(district) {
   if (!district) return [];
   if (_citiesCache[district] && _citiesCache[district].length > 0) return _citiesCache[district];
 
-  // Skús najprv localStorage (rýchle, prežíva refresh)
   try {
     const lsKey = `cities_v2_${district}`;
     const cached = localStorage.getItem(lsKey);
@@ -89,7 +99,6 @@ async function loadCitiesForDistrict(district) {
     }
   } catch {}
 
-  // Skús API (3 pokusy s retry)
   let lastErr = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -99,18 +108,15 @@ async function loadCitiesForDistrict(district) {
         try { localStorage.setItem(`cities_v2_${district}`, JSON.stringify(data.cities)); } catch {}
         return data.cities;
       }
-      // Ak API vráti prázdne pole, nepokúšaj sa znova
       break;
     } catch (err) {
       lastErr = err;
-      // Počkať 400ms * pokus
       await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
     }
   }
 
   if (lastErr) console.warn('Obce sa nepodarilo načítať:', lastErr.message);
 
-  // Fallback — vráť aspoň názov okresu ako obec
   const fb = [district];
   _citiesCache[district] = fb;
   return fb;
