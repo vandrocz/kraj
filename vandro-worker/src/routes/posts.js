@@ -32,7 +32,6 @@ postsRoutes.post('/', async (c) => {
   if (fileList.length === 0) return c.json({ error: 'Chýba aspoň jedna fotka.' }, 400);
   if (fileList.length > MAX_PHOTOS) return c.json({ error: `Maximálne ${MAX_PHOTOS} fotky.` }, 400);
 
-  // MIME + size + magic bytes validácia PRED uploadom
   for (const file of fileList) {
     const v = await validateUpload(file, 'image');
     if (!v.ok) {
@@ -50,6 +49,12 @@ postsRoutes.post('/', async (c) => {
   const rawHtml = (form.text_html || form.text || '').toString();
   const contentHtml = sanitizeHtml(rawHtml);
   const plainText = htmlToPlain(contentHtml);
+
+  // EN varianta (nepovinné)
+  const rawHtmlEn = (form.text_html_en || '').toString();
+  const contentHtmlEn = rawHtmlEn ? sanitizeHtml(rawHtmlEn) : null;
+  const plainTextEn = contentHtmlEn ? htmlToPlain(contentHtmlEn) : null;
+
   const targetFeed = (form.target_feed || '').toString();
   const businessId = (form.business_id || '').toString();
   const geoLat = form.geo_lat ? parseFloat(form.geo_lat) : null;
@@ -66,6 +71,13 @@ postsRoutes.post('/', async (c) => {
     await flagContent(c.env, { userId: user.sub, reason: mod.reason, severity: mod.severity });
     if (mod.severity >= 2) return c.json({ error: 'Text obsahuje zakázaný obsah.' }, 400);
   }
+  if (plainTextEn) {
+    const modEn = checkText(plainTextEn);
+    if (!modEn.clean) {
+      await flagContent(c.env, { userId: user.sub, reason: modEn.reason, severity: modEn.severity });
+      if (modEn.severity >= 2) return c.json({ error: 'Anglický text obsahuje zakázaný obsah.' }, 400);
+    }
+  }
 
   const table = BUSINESS_TABLE_BY_FEED[targetFeed];
   const business = await c.env.DB.prepare(`SELECT id, user_id FROM ${table} WHERE id = ?`)
@@ -75,7 +87,6 @@ postsRoutes.post('/', async (c) => {
     return c.json({ error: 'Nemáš oprávnění.' }, 403);
   }
 
-  // Upload do R2
   const publicBase = c.env.R2_PUBLIC_BASE || 'https://media.vandro.cz';
   const mediaUrls = [];
   for (const file of fileList) {
@@ -90,14 +101,18 @@ postsRoutes.post('/', async (c) => {
 
   const id = newId('post');
   await c.env.DB.prepare(
-    `INSERT INTO posts (id, user_id, target_feed, business_id, text_content, content_html, image_url, geo_lat, geo_lng, geo_place, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')`,
-  ).bind(id, user.sub, targetFeed, businessId, plainText, contentHtml, mediaUrls[0], geoLat, geoLng, geoPlace || null).run();
+    `INSERT INTO posts (id, user_id, target_feed, business_id, text_content, content_html, text_content_en, content_html_en, image_url, geo_lat, geo_lng, geo_place, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')`,
+  ).bind(
+    id, user.sub, targetFeed, businessId,
+    plainText, contentHtml,
+    plainTextEn, contentHtmlEn,
+    mediaUrls[0], geoLat, geoLng, geoPlace || null,
+  ).run();
 
   const stmt = c.env.DB.prepare(`INSERT INTO post_media (id, post_id, image_url, sort_order) VALUES (?, ?, ?, ?)`);
   await c.env.DB.batch(mediaUrls.map((url, i) => stmt.bind(newId('pm'), id, url, i)));
 
-  // Mentions
   const mentionedIds = await processMentions(c.env, {
     postId: id, actorId: user.sub, actorName: row.display_name, contentHtml,
   });
@@ -107,7 +122,9 @@ postsRoutes.post('/', async (c) => {
   }
 
   return c.json({
-    id, media: mediaUrls, html: contentHtml, text: plainText,
+    id, media: mediaUrls,
+    html: contentHtml, text: plainText,
+    html_en: contentHtmlEn, text_en: plainTextEn,
     target_feed: targetFeed, business_id: businessId, geo: geoPlace,
     mentions: mentionedIds, status: 'published',
   }, 201);
