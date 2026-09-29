@@ -6,6 +6,8 @@ async function loadProfile(kind, id) {
   const cacheKey = `${kind}:${id}`;
   try {
     const data = await apiGet(`/api/profile/${kind}/${id}`);
+
+    // Ak je to user s roliou org/hotelier a prvým podnikom, otvor rovno jeho biz profil
     if (kind === 'user' && data.type === 'user' && Array.isArray(data.businesses) && data.businesses.length > 0) {
       const b = data.businesses[0];
       state.profiles[cacheKey] = data;
@@ -14,6 +16,7 @@ async function loadProfile(kind, id) {
       state._bizEvents = null;
       state._bizStats = null;
       state._reviews = null;
+      state._reviewsLoading = false;
       state._myReview = null;
       state._checkinStatus = undefined;
       state._wishlistStatus = undefined;
@@ -22,7 +25,10 @@ async function loadProfile(kind, id) {
       await loadProfile(b.kind, b.id);
       return;
     }
+
     state.profiles[cacheKey] = data;
+
+    // Follow status
     if (isLoggedIn()) {
       try {
         const apiType = kind === 'user' ? 'users' : kind;
@@ -31,6 +37,7 @@ async function loadProfile(kind, id) {
         if (fs.followers != null) data.stats = { ...(data.stats || {}), followers: fs.followers };
       } catch {}
     }
+
     if (state.overlay?.type === 'profile' && state.overlay.kind === kind && state.overlay.id === id) renderApp();
   } catch (err) {
     state.profiles[cacheKey] = { __error: err.message };
@@ -63,16 +70,52 @@ function renderUserProfile(data, id) {
     p.phone ? { icon: 'phone', label: t('profile.phone'), value: p.phone, href: `tel:${p.phone}` } : null,
   ].filter(Boolean);
 
+  // Auto-load checkins pre tento profil (s guardom na race condition)
   const showCheckins = isOwn || p.public_checkins;
   if (showCheckins && state._userProfileCheckins === undefined) {
     state._userProfileCheckins = null;
-    apiGet(`/api/checkins/user/${id}`).then((r) => { state._userProfileCheckins = r.checkins || []; renderApp(); }).catch(() => { state._userProfileCheckins = []; });
+    const capturedId = id;
+    apiGet(`/api/checkins/user/${capturedId}`)
+      .then((r) => {
+        if (state.overlay?.type === 'profile' && state.overlay.kind === 'user' && state.overlay.id === capturedId) {
+          state._userProfileCheckins = r.checkins || [];
+          renderApp();
+        }
+      })
+      .catch(() => {
+        if (state.overlay?.type === 'profile' && state.overlay.kind === 'user' && state.overlay.id === capturedId) {
+          state._userProfileCheckins = [];
+          renderApp();
+        }
+      });
   }
+
+  // Auto-load badges pre vlastný profil (s guardom)
+  if (isOwn && state._userBadges === undefined) {
+    state._userBadges = null;
+    const capturedId = id;
+    apiGet(`/api/profile/user/${capturedId}/badges`)
+      .then((r) => {
+        if (state.overlay?.type === 'profile' && state.overlay.kind === 'user' && state.overlay.id === capturedId) {
+          state._userBadges = r.badges || [];
+          renderApp();
+        }
+      })
+      .catch(() => {
+        if (state.overlay?.type === 'profile' && state.overlay.kind === 'user' && state.overlay.id === capturedId) {
+          state._userBadges = [];
+        }
+      });
+  }
+
+  const badgeCount = isOwn
+    ? (state._userBadges === null ? '…' : (state._userBadges?.length ?? 0))
+    : null;
 
   const businessesHtml = (data.businesses || []).map((b) => `
     <button class="profile-biz-chip" data-action="open-profile" data-kind="${b.kind}" data-id="${b.id}">
       <span>${escapeHtml(b.name)}${Number(b.is_verified) ? ' ✓' : ''}</span>
-      <small>${b.city ? `${escapeHtml(b.city)}, ` : ''}${escapeHtml(b.district)}</small>
+      <small>${b.city ? `${escapeHtml(b.city)}, ` : ''}${escapeHtml(b.district || '')}</small>
     </button>`).join('');
 
   return `
@@ -99,7 +142,7 @@ function renderUserProfile(data, id) {
             <strong>${fmt(data.stats?.followers || 0)}</strong><span>${escapeHtml(t('profile.followers'))}</span>
           </button>
           ${isOwn ? `<button class="profile-stat" data-action="open-badges" style="background:none;border:none;cursor:pointer">
-            <strong>${state._userBadges?.length || '★'}</strong><span>${escapeHtml(t('profile.badgesCount'))}</span>
+            <strong>${badgeCount}</strong><span>${escapeHtml(t('profile.badgesCount'))}</span>
           </button>` : ''}
         </div>
 
@@ -145,7 +188,7 @@ function renderUserProfile(data, id) {
           <h3 class="profile-section-title">${escapeHtml(t('profile.visitedPlaces'))}</h3>
           ${state._userProfileCheckins === null
             ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
-            : state._userProfileCheckins.length === 0
+            : (state._userProfileCheckins || []).length === 0
               ? `<p class="empty-state">${escapeHtml(t('checkins.noVisits'))}</p>`
               : `<div class="user-checkin-grid">
                   ${state._userProfileCheckins.slice(0, 6).map((c) => `
@@ -188,14 +231,40 @@ function renderBusinessProfile(data, id, kind) {
   const isVerified = Number(b.is_verified) === 1 || b.is_verified === true;
   const gallery = data.gallery || [];
 
-  if (activeTab === 'reviews' && !state._reviews) loadReviews(kind, id);
+  // Reviews tab — auto-load s flagom proti duplicitnému volaniu
+  if (activeTab === 'reviews' && state._reviews === null && !state._reviewsLoading) {
+    state._reviewsLoading = true;
+    loadReviews(kind, id);
+  }
+
+  // Check-in status
   if (state._checkinStatus === undefined && isLoggedIn()) {
     state._checkinStatus = null;
-    apiGet(`/api/checkins/me/status/${kind}/${id}`).then((r) => { state._checkinStatus = r; renderApp(); }).catch(() => {});
+    const capturedKind = kind;
+    const capturedId = id;
+    apiGet(`/api/checkins/me/status/${capturedKind}/${capturedId}`)
+      .then((r) => {
+        if (state.overlay?.type === 'profile' && state.overlay.kind === capturedKind && state.overlay.id === capturedId) {
+          state._checkinStatus = r;
+          renderApp();
+        }
+      })
+      .catch(() => {});
   }
+
+  // Wishlist status
   if (state._wishlistStatus === undefined && isLoggedIn()) {
     state._wishlistStatus = null;
-    apiGet(`/api/wishlist/me/status/${kind}/${id}`).then((r) => { state._wishlistStatus = r; renderApp(); }).catch(() => {});
+    const capturedKind = kind;
+    const capturedId = id;
+    apiGet(`/api/wishlist/me/status/${capturedKind}/${capturedId}`)
+      .then((r) => {
+        if (state.overlay?.type === 'profile' && state.overlay.kind === capturedKind && state.overlay.id === capturedId) {
+          state._wishlistStatus = r;
+          renderApp();
+        }
+      })
+      .catch(() => {});
   }
 
   let tabContent = '';
@@ -372,7 +441,7 @@ function renderBusinessProfile(data, id, kind) {
 }
 
 // ============================================================
-// GALÉRIA "O NÁS" — s editovateľným popisom každej fotky
+// GALÉRIA "O NÁS"
 // ============================================================
 function renderGallerySection(gallery, isOwn, kind, id) {
   const items = gallery || [];
@@ -487,16 +556,27 @@ async function deleteGalleryItem(galleryId, kind, id) {
 async function switchBizProfileTab(tab) {
   state._bizProfileTab = tab;
   renderApp();
+
   if (tab === 'events' && state._bizEvents === null) {
     const { id } = state.overlay;
     try {
       const data = await apiGet(`/api/events?business_id=${encodeURIComponent(id)}&when=all`);
-      state._bizEvents = data.events || [];
-    } catch { state._bizEvents = []; }
-    renderApp();
+      // Guard: použij len ak sme stále na tom istom profile
+      if (state.overlay?.type === 'profile' && state.overlay.id === id) {
+        state._bizEvents = data.events || [];
+        renderApp();
+      }
+    } catch {
+      if (state.overlay?.type === 'profile' && state.overlay.id === id) {
+        state._bizEvents = [];
+        renderApp();
+      }
+    }
   }
-  if (tab === 'reviews' && !state._reviews) {
+
+  if (tab === 'reviews' && state._reviews === null && !state._reviewsLoading) {
     const { kind, id } = state.overlay;
+    state._reviewsLoading = true;
     loadReviews(kind, id);
   }
 }
@@ -694,7 +774,7 @@ async function uploadProfileImage(targetType, targetId, field) {
 }
 
 // ============================================================
-// SETTINGS — dostupné aj bez prihlásenia
+// SETTINGS
 // ============================================================
 async function loadSettings() {
   if (!isLoggedIn()) {
