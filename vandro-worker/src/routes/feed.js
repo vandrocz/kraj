@@ -134,7 +134,8 @@ feedRoutes.post('/collections/:id/like', async (c) => {
   return c.json({ liked: true, likes: n }, 201);
 });
 
-function scorePostForUser(post, { followedIds, userCity, userRegion, verifiedBoost = true }) {
+// Personalizace podle země uživatele
+function scorePostForUser(post, { followedIds, userCity, userRegion, userCountry, verifiedBoost = true }) {
   const now = Date.now();
   const createdStr = (post.created_at || '').replace(' ', 'T') + 'Z';
   const created = new Date(createdStr).getTime();
@@ -144,6 +145,13 @@ function scorePostForUser(post, { followedIds, userCity, userRegion, verifiedBoo
   score += (post.likes || 0) * 2;
   score += (post.comment_count || 0) * 5;
   if (verifiedBoost && post.business?.is_verified) score *= 1.3;
+
+  // Boost podle země — uživatel vidí primárně obsah z jeho země
+  if (userCountry && post.business?.country_code) {
+    if (post.business.country_code === userCountry) score *= 2.0;
+    else score *= 0.5;
+  }
+
   if (followedIds?.has(post.business?.id)) score *= 2.5;
   if (userCity && post.business?.city === userCity) score *= 1.8;
   else if (userRegion && post.business?.region === userRegion) score *= 1.3;
@@ -201,7 +209,8 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
     SELECT posts.id, posts.user_id, posts.text_content, posts.content_html, posts.image_url, posts.created_at,
            posts.geo_lat, posts.geo_lng, posts.geo_place, posts.view_count,
            ${table}.id AS business_id, ${table}.name AS business_name, ${table}.type AS business_type,
-           ${table}.region, ${table}.district, ${table}.city, ${table}.is_verified
+           ${table}.region, ${table}.district, ${table}.city, ${table}.is_verified,
+           ${table}.country_code AS business_country
            ${logoSelect}
            ${extraFilterCols?.includes('cuisine_type') ? `, ${table}.cuisine_type` : ''}
     FROM posts JOIN ${table} ON ${table}.id = posts.business_id
@@ -213,15 +222,16 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
   const { results } = await c.env.DB.prepare(sql).bind(...params).all();
   const mediaMap = await fetchMediaForPosts(c.env, results.map((r) => r.id));
 
-  let followedIds = new Set(), userCity = null, userRegion = null;
+  let followedIds = new Set(), userCity = null, userRegion = null, userCountry = null;
   if (viewerId && sort !== 'recent') {
     try {
       const { results: fol } = await c.env.DB.prepare(
         `SELECT target_id FROM follows WHERE follower_id = ? AND target_type = ?`,
       ).bind(viewerId, table).all();
       followedIds = new Set(fol.map((r) => r.target_id));
-      const u = await c.env.DB.prepare('SELECT geo_city FROM users WHERE id = ?').bind(viewerId).first();
+      const u = await c.env.DB.prepare('SELECT geo_city, country_code FROM users WHERE id = ?').bind(viewerId).first();
       userCity = u?.geo_city || null;
+      userCountry = u?.country_code || null;
       if (userCity) {
         const cRow = await c.env.DB.prepare(`SELECT region FROM ${table} WHERE city = ? LIMIT 1`).bind(userCity).first();
         userRegion = cRow?.region || null;
@@ -269,6 +279,7 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
         region: post.region,
         district: post.district,
         city: post.city,
+        country_code: post.business_country || null,
         is_verified: !!post.is_verified,
         logo_url: post.business_logo || null,
         cuisine_type: post.cuisine_type || null,
@@ -280,7 +291,7 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
     out = out.map((p) => ({ ...p, __score: scorePostForUser(p, {}) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
   } else if (sort === 'for_you') {
-    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedIds, userCity, userRegion }) })).sort((a, b) => b.__score - a.__score);
+    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedIds, userCity, userRegion, userCountry }) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
   } else {
     const hasMore = out.length > limit;
@@ -307,6 +318,7 @@ feedRoutes.get('/post-by-id/:id', async (c) => {
             COALESCE(o.region, a.region, r.region) AS region,
             COALESCE(o.district, a.district, r.district) AS district,
             COALESCE(o.city, a.city, r.city) AS city,
+            COALESCE(o.country_code, a.country_code, r.country_code) AS business_country,
             COALESCE(o.is_verified, a.is_verified, r.is_verified) AS is_verified,
             COALESCE(o.logo_url, a.image_url, r.image_url) AS logo_url
      FROM posts
@@ -348,6 +360,7 @@ feedRoutes.get('/post-by-id/:id', async (c) => {
         region: post.region,
         district: post.district,
         city: post.city,
+        country_code: post.business_country || null,
         is_verified: !!post.is_verified,
         logo_url: post.logo_url,
       },
