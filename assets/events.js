@@ -290,9 +290,9 @@ document.addEventListener('click', (e) => {
     case 'event-map-picker':
       (async () => {
         const result = await openMapPicker({ title: t('geo.pickOnMap') });
-        if (!result) break;
+        if (!result) return;
         const form = document.querySelector('[data-action="submit-create-event"]');
-        if (!form) break;
+        if (!form) return;
         form.dataset.geoLat = String(result.lat);
         form.dataset.geoLng = String(result.lng);
         form.dataset.geoPlace = result.place || '';
