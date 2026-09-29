@@ -129,6 +129,8 @@ async function openEventDetail(id) {
   renderApp();
   try {
     const data = await apiGet(`/api/events/${id}`);
+    // Guard: overlay sa medzitým mohol zmeniť
+    if (state.overlay?.type !== 'event-detail' || state.overlay.id !== id) return;
     state._eventDetail = data.event;
     renderApp();
   } catch (err) { showToast(err.message); closeOverlay(); }
@@ -236,11 +238,19 @@ function renderEventDetailOverlay() {
 }
 
 // ============================================================
-// KALENDÁR — modal s výberom
+// KALENDÁR
 // ============================================================
 function openCalendarChoice(eventId) {
+  // Guard: musíme mať načítaný detail eventu
   const ev = state._eventDetail;
-  if (!ev || ev.id !== eventId) return;
+  if (!ev || ev.id !== eventId) {
+    showToast(t('common.error'));
+    return;
+  }
+  if (!ev.start_at) {
+    showToast(t('events.dateNotSpecified'));
+    return;
+  }
   openModal({
     title: t('events.addToCalendar'),
     body: `
@@ -264,17 +274,33 @@ function openCalendarChoice(eventId) {
 }
 
 function formatCalDate(iso) {
-  const d = new Date((String(iso).replace(' ', 'T')) + 'Z');
+  if (!iso) return '';
+  let n = String(iso);
+  if (!/[Zz]|[+-]\d{2}:?\d{2}$/.test(n)) n = n.replace(' ', 'T') + 'Z';
+  const d = new Date(n);
+  if (isNaN(d.getTime())) return '';
   return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+}
+
+function getEventEndDate(ev) {
+  if (ev.end_at) {
+    const d = new Date((String(ev.end_at).replace(' ', 'T')) + 'Z');
+    if (!isNaN(d.getTime())) return d;
+  }
+  const start = new Date((String(ev.start_at).replace(' ', 'T')) + 'Z');
+  if (isNaN(start.getTime())) return null;
+  return new Date(start.getTime() + 2 * 60 * 60 * 1000); // +2h default
 }
 
 function addEventToGoogleCalendar(eventId) {
   const ev = state._eventDetail;
-  if (!ev || ev.id !== eventId) return;
+  if (!ev || ev.id !== eventId || !ev.start_at) return;
+
   const start = formatCalDate(ev.start_at);
-  const end = ev.end_at
-    ? formatCalDate(ev.end_at)
-    : formatCalDate(new Date(new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').getTime() + 2 * 60 * 60 * 1000).toISOString());
+  const endDate = getEventEndDate(ev);
+  const end = endDate ? formatCalDate(endDate.toISOString()) : '';
+  if (!start || !end) { showToast(t('events.dateNotSpecified')); return; }
+
   const title = encodeURIComponent(ev.title || '');
   const details = encodeURIComponent((ev.description || '').slice(0, 800));
   const location = encodeURIComponent([ev.location_name, ev.address, ev.city, ev.region].filter(Boolean).join(', '));
@@ -286,11 +312,12 @@ function addEventToGoogleCalendar(eventId) {
 
 function downloadEventIcs(eventId) {
   const ev = state._eventDetail;
-  if (!ev || ev.id !== eventId) return;
+  if (!ev || ev.id !== eventId || !ev.start_at) return;
+
   const start = formatCalDate(ev.start_at);
-  const end = ev.end_at
-    ? formatCalDate(ev.end_at)
-    : formatCalDate(new Date(new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').getTime() + 2 * 60 * 60 * 1000).toISOString());
+  const endDate = getEventEndDate(ev);
+  const end = endDate ? formatCalDate(endDate.toISOString()) : '';
+  if (!start || !end) { showToast(t('events.dateNotSpecified')); return; }
 
   const ics = [
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//VANDRO//Event//CS', 'CALSCALE:GREGORIAN',
@@ -320,16 +347,16 @@ function downloadEventIcs(eventId) {
 
 function addEventToOutlook(eventId) {
   const ev = state._eventDetail;
-  if (!ev || ev.id !== eventId) return;
-  const startISO = new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').toISOString();
-  const endISO = ev.end_at
-    ? new Date((String(ev.end_at).replace(' ', 'T')) + 'Z').toISOString()
-    : new Date(new Date((String(ev.start_at).replace(' ', 'T')) + 'Z').getTime() + 2 * 60 * 60 * 1000).toISOString();
+  if (!ev || ev.id !== eventId || !ev.start_at) return;
+
+  const startDate = new Date((String(ev.start_at).replace(' ', 'T')) + 'Z');
+  if (isNaN(startDate.getTime())) { showToast(t('events.dateNotSpecified')); return; }
+  const endDate = getEventEndDate(ev) || new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
 
   const url = `https://outlook.live.com/calendar/0/deeplink/compose?` + new URLSearchParams({
     path: '/calendar/action/compose', rru: 'addevent',
     subject: ev.title || '', body: (ev.description || '').slice(0, 800),
-    startdt: startISO, enddt: endISO,
+    startdt: startDate.toISOString(), enddt: endDate.toISOString(),
     location: [ev.location_name, ev.address, ev.city, ev.region].filter(Boolean).join(', '),
   }).toString();
 
@@ -453,8 +480,14 @@ async function onEventFilesSelected(inputEl) {
   if (files.length === 0) return;
   const compressed = [];
   for (const f of files) {
+    if (!f.type.startsWith('image/')) continue;
+    if (f.size > 10 * 1024 * 1024) { showToast(t('verify.tooLarge')); continue; }
     try { compressed.push(await compressImage(f, { maxDim: 1600, quality: 0.82 })); }
     catch { compressed.push(f); }
+  }
+  if (compressed.length === 0) {
+    showToast(t('common.error'));
+    return;
   }
   state.overlay.eventFiles = compressed;
   renderApp();
