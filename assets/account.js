@@ -153,7 +153,7 @@ function renderRegisterForm() {
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerBusinessName'))}</label><input class="form-input" name="businessName" required placeholder="${escapeAttr(t('auth.registerBusinessNamePh'))}" /></div>
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerType'))}</label>
         <select class="form-select" name="businessType" required>${typeOpts.map((o) => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}</select></div>
-      ${kind === 'gastro' ? `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.cuisine'))}</label><select class="form-select" name="cuisineType"><option value="ceska">${escapeHtml(tType('ceska'))}</option><option value="italska">${escapeHtml(tType('italska'))}</option><option value="asijska">${escapeHtml(tType('asijska'))}</option><option value="vegan">${escapeHtml(tType('vegan'))}</option></select></div>` : `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.capacity'))}</label><input class="form-input" type="number" name="capacity" min="1" /></div>`}
+      ${kind === 'gastro' ? `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.cuisine'))}</label><select class="form-select" name="cuisineType"><option value="ceska">${escapeHtml(tType('ceska'))}</option><option value="italska">${escapeHtml(tType('italska'))}</option><option value="asijska">${escapeHtml(tType('asijska'))}</option><option value="vegan">${escapeHtml(tType('vegan'))}</option><option value="jina">${escapeHtml(tType('jina'))}</option></select></div>` : `<div class="form-field"><label class="form-label">${escapeHtml(t('profile.capacity'))}</label><input class="form-input" type="number" name="capacity" min="1" /></div>`}
       ${renderRegionDistrictCityFields('reg')}
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDescription'))}</label><textarea class="form-textarea" name="description"></textarea></div>
     `;
@@ -370,7 +370,7 @@ function renderUserAboutSection() {
 }
 
 // ============================================================
-// BUSINESS DASHBOARD — s delete button
+// BUSINESS DASHBOARD
 // ============================================================
 function renderBusinessDashboard() {
   const businesses = state.businesses || [];
@@ -588,7 +588,7 @@ function updateAddBusinessTypeOptions(kind) {
 }
 
 // ============================================================
-// POST FORM — s place search + map picker (nie len aktuálna poloha)
+// POST FORM
 // ============================================================
 function renderInlineBusinessPostForm(selected, targetFeed) {
   const busy = accountFormState._postUploading || accountFormState._postCropping;
@@ -779,40 +779,6 @@ async function handleBusinessPostSubmit(form) {
   }
 }
 
-function openCheckinCreate(kind, id, name) {
-  if (!isLoggedIn()) { showToast(t('checkins.loginRequired')); switchTab('account'); return; }
-  openModal({
-    title: t('checkins.title'),
-    body: `
-      <p style="font-size:14px;margin-bottom:16px;color:var(--c-text-muted)">${escapeHtml(name || '')}</p>
-      <div class="form-field">
-        <label class="form-label">${escapeHtml(t('checkins.note'))}</label>
-        <textarea class="form-textarea" name="note" maxlength="500" rows="4" placeholder="${escapeAttr(t('checkins.notePlaceholder'))}"></textarea>
-      </div>`,
-    submitLabel: t('checkins.addNote'),
-    onSubmit: async (data) => {
-      state._modalLoading = true; renderApp();
-      try {
-        const res = await apiPost('/api/checkins', { business_id: id, business_kind: kind, note: data.note || null });
-        closeModal();
-        if (res.new_badges && res.new_badges.length > 0) {
-          const list = res.new_badges.map((b) => `${tBadge(b.key, b.name)} L${b.level}`).join(', ');
-          showToast(t('checkins.newBadge', { list }));
-        } else if (res.already) showToast(res.message || t('checkins.already'));
-        else showToast(t('checkins.added'));
-        if (state.overlay?.type === 'profile') {
-          delete state.profiles[`${state.overlay.kind}:${state.overlay.id}`];
-          loadProfile(state.overlay.kind, state.overlay.id);
-        }
-      } catch (err) {
-        showToast(err.message);
-        state._modalLoading = false;
-        renderApp();
-      }
-    },
-  });
-}
-
 async function openProfileStats(kind, id) {
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'profile-stats', kind, id };
@@ -996,7 +962,7 @@ async function handleTwoFALogin(form) {
 }
 
 // ============================================================
-// ADMIN — ponechané z pôvodnej verzie
+// ADMIN
 // ============================================================
 async function loadAdminPending() { try { state.adminPending = await apiGet('/api/admin/pending'); } catch { state.adminPending = { organizations: [], accommodation: [], restaurants: [] }; } finally { state.adminPendingLoading = false; if (state.tab === 'account') renderApp(); } }
 async function loadAdminReports() { try { const d = await apiGet('/api/admin/reports'); state.adminReports = d.reports; } catch { state.adminReports = []; } finally { state.adminReportsLoading = false; if (state.tab === 'account') renderApp(); } }
