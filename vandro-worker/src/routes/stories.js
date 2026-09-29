@@ -11,12 +11,21 @@ export const storiesRoutes = new Hono();
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
 function normalizeStory(s) {
+  let mediaUrls = null;
+  if (s.media_urls_json) {
+    try {
+      const parsed = JSON.parse(s.media_urls_json);
+      if (Array.isArray(parsed)) mediaUrls = parsed;
+    } catch (err) {
+      console.warn('[stories] invalid media_urls_json for', s.id, err.message);
+    }
+  }
   return {
     id: s.id,
     image_url: s.image_url,
     caption: s.caption,
     media_type: s.media_type || 'photo',
-    media_urls: s.media_urls_json ? JSON.parse(s.media_urls_json) : null,
+    media_urls: mediaUrls,
     created_at: s.created_at,
   };
 }
@@ -28,13 +37,11 @@ storiesRoutes.get('/feed', async (c) => {
     console.warn('[stories] cleanup on feed failed:', err.message);
   }
 
-  // Zisti mesto usera pre odporúčania
   const meRow = await c.env.DB.prepare(
     `SELECT display_name, avatar_url, geo_city FROM users WHERE id = ?`,
   ).bind(user.sub).first();
   const myCity = meRow?.geo_city || null;
 
-  // 1) Moje osobné stories
   const myPersonal = await c.env.DB.prepare(
     `SELECT id, user_id, business_id, image_url, caption, media_type, media_urls_json, created_at, expires_at
      FROM stories
@@ -42,7 +49,6 @@ storiesRoutes.get('/feed', async (c) => {
      ORDER BY created_at ASC`,
   ).bind(user.sub).all();
 
-  // 2) Moje business stories
   const { results: myBiz } = await c.env.DB.prepare(
     `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
             COALESCE(o.name, a.name, r.name) AS business_name,
@@ -61,7 +67,6 @@ storiesRoutes.get('/feed', async (c) => {
      ORDER BY s.created_at ASC`,
   ).bind(user.sub).all();
 
-  // 3) Stories od sledovaných userov
   const { results: followedUser } = await c.env.DB.prepare(
     `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
             u.display_name AS author_name, u.avatar_url AS author_avatar
@@ -74,7 +79,6 @@ storiesRoutes.get('/feed', async (c) => {
      ORDER BY s.created_at ASC`,
   ).bind(user.sub, user.sub).all();
 
-  // 4) Stories od sledovaných podnikov
   const { results: followedBiz } = await c.env.DB.prepare(
     `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
             COALESCE(o.name, a.name, r.name) AS business_name,
@@ -97,7 +101,6 @@ storiesRoutes.get('/feed', async (c) => {
      ORDER BY s.created_at ASC`,
   ).bind(user.sub).all();
 
-  // 5) NOVÉ: Stories od NE-sledovaných userov (odporúčania podľa mesta)
   const { results: suggestedUser } = await c.env.DB.prepare(
     `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
             u.display_name AS author_name, u.avatar_url AS author_avatar
@@ -112,7 +115,6 @@ storiesRoutes.get('/feed', async (c) => {
      LIMIT 10`,
   ).bind(...(myCity ? [user.sub, user.sub, myCity] : [user.sub, user.sub])).all();
 
-  // 6) NOVÉ: Stories od NE-sledovaných podnikov (odporúčania podľa mesta)
   const { results: suggestedBiz } = await c.env.DB.prepare(
     `SELECT s.id, s.user_id, s.business_id, s.image_url, s.caption, s.media_type, s.media_urls_json, s.created_at, s.expires_at,
             COALESCE(o.name, a.name, r.name) AS business_name,
@@ -205,7 +207,6 @@ storiesRoutes.get('/feed', async (c) => {
   }
   groups.push(...fBizMap.values());
 
-  // Suggested users (odporúčania)
   const sugUserMap = new Map();
   for (const s of suggestedUser) {
     if (!sugUserMap.has(s.user_id)) {
@@ -223,7 +224,6 @@ storiesRoutes.get('/feed', async (c) => {
   }
   groups.push(...sugUserMap.values());
 
-  // Suggested businesses
   const sugBizMap = new Map();
   for (const s of suggestedBiz) {
     if (!sugBizMap.has(s.business_id)) {
