@@ -1,11 +1,8 @@
 // ============================================================
-// i18n — Podpora CZ / SK / EN (kompletná verzia)
+// i18n — Podpora CZ / SK / EN
 // ============================================================
 
 const TRANSLATIONS = {
-  // ========================================================
-  // ČEŠTINA
-  // ========================================================
   cs: {
     common: {
       save: 'Uložit', cancel: 'Zrušit', delete: 'Smazat', edit: 'Upravit', close: 'Zavřít',
@@ -15,12 +12,13 @@ const TRANSLATIONS = {
       showAll: 'Zobrazit vše', seeAll: 'Zobrazit vše', reply: 'Odpovědět',
       writeMessage: 'Napiš zprávu…', sending: 'Odesílám…', saving: 'Ukládám…',
       uploading: 'Nahrávám…', processing: 'Zpracovávám…', user: 'Uživatel',
-      unknown: 'Neznámý', notFound: 'Nenalezeno.', nothing: 'Nic', reply: 'Odpovědět',
+      unknown: 'Neznámý', notFound: 'Nenalezeno.', nothing: 'Nic',
       of: 'z', items: 'položek', itemsFew: 'položky',
     },
     nav: {
       organizations: 'Organizace', accommodation: 'Ubytování', gastro: 'Gastro',
       map: 'Mapa', events: 'Akce', account: 'Profil',
+      collections: 'Sbírky',
     },
     auth: {
       myProfile: 'Můj profil', loginTab: 'Přihlásit se', registerTab: 'Registrace',
@@ -110,7 +108,7 @@ const TRANSLATIONS = {
       gdpr: 'Data a soukromí (GDPR)', downloadData: 'Stáhnout moje data',
       terms: 'Obchodní podmínky', privacyPolicy: 'Ochrana osobních údajů',
       deleteAccount: 'Smazat účet', logout: 'Odhlásit se',
-      language: 'Jazyk', languageLabel: 'Jazyk aplikace',
+      languageLabel: 'Jazyk aplikace',
       langCs: 'Čeština', langSk: 'Slovenčina', langEn: 'English',
       securityTitle: 'Bezpečnost a 2FA',
       twofaDesc: 'Chraň svůj účet dvoufázovým ověřením.',
@@ -145,11 +143,11 @@ const TRANSLATIONS = {
       sortRecent: 'Nejnovější', sortTrending: 'Trendy',
       noPosts: 'Žádné příspěvky neodpovídají zvoleným filtrům.',
       loadingPosts: 'Načítám příspěvky…', noPhoto: 'Bez fotky',
-      likesMe: 'Páči sa mi', views: 'zobrazení',
+      likesMe: 'Isker', views: 'zobrazení',
     },
     post: {
       writeComment: 'Napiš komentář…', comments: 'Komentáře',
-      noComments: 'Zatím žádné komentáře.', like: 'Páči sa mi', share: 'Sdílet',
+      noComments: 'Zatím žádné komentáře.', like: 'Iskra', share: 'Sdílet',
       report: 'Nahlásit', reportTitle: 'Nahlásit příspěvek',
       reportReason: 'Důvod (nepovinné)', reportReasonPlaceholder: 'Proč tento příspěvek nahlašuješ?',
       reportSend: 'Odeslat nahlášení', deleteTitle: 'Smazat příspěvek?',
@@ -404,10 +402,7 @@ const TRANSLATIONS = {
       photographer: 'Fotograf', explorer: 'Objevitel krajů',
     },
   },
-  
-  // ========================================================
-  // SLOVENČINA
-  // ========================================================
+
   sk: {
     common: {
       save: 'Uložiť', cancel: 'Zrušiť', delete: 'Zmazať', edit: 'Upraviť', close: 'Zavrieť',
@@ -418,11 +413,12 @@ const TRANSLATIONS = {
       writeMessage: 'Napíš správu…', sending: 'Odosielam…', saving: 'Ukladám…',
       uploading: 'Nahrávam…', processing: 'Spracúvam…', user: 'Používateľ',
       unknown: 'Neznámy', notFound: 'Nenájdené.', nothing: 'Nič',
-      of: 'z', items: 'položiek', itemsFew: 'položky', reply: 'Odpovedať',
+      of: 'z', items: 'položiek', itemsFew: 'položky',
     },
     nav: {
       organizations: 'Organizácie', accommodation: 'Ubytovanie', gastro: 'Gastro',
       map: 'Mapa', events: 'Podujatia', account: 'Profil',
+      collections: 'Zbierky',
     },
     auth: {
       myProfile: 'Môj profil', loginTab: 'Prihlásiť sa', registerTab: 'Registrácia', registerPublicNote: 'Účet môžeš vytvoriť aj neskôr.',
@@ -490,6 +486,7 @@ const TRANSLATIONS = {
       aboutGalleryDelete: 'Zmazať',
       aboutGalleryDeleteConfirm: 'Zmazať túto fotku z galérie?',
       aboutGalleryUploading: 'Nahrávam fotku…',
+      aboutGalleryFull: 'Galéria je plná (6/6).',
       aboutGalleryEditCaption: 'Upraviť popis',
       aboutGalleryEditCaptionPrompt: 'Popis fotky (napr. "Cenník 2026", "Denné menu"):',
       deleteBusinessShort: 'Zmazať podnik',
@@ -498,14 +495,6 @@ const TRANSLATIONS = {
       deleteBusinessConfirmLabel: 'Pre potvrdenie napíš názov podniku',
       deleteBusinessMismatch: 'Názov nesúhlasí.',
       deleteBusinessSuccess: 'Podnik bol zmazaný.',
-      aboutGalleryFull: 'Galéria je plná (6/6).',
-    },
-    geo: {
-      pickOnMap: 'Vybrať na mape',
-      searchPlaceholder: 'Hľadať adresu alebo miesto…',
-      latLng: 'Súradnice',
-      address: 'Adresa',
-      pickLocation: 'Vybrať polohu',
     },
     settings: {
       title: 'Nastavenia', notifications: 'Notifikácie',
@@ -519,7 +508,7 @@ const TRANSLATIONS = {
       gdpr: 'Dáta a súkromie (GDPR)', downloadData: 'Stiahnuť moje dáta',
       terms: 'Obchodné podmienky', privacyPolicy: 'Ochrana osobných údajov',
       deleteAccount: 'Zmazať účet', logout: 'Odhlásiť sa',
-      language: 'Jazyk', languageLabel: 'Jazyk aplikácie',
+      languageLabel: 'Jazyk aplikácie',
       langCs: 'Čeština', langSk: 'Slovenčina', langEn: 'English',
       securityTitle: 'Bezpečnosť a 2FA',
       twofaDesc: 'Chráň svoj účet dvojfázovým overením.',
@@ -554,11 +543,11 @@ const TRANSLATIONS = {
       sortRecent: 'Najnovšie', sortTrending: 'Trendy',
       noPosts: 'Žiadne príspevky nezodpovedajú filtrom.',
       loadingPosts: 'Načítavam príspevky…', noPhoto: 'Bez fotky',
-      likesMe: 'Páči sa mi', views: 'zobrazení',
+      likesMe: 'Iskier', views: 'zobrazení',
     },
     post: {
       writeComment: 'Napíš komentár…', comments: 'Komentáre',
-      noComments: 'Zatiaľ žiadne komentáre.', like: 'Páči sa mi', share: 'Zdieľať',
+      noComments: 'Zatiaľ žiadne komentáre.', like: 'Iskra', share: 'Zdieľať',
       report: 'Nahlásiť', reportTitle: 'Nahlásiť príspevok',
       reportReason: 'Dôvod (nepovinné)', reportReasonPlaceholder: 'Prečo tento príspevok nahlášaš?',
       reportSend: 'Odoslať nahlásenie', deleteTitle: 'Zmazať príspevok?',
@@ -791,6 +780,13 @@ const TRANSLATIONS = {
       welcomeBack: 'Vitaj späť, {name}!',
       welcome: 'Vitaj, {name}!',
     },
+    geo: {
+      pickOnMap: 'Vybrať na mape',
+      searchPlaceholder: 'Hľadať adresu alebo miesto…',
+      latLng: 'Súradnice',
+      address: 'Adresa',
+      pickLocation: 'Vybrať polohu',
+    },
     errors: {
       generic: 'Niečo sa pokazilo. Skús znova.',
       loadPostsFailed: 'Príspevky sa nepodarilo načítať.',
@@ -807,9 +803,6 @@ const TRANSLATIONS = {
     },
   },
 
-  // ========================================================
-  // ANGLIČTINA
-  // ========================================================
   en: {
     common: {
       save: 'Save', cancel: 'Cancel', delete: 'Delete', edit: 'Edit', close: 'Close',
@@ -820,11 +813,12 @@ const TRANSLATIONS = {
       writeMessage: 'Write a message…', sending: 'Sending…', saving: 'Saving…',
       uploading: 'Uploading…', processing: 'Processing…', user: 'User',
       unknown: 'Unknown', notFound: 'Not found.', nothing: 'Nothing',
-      of: 'of', items: 'items', itemsFew: 'items', reply: 'Reply',
+      of: 'of', items: 'items', itemsFew: 'items',
     },
     nav: {
       organizations: 'Places', accommodation: 'Stay', gastro: 'Food',
       map: 'Map', events: 'Events', account: 'Profile',
+      collections: 'Collections',
     },
     auth: {
       myProfile: 'My profile', loginTab: 'Sign in', registerTab: 'Sign up',
@@ -902,13 +896,6 @@ const TRANSLATIONS = {
       deleteBusinessMismatch: 'Name does not match.',
       deleteBusinessSuccess: 'Business deleted.',
     },
-    geo: {
-      pickOnMap: 'Pick on map',
-      searchPlaceholder: 'Search address or place…',
-      latLng: 'Coordinates',
-      address: 'Address',
-      pickLocation: 'Pick location',
-    },
     settings: {
       title: 'Settings', notifications: 'Notifications', language: 'Language',
       pushNotifications: 'Browser push notifications',
@@ -921,7 +908,7 @@ const TRANSLATIONS = {
       gdpr: 'Data & privacy (GDPR)', downloadData: 'Download my data',
       terms: 'Terms of Service', privacyPolicy: 'Privacy Policy',
       deleteAccount: 'Delete account', logout: 'Sign out',
-      language: 'Language', languageLabel: 'App language',
+      languageLabel: 'App language',
       langCs: 'Čeština', langSk: 'Slovenčina', langEn: 'English',
       securityTitle: 'Security & 2FA',
       twofaDesc: 'Protect your account with two-factor authentication.',
@@ -956,11 +943,11 @@ const TRANSLATIONS = {
       sortRecent: 'Newest', sortTrending: 'Trending',
       noPosts: 'No posts match the selected filters.',
       loadingPosts: 'Loading posts…', noPhoto: 'No photo',
-      likesMe: 'Likes', views: 'views',
+      likesMe: 'Sparks', views: 'views',
     },
     post: {
       writeComment: 'Write a comment…', comments: 'Comments',
-      noComments: 'No comments yet.', like: 'Like', share: 'Share',
+      noComments: 'No comments yet.', like: 'Spark', share: 'Share',
       report: 'Report', reportTitle: 'Report post',
       reportReason: 'Reason (optional)', reportReasonPlaceholder: 'Why are you reporting this post?',
       reportSend: 'Send report', deleteTitle: 'Delete post?',
@@ -1193,6 +1180,13 @@ const TRANSLATIONS = {
       welcomeBack: 'Welcome back, {name}!',
       welcome: 'Welcome, {name}!',
     },
+    geo: {
+      pickOnMap: 'Pick on map',
+      searchPlaceholder: 'Search address or place…',
+      latLng: 'Coordinates',
+      address: 'Address',
+      pickLocation: 'Pick location',
+    },
     errors: {
       generic: 'Something went wrong. Try again.',
       loadPostsFailed: 'Failed to load posts.',
@@ -1280,7 +1274,7 @@ const TYPE_LABELS_I18N = {
     apartman: 'Apartmán', glamping: 'Glamping', hostel: 'Hostel', ubytovna: 'Ubytovna',
     restaurace: 'Restaurace', kavarna: 'Kavárna', hospoda: 'Hospoda', pivovar: 'Pivovar',
     bistro: 'Bistro', cukrarna: 'Cukrárna', vinarna: 'Vinárna', food_truck: 'Food truck',
-    ceska: 'Česká', italska: 'Italská', asijska: 'Asijská', vegan: 'Veganská',
+    ceska: 'Česká', italska: 'Italská', asijska: 'Asijská', vegan: 'Veganská', jina: 'Jiná',
   },
   sk: {
     hrad: 'Hrad', zamek: 'Zámok', muzeum: 'Múzeum', lyzarske_stredisko: 'Lyžiarske stredisko',
@@ -1291,7 +1285,7 @@ const TYPE_LABELS_I18N = {
     apartman: 'Apartmán', glamping: 'Glamping', hostel: 'Hostel', ubytovna: 'Ubytovňa',
     restaurace: 'Reštaurácia', kavarna: 'Kaviareň', hospoda: 'Hospoda', pivovar: 'Pivovar',
     bistro: 'Bistro', cukrarna: 'Cukrárňa', vinarna: 'Vináreň', food_truck: 'Food truck',
-    ceska: 'Česká', italska: 'Talianska', asijska: 'Ázijská', vegan: 'Vegánska',
+    ceska: 'Česká', italska: 'Talianska', asijska: 'Ázijská', vegan: 'Vegánska', jina: 'Iná',
   },
   en: {
     hrad: 'Castle', zamek: 'Chateau', muzeum: 'Museum', lyzarske_stredisko: 'Ski resort',
@@ -1302,7 +1296,7 @@ const TYPE_LABELS_I18N = {
     apartman: 'Apartment', glamping: 'Glamping', hostel: 'Hostel', ubytovna: 'Dormitory',
     restaurace: 'Restaurant', kavarna: 'Café', hospoda: 'Pub', pivovar: 'Brewery',
     bistro: 'Bistro', cukrarna: 'Patisserie', vinarna: 'Wine bar', food_truck: 'Food truck',
-    ceska: 'Czech', italska: 'Italian', asijska: 'Asian', vegan: 'Vegan',
+    ceska: 'Czech', italska: 'Italian', asijska: 'Asian', vegan: 'Vegan', jina: 'Other',
   },
 };
 
@@ -1311,7 +1305,6 @@ function tType(value) {
   return map[value] || value;
 }
 
-// Preloží názov odznaku podľa kľúča
 function tBadge(key, fallback) {
   const map = (TRANSLATIONS[_currentLang] || TRANSLATIONS.cs).badges || {};
   return map[key] || fallback || key;
