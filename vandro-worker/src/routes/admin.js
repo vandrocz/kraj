@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { logAudit } from '../audit.js';
 import { newId, generateUniqueHandle } from '../auth.js';
-import { runDailyDistribution } from '../cron.js';
 import { sendPushToUser } from '../push.js';
 
 export const adminRoutes = new Hono();
@@ -373,14 +372,12 @@ adminRoutes.delete('/posts/:id', async (c) => {
   await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE id = ?`).bind(id).run();
   await c.env.DB.prepare(`UPDATE reports SET resolved = 1 WHERE post_id = ?`).bind(id).run();
 
-  // DSA: notifikácia autorovi s odôvodnením
   try {
     await c.env.DB.prepare(
       `INSERT INTO notifications (id, user_id, type, entity_type, entity_id, text)
        VALUES (?, ?, 'moderation_removed', 'post', ?, ?)`,
     ).bind(newId('notif'), post.user_id, id, reason).run();
 
-    const { sendPushToUser } = await import('../push.js');
     await sendPushToUser(c.env, post.user_id, {
       title: 'Příspěvek byl odstraněn',
       body: reason,
@@ -388,7 +385,6 @@ adminRoutes.delete('/posts/:id', async (c) => {
     });
   } catch (err) { console.warn('DSA notif failed:', err); }
 
-  // Audit log
   await logAudit(c.env, {
     adminId: admin.sub,
     action: 'delete_post',
@@ -489,13 +485,6 @@ adminRoutes.post('/cleanup-test-content', async (c) => {
   const { cleanupTestContent } = await import('../seed.js');
   const result = await cleanupTestContent(c.env);
   return c.json(result);
-});
-
-adminRoutes.post('/run-distribution-now', async (c) => {
-  const key = c.req.header('X-Cron-Secret');
-  if (!key || key !== c.env.CRON_SECRET) return c.json({ error: 'Neautorizované.' }, 401);
-  const summary = await runDailyDistribution(c.env);
-  return c.json(summary);
 });
 
 adminRoutes.post('/broadcast-push', async (c) => {
