@@ -55,7 +55,7 @@ const state = {
   _bookmarks: null,
   _eventDetail: null,
 
-  _reviews: null, _myReview: null,
+  _reviews: null, _reviewsLoading: false, _myReview: null,
   _wishlist: null,
   _userBadges: null, _userCheckins: null, _businessCheckins: null,
   _checkinStatus: undefined, _wishlistStatus: undefined,
@@ -83,7 +83,6 @@ const state = {
   _mapNavCollapsed: true,
   _historyPushed: false,
 
-  // Zbierky (feed, detail)
   collections: null,
 };
 
@@ -446,8 +445,13 @@ function renderApp() {
 
   applySeo();
 
-  // Rich editor bind
-  bindAllRichEditors(root);
+  // Bind rich editorov (mention picker, sync hidden input)
+  if (typeof bindAllRichEditors === 'function') bindAllRichEditors(root);
+
+  // Bind story video (autoplay + onended fallback)
+  if (state.overlay?.type === 'story-viewer' && typeof bindStoryVideo === 'function') {
+    setTimeout(() => bindStoryVideo(), 50);
+  }
 
   if (state.lightbox && state.lightbox.images && state.lightbox.images.length > 0 && !hideLightbox) {
     const lbEl = document.getElementById('lightbox');
@@ -521,6 +525,7 @@ function openProfile(kind, id) {
   state._bizEvents = null;
   state._bizStats = null;
   state._reviews = null;
+  state._reviewsLoading = false;
   state._myReview = null;
   state._checkinStatus = undefined;
   state._wishlistStatus = undefined;
@@ -588,7 +593,7 @@ function switchTab(tab) {
 }
 
 // ============================================================
-// LIGHTBOX — s panel states
+// LIGHTBOX
 // ============================================================
 function openLightbox(images, index = 0, caption = '', post = null) {
   state.lightbox = {
@@ -1059,5 +1064,3 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') lightboxNext();
   else if (e.key === 'ArrowLeft') lightboxPrev();
 });
-
-// POZNÁMKA: maybeRequestPushPermission žije v push.js (jedna verzia, žiadny duplikát)
