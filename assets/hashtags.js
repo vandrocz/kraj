@@ -48,10 +48,15 @@ async function openHashtag(tag) {
 
   try {
     const data = await apiGet(`/api/hashtags/${encodeURIComponent(tag)}/posts`);
-    state._hashtagPosts = data.posts || [];
+    // Guard: použij data len ak je stále otvorený ten istý hashtag
+    if (state.overlay?.type === 'hashtag' && state.overlay.tag === tag) {
+      state._hashtagPosts = data.posts || [];
+    }
   } catch (err) {
-    state._hashtagPosts = [];
-    showToast(t('errors.loadFailed'));
+    if (state.overlay?.type === 'hashtag' && state.overlay.tag === tag) {
+      state._hashtagPosts = [];
+      showToast(t('errors.loadFailed'));
+    }
   }
   renderApp();
 }
