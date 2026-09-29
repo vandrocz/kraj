@@ -71,9 +71,6 @@ function decodeCursor(cursor) {
   } catch { return null; }
 }
 
-// ============================================================
-// Pomocná funkcia: zmazať z R2 všetky médiá príspevku
-// ============================================================
 async function deletePostMediaFromR2(env, urls) {
   if (!env.MEDIA || !urls || urls.length === 0) return;
   const publicBase = env.R2_PUBLIC_BASE || '';
@@ -139,7 +136,9 @@ feedRoutes.post('/collections/:id/like', async (c) => {
 
 function scorePostForUser(post, { followedIds, userCity, userRegion, verifiedBoost = true }) {
   const now = Date.now();
-  const created = new Date(post.created_at.replace(' ', 'T') + 'Z').getTime();
+  const createdStr = (post.created_at || '').replace(' ', 'T') + 'Z';
+  const created = new Date(createdStr).getTime();
+  if (isNaN(created)) return 0;
   const ageHours = (now - created) / 3600000;
   let score = 100 * Math.pow(0.5, ageHours / 24);
   score += (post.likes || 0) * 2;
@@ -280,10 +279,10 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
   if (sort === 'trending') {
     out = out.map((p) => ({ ...p, __score: scorePostForUser(p, {}) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
-    } else if (sort === 'for_you') {
+  } else if (sort === 'for_you') {
     out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedIds, userCity, userRegion }) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
-    } else {
+  } else {
     const hasMore = out.length > limit;
     out = out.slice(0, limit);
     const last = out[out.length - 1];
@@ -477,9 +476,6 @@ feedRoutes.patch('/post/:id', async (c) => {
   return c.json({ ok: true, id, text: plainText, html: contentHtml });
 });
 
-// ============================================================
-// DELETE POST — soft delete v DB + tvrdé zmazanie médií z R2 (GDPR)
-// ============================================================
 feedRoutes.delete('/post/:id', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -490,7 +486,6 @@ feedRoutes.delete('/post/:id', async (c) => {
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
   if (post.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
 
-  // Zozbieraj všetky URL médií tohto príspevku
   const { results: mediaRows } = await c.env.DB.prepare(
     `SELECT image_url FROM post_media WHERE post_id = ?`,
   ).bind(id).all();
@@ -500,16 +495,10 @@ feedRoutes.delete('/post/:id', async (c) => {
     ...(mediaRows || []).map((m) => m.image_url),
   ].filter(Boolean);
 
-  // 1) Soft delete v DB (aby FK integrity ostala)
   await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE id = ?`).bind(id).run();
-
-  // 2) Zmazať riadky post_media (aby ich URL neblokovali R2 cleanup)
   await c.env.DB.prepare(`DELETE FROM post_media WHERE post_id = ?`).bind(id).run();
-
-  // 3) Zmazať prílohy (hashtags, mentions, bookmarks môžu ostať pre audit)
   await c.env.DB.prepare(`DELETE FROM post_hashtags WHERE post_id = ?`).bind(id).run();
 
-  // 4) Zmazať súbory z R2 OKAMŽITE
   await deletePostMediaFromR2(c.env, allUrls);
 
   return c.json({ ok: true, deleted_media: allUrls.length });
@@ -644,7 +633,6 @@ feedRoutes.post('/:id/report', async (c) => {
       ).bind(newId('notif'), post.user_id, postId,
         'Tvůj příspěvek byl dočasně skryt kvůli vyššímu počtu nahlášení. Provozovatel jej posoudí.').run();
 
-      const { sendPushToUser } = await import('../push.js');
       await sendPushToUser(c.env, post.user_id, {
         title: 'Příspěvek dočasně skryt',
         body: 'Tvůj příspěvek byl dočasně skryt kvůli nahlášením.',
