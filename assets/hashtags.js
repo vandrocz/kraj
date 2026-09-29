@@ -1,5 +1,5 @@
 // ============================================================
-// HASHTAGS — i18n verzia
+// HASHTAGS — frontend
 // ============================================================
 
 const HASHTAG_RE = /#([a-zA-Z0-9_áäčďéěíľĺňóôŕřšťúůýžÁÄČĎÉĚÍĽĹŇÓÔŔŘŠŤÚŮÝŽ]{2,40})/g;
@@ -51,11 +51,15 @@ async function openHashtag(tag) {
     // Guard: použij data len ak je stále otvorený ten istý hashtag
     if (state.overlay?.type === 'hashtag' && state.overlay.tag === tag) {
       state._hashtagPosts = data.posts || [];
+    } else {
+      return;
     }
   } catch (err) {
     if (state.overlay?.type === 'hashtag' && state.overlay.tag === tag) {
       state._hashtagPosts = [];
       showToast(t('errors.loadFailed'));
+    } else {
+      return;
     }
   }
   renderApp();
