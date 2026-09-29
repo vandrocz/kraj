@@ -108,7 +108,6 @@ export async function runDailyDistribution(env) {
 
 // ============================================================
 // STORY CLEANUP — maže expirované stories z DB AJ z R2
-// Volané: pri GET /api/stories/feed + cron každých 6 hodín
 // ============================================================
 export async function deleteExpiredStories(env) {
   if (!env.DB) return { deleted: 0 };
@@ -133,7 +132,6 @@ export async function deleteExpiredStories(env) {
         } catch {}
       }
 
-      // Zmazať každý súbor z R2
       if (env.MEDIA) {
         for (const url of urls) {
           if (!url) continue;
@@ -154,7 +152,6 @@ export async function deleteExpiredStories(env) {
       }
     }
 
-    // Zmazať z DB
     await env.DB.prepare(`DELETE FROM stories WHERE expires_at < datetime('now')`).run();
     result.deleted = results.length;
 
@@ -169,42 +166,34 @@ export async function deleteExpiredStories(env) {
 
 // ============================================================
 // R2 CLEANUP — maže osirelé obrázky z R2 (tie, ktoré nie sú v DB)
-// - 30-dňový buffer pre posts/, profile/, events/, debug/
-// - 1-dňový buffer pre stories/ (fallback pre zlyhané uploady)
 // ============================================================
-
 export async function cleanupOrphanedR2(env) {
   if (!env.MEDIA) return { skipped: true, reason: 'no_media_binding' };
 
   const DAY_MS = 24 * 60 * 60 * 1000;
-  const cutoffPostsMs = Date.now() - 30 * DAY_MS;   // 30 dní
-  const cutoffStoriesMs = Date.now() - 1 * DAY_MS;  // 1 deň (fallback pre siroty)
+  const cutoffPostsMs = Date.now() - 30 * DAY_MS;
+  const cutoffStoriesMs = Date.now() - 1 * DAY_MS;
 
   const results = { scanned: 0, orphaned: 0, deleted: 0, errors: 0 };
 
   try {
-    // Načítaj všetky použité URL z DB
     const usedUrls = new Set();
     const queries = [
-      // IBA published posts (removed/hidden_by_reports sa nemajú blokovať mazanie)
       `SELECT image_url AS u FROM posts WHERE image_url IS NOT NULL AND status = 'published'`,
       `SELECT pm.image_url AS u FROM post_media pm
        JOIN posts p ON p.id = pm.post_id
        WHERE p.status = 'published'`,
-      // Business logá / obrázky
       `SELECT logo_url AS u FROM organizations WHERE logo_url IS NOT NULL`,
       `SELECT image_url AS u FROM accommodation WHERE image_url IS NOT NULL`,
       `SELECT image_url AS u FROM restaurants WHERE image_url IS NOT NULL`,
-      // Používatelia — iba aktívni (nie deleted)
       `SELECT avatar_url AS u FROM users WHERE avatar_url IS NOT NULL AND deleted_at IS NULL`,
       `SELECT cover_url AS u FROM users WHERE cover_url IS NOT NULL AND deleted_at IS NULL`,
-      // Cover obrázky podnikov
       `SELECT cover_url AS u FROM organizations WHERE cover_url IS NOT NULL`,
       `SELECT cover_url AS u FROM accommodation WHERE cover_url IS NOT NULL`,
       `SELECT cover_url AS u FROM restaurants WHERE cover_url IS NOT NULL`,
-      // Events — iba published
       `SELECT cover_image_url AS u FROM events WHERE cover_image_url IS NOT NULL AND status = 'published'`,
-      // Stories NIE — tie rieši deleteExpiredStories samostatne
+      // NOVÉ: business_gallery
+      `SELECT image_url AS u FROM business_gallery WHERE image_url IS NOT NULL`,
     ];
 
     for (const q of queries) {
@@ -214,7 +203,6 @@ export async function cleanupOrphanedR2(env) {
       } catch (e) { /* tabuľka nemusí existovať */ }
     }
 
-    // Parsuj URL → vytvor set kľúčov v R2
     const usedKeys = new Set();
     const publicBase = env.R2_PUBLIC_BASE || '';
     for (const url of usedUrls) {
@@ -225,13 +213,13 @@ export async function cleanupOrphanedR2(env) {
       }
     }
 
-    // Listuj R2 podľa prefixov
     const prefixes = [
       { prefix: 'posts/', cutoff: cutoffPostsMs },
       { prefix: 'profile/', cutoff: cutoffPostsMs },
       { prefix: 'events/', cutoff: cutoffPostsMs },
+      { prefix: 'gallery/', cutoff: cutoffPostsMs },
       { prefix: 'debug/', cutoff: cutoffPostsMs },
-      { prefix: 'stories/', cutoff: cutoffStoriesMs }, // 1 deň (siroty po zlyhanom upload)
+      { prefix: 'stories/', cutoff: cutoffStoriesMs },
     ];
 
     for (const { prefix, cutoff } of prefixes) {
@@ -240,9 +228,7 @@ export async function cleanupOrphanedR2(env) {
         const list = await env.MEDIA.list({ prefix, cursor, limit: 1000 });
         for (const obj of list.objects) {
           results.scanned++;
-          // Preskoč čerstvé súbory
           if (obj.uploaded && new Date(obj.uploaded).getTime() > cutoff) continue;
-          // Vymaž iba ak nie je v DB
           if (!usedKeys.has(obj.key)) {
             results.orphaned++;
             try {
