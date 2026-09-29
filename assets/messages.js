@@ -1,6 +1,8 @@
 // ============================================================
-// DM — i18n verzia
+// DM — priame správy
 // ============================================================
+
+let _threadPollInterval = null;
 
 async function loadThreads() {
   if (!isLoggedIn()) return;
@@ -40,23 +42,48 @@ function openThreadById(id) {
   startThreadPolling(id);
 }
 
-let _threadPollInterval = null;
 function startThreadPolling(id) {
   stopThreadPolling();
-  _threadPollInterval = setInterval(() => { if (state.overlay?.type === 'thread' && state.overlay.id === id) loadThread(id, true); }, 5000);
+  _threadPollInterval = setInterval(() => {
+    // Preskoč, ak je tab skrytý — šetrí baterku aj server
+    if (document.hidden) return;
+    if (state.overlay?.type === 'thread' && state.overlay.id === id) {
+      loadThread(id, true);
+    } else {
+      // Overlay sa zmenil — zastav polling
+      stopThreadPolling();
+    }
+  }, 5000);
 }
+
 function stopThreadPolling() {
-  if (_threadPollInterval) clearInterval(_threadPollInterval);
-  _threadPollInterval = null;
+  if (_threadPollInterval) {
+    clearInterval(_threadPollInterval);
+    _threadPollInterval = null;
+  }
 }
+
+// Pri prepnutí viditeľnosti tabu obnov thread hneď, keď sa vráti
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  if (state.overlay?.type === 'thread' && state.overlay.id) {
+    loadThread(state.overlay.id, true);
+  }
+});
 
 async function loadThread(id, silent = false) {
   try {
     const data = await apiGet(`/api/messages/thread/${id}`);
+
+    // Guard: overlay sa medzitým mohol zmeniť
+    if (state.overlay?.type !== 'thread' || state.overlay.id !== id) return;
+
     state.threadCurrent = { thread: data.thread, other: data.other };
     state.threadMessages = data.messages || [];
-    if (!silent && state.overlay?.type === 'thread') renderApp();
-    else if (silent && state.overlay?.type === 'thread') {
+
+    if (!silent) {
+      renderApp();
+    } else {
       const scroller = document.getElementById('thread-scroller');
       if (scroller) {
         const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
@@ -130,6 +157,7 @@ async function handleSendThreadMessage(form) {
   input.value = '';
   try {
     const msg = await apiPost(`/api/messages/thread/${id}/send`, { text });
+    if (state.overlay?.type !== 'thread' || state.overlay.id !== id) return;
     state.threadMessages = [...(state.threadMessages || []), { id: msg.id, sender_id: state.user.id, text: msg.text, created_at: msg.created_at }];
     renderApp();
     const scroller = document.getElementById('thread-scroller');
