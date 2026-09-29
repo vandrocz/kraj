@@ -7,7 +7,6 @@ async function loadProfile(kind, id) {
   try {
     const data = await apiGet(`/api/profile/${kind}/${id}`);
 
-    // Ak je to user s roliou org/hotelier a prvým podnikom, otvor rovno jeho biz profil
     if (kind === 'user' && data.type === 'user' && Array.isArray(data.businesses) && data.businesses.length > 0) {
       const b = data.businesses[0];
       state.profiles[cacheKey] = data;
@@ -28,7 +27,6 @@ async function loadProfile(kind, id) {
 
     state.profiles[cacheKey] = data;
 
-    // Follow status
     if (isLoggedIn()) {
       try {
         const apiType = kind === 'user' ? 'users' : kind;
@@ -70,7 +68,6 @@ function renderUserProfile(data, id) {
     p.phone ? { icon: 'phone', label: t('profile.phone'), value: p.phone, href: `tel:${p.phone}` } : null,
   ].filter(Boolean);
 
-  // Auto-load checkins pre tento profil (s guardom na race condition)
   const showCheckins = isOwn || p.public_checkins;
   if (showCheckins && state._userProfileCheckins === undefined) {
     state._userProfileCheckins = null;
@@ -90,7 +87,6 @@ function renderUserProfile(data, id) {
       });
   }
 
-  // Auto-load badges pre vlastný profil (s guardom)
   if (isOwn && state._userBadges === undefined) {
     state._userBadges = null;
     const capturedId = id;
@@ -216,9 +212,6 @@ function renderUserProfile(data, id) {
     </div>`;
 }
 
-// ============================================================
-// BUSINESS PROFIL
-// ============================================================
 function renderBusinessProfile(data, id, kind) {
   const b = data.profile;
   const isOwn = isLoggedIn() && state.businesses.some((x) => x.id === id);
@@ -231,13 +224,11 @@ function renderBusinessProfile(data, id, kind) {
   const isVerified = Number(b.is_verified) === 1 || b.is_verified === true;
   const gallery = data.gallery || [];
 
-  // Reviews tab — auto-load s flagom proti duplicitnému volaniu
   if (activeTab === 'reviews' && state._reviews === null && !state._reviewsLoading) {
     state._reviewsLoading = true;
     loadReviews(kind, id);
   }
 
-  // Check-in status
   if (state._checkinStatus === undefined && isLoggedIn()) {
     state._checkinStatus = null;
     const capturedKind = kind;
@@ -252,7 +243,6 @@ function renderBusinessProfile(data, id, kind) {
       .catch(() => {});
   }
 
-  // Wishlist status
   if (state._wishlistStatus === undefined && isLoggedIn()) {
     state._wishlistStatus = null;
     const capturedKind = kind;
@@ -440,9 +430,6 @@ function renderBusinessProfile(data, id, kind) {
     </div>`;
 }
 
-// ============================================================
-// GALÉRIA "O NÁS"
-// ============================================================
 function renderGallerySection(gallery, isOwn, kind, id) {
   const items = gallery || [];
   const atLimit = items.length >= 6;
@@ -561,7 +548,6 @@ async function switchBizProfileTab(tab) {
     const { id } = state.overlay;
     try {
       const data = await apiGet(`/api/events?business_id=${encodeURIComponent(id)}&when=all`);
-      // Guard: použij len ak sme stále na tom istom profile
       if (state.overlay?.type === 'profile' && state.overlay.id === id) {
         state._bizEvents = data.events || [];
         renderApp();
@@ -581,9 +567,6 @@ async function switchBizProfileTab(tab) {
   }
 }
 
-// ============================================================
-// EDIT PROFILE
-// ============================================================
 function renderEditProfileForm() {
   const kind = state.overlay.editKind;
   const id = state.overlay.editId;
@@ -636,15 +619,15 @@ function renderEditProfileForm() {
         <div class="form-field">
           <label class="form-label">${escapeHtml(t('events.addressLabel'))}</label>
           <div class="post-place-input" style="position:relative">
-            <input class="form-input" name="address" data-business-address-input value="${escapeAttr(p.address || '')}" placeholder="${escapeAttr(t('events.addressPlaceholder'))}" />
+            <input class="form-input" name="address" data-place-input data-business-address-input value="${escapeAttr(p.address || '')}" placeholder="${escapeAttr(t('events.addressPlaceholder'))}" autocomplete="off" />
           </div>
-          <p class="form-hint" data-business-geo-label>${p.geo_lat && p.geo_lng ? `📍 ${Number(p.geo_lat).toFixed(4)}, ${Number(p.geo_lng).toFixed(4)}` : ''}</p>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          <button type="button" class="profile-action-btn" data-action="edit-profile-map-picker">
-            ${icon('location', { size: 15 })} ${escapeHtml(t('geo.pickOnMap'))}
+        <div class="post-place-actions" style="margin-bottom:10px">
+          <button type="button" class="profile-action-btn" data-action="pick-place-on-map">
+            ${icon('mapPin', { size: 15 })} ${escapeHtml(t('geo.pickOnMap'))}
           </button>
         </div>
+        <p class="form-hint" data-place-geo-label>${p.geo_lat && p.geo_lng ? `📍 ${Number(p.geo_lat).toFixed(4)}, ${Number(p.geo_lng).toFixed(4)}` : ''}</p>
         ${renderEditRegionDistrictCity(p)}
       </div>
 
@@ -700,6 +683,8 @@ async function handleEditProfileSubmit(form) {
   const body = Object.fromEntries(fd.entries());
   if (form.dataset.geoLat) body.geo_lat = form.dataset.geoLat;
   if (form.dataset.geoLng) body.geo_lng = form.dataset.geoLng;
+  if (form.dataset.geoPlace) body.geo_place = form.dataset.geoPlace;
+  if (form.dataset.geoCountry) body.country_code = form.dataset.geoCountry;
 
   const btn = form.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = t('common.saving'); }
