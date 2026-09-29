@@ -27,6 +27,32 @@ async function updateLastLogin(env, userId, ip) {
   } catch (err) { console.warn('updateLastLogin failed:', err.message); }
 }
 
+function buildBusinessesList(user, acc, rest, orgs) {
+  if (user.role === 'organization') {
+    return (orgs.results || []).map((r) => ({ ...r, kind: 'organization' }));
+  }
+  if (user.role === 'hotelier') {
+    return [
+      ...(acc.results || []).map((r) => ({ ...r, kind: 'accommodation' })),
+      ...(rest.results || []).map((r) => ({ ...r, kind: 'gastro' })),
+    ];
+  }
+  return [];
+}
+
+async function loadBusinesses(env, user) {
+  if (user.role === 'organization') {
+    const orgs = await env.DB.prepare('SELECT id, name, is_verified FROM organizations WHERE user_id = ?').bind(user.id).all();
+    return buildBusinessesList(user, { results: [] }, { results: [] }, orgs);
+  }
+  if (user.role === 'hotelier') {
+    const acc = await env.DB.prepare('SELECT id, name, is_verified FROM accommodation WHERE user_id = ?').bind(user.id).all();
+    const rest = await env.DB.prepare('SELECT id, name, is_verified FROM restaurants WHERE user_id = ?').bind(user.id).all();
+    return buildBusinessesList(user, acc, rest, { results: [] });
+  }
+  return [];
+}
+
 authRoutes.post('/register', async (c) => {
   const ip = clientIp(c);
   const rl = await rateLimit(c.env, 'register', ip, 5, 3600);
@@ -35,10 +61,9 @@ authRoutes.post('/register', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { email, password, displayName, role = 'user', termsAccepted, ageConfirmed, website } = body;
 
-  // Honeypot — pole "website" je skryté, človek ho nevyplní, bot áno
+  // Honeypot
   if (website && String(website).trim().length > 0) {
     console.warn('[register] honeypot triggered, IP:', ip);
-    // Tvári sa ako úspech, aby bot nevedel že bol odhalený
     return c.json({ id: 'fake_' + Math.random().toString(36).slice(2), email, role, handle: 'fake', business: null }, 201);
   }
 
@@ -72,7 +97,6 @@ authRoutes.post('/register', async (c) => {
 
   const handle = await generateUniqueHandle(c.env, handleBase);
 
-  // email_verified = 0, age_confirmed = 1, terms_version = '1.0'
   await c.env.DB.prepare(
     `INSERT INTO users (id, email, password_hash, password_salt, display_name, handle, role, credit_balance, terms_accepted_at, terms_version, age_confirmed, email_verified, auth_provider)
      VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), '1.0', 1, 0, 'password')`,
@@ -119,7 +143,6 @@ authRoutes.post('/register', async (c) => {
 
   await logLogin(c.env, { userId, email: lower, ip, ua: userAgent(c), success: true, method: 'register' });
 
-  // Vygeneruj verifikačný token a pošli e-mail
   try {
     const token = newId('ev') + '_' + crypto.randomUUID().replace(/-/g, '');
     const exp = new Date(Date.now() + VERIFY_TTL_MS).toISOString();
@@ -134,7 +157,6 @@ authRoutes.post('/register', async (c) => {
   return c.json({ id: userId, email: lower, role, handle, business, email_verification_sent: true }, 201);
 });
 
-// Overenie e-mailu
 authRoutes.post('/verify-email', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const token = (body.token || '').toString();
@@ -150,7 +172,6 @@ authRoutes.post('/verify-email', async (c) => {
   return c.json({ ok: true });
 });
 
-// Znovu-poslanie overovacieho e-mailu
 authRoutes.post('/resend-verification', async (c) => {
   const h = c.req.header('Authorization') || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
@@ -234,18 +255,7 @@ authRoutes.post('/login', async (c) => {
     c.env.JWT_SECRET, 'HS256',
   );
 
-  let businesses = [];
-  if (user.role === 'organization') {
-    const { results } = await c.env.DB.prepare('SELECT id, name, is_verified FROM organizations WHERE user_id = ?').bind(user.id).all();
-    businesses = results.map((r) => ({ ...r, kind: 'organization' }));
-  } else if (user.role === 'hotelier') {
-    const acc = await c.env.DB.prepare('SELECT id, name, is_verified FROM accommodation WHERE user_id = ?').bind(user.id).all();
-    const rest = await c.env.DB.prepare('SELECT id, name, is_verified FROM restaurants WHERE user_id = ?').bind(user.id).all();
-    businesses = [
-      ...acc.results.map((r) => ({ ...r, kind: 'accommodation' })),
-      ...rest.results.map((r) => ({ ...r, kind: 'gastro' })),
-    ];
-  }
+  const businesses = await loadBusinesses(c.env, user);
 
   return c.json({ token, user: publicUser(user), businesses });
 });
@@ -338,18 +348,7 @@ authRoutes.post('/verify-2fa', async (c) => {
     c.env.JWT_SECRET, 'HS256',
   );
 
-  let businesses = [];
-  if (user.role === 'organization') {
-    const { results } = await c.env.DB.prepare('SELECT id, name, is_verified FROM organizations WHERE user_id = ?').bind(user.id).all();
-    businesses = results.map((r) => ({ ...r, kind: 'organization' }));
-  } else if (user.role === 'hotelier') {
-    const acc = await c.env.DB.prepare('SELECT id, name, is_verified FROM accommodation WHERE user_id = ?').bind(user.id).all();
-    const rest = await c.env.DB.prepare('SELECT id, name, is_verified FROM restaurants WHERE user_id = ?').bind(user.id).all();
-    businesses = [
-      ...acc.results.map((r) => ({ ...r, kind: 'accommodation' })),
-      ...rest.results.map((r) => ({ ...r, kind: 'gastro' })),
-    ];
-  }
+  const businesses = await loadBusinesses(c.env, user);
 
   return c.json({ token, user: publicUser(user), businesses, recovery_remaining: updatedCodes?.length });
 });
