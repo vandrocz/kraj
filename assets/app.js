@@ -445,8 +445,11 @@ function renderApp() {
 
   applySeo();
 
-  // Bind rich editorov (mention picker, sync hidden input)
+  // Bind rich editorov
   if (typeof bindAllRichEditors === 'function') bindAllRichEditors(root);
+
+  // Bind place-search inputov
+  if (typeof bindAllPlaceInputs === 'function') bindAllPlaceInputs(root);
 
   // Bind story video (autoplay + onended fallback)
   if (state.overlay?.type === 'story-viewer' && typeof bindStoryVideo === 'function') {
@@ -828,7 +831,7 @@ function updateLightboxDOM() {
 
         <div class="lightbox-post-actions">
           <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${feedKey}">
-            ${icon('spark', { size: 22, filled: !!post.__liked })}
+            ${icon('clover', { size: 22, filled: !!post.__liked })}
           </button>
           <span class="lightbox-stat">${fmt(post.likes || 0)} ${escapeHtml(t('post.like'))}</span>
           <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(getPostText(post))}">${icon('share', { size: 21 })}</button>
