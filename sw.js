@@ -2,7 +2,7 @@
 // SERVICE WORKER — PWA + Push notifikácie
 // ============================================================
 
-const CACHE_NAME = 'naskraj-v1';
+const CACHE_NAME = 'naskraj-v3';
 const PRECACHE = [
   '/',
   '/index.html',
@@ -31,22 +31,43 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
+  // API volania nechávame vždy na sieť
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
   if (req.method !== 'GET') return;
 
-  if (url.pathname.startsWith('/assets/') || url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/manifest.json') {
+  const isHtml = req.headers.get('accept')?.includes('text/html') ||
+                 url.pathname === '/' ||
+                 url.pathname === '/index.html';
+
+  if (isHtml) {
+    // Network-first pre HTML — vždy chceme najnovšiu verziu kódu
     event.respondWith(
-      caches.match(req).then((cached) => cached || fetch(req).then((res) => {
-        const clone = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, clone)).catch(() => {});
+      fetch(req).then((res) => {
+        if (res && res.status === 200) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, clone)).catch(() => {});
+        }
         return res;
-      }).catch(() => cached)),
+      }).catch(() => caches.match(req).then((cached) => cached || caches.match('/index.html'))),
     );
     return;
   }
 
-  event.respondWith(fetch(req).catch(() => caches.match(req)));
+  // Pre ostatné (assets, obrázky) — stale-while-revalidate
+  // Okamžite vráti cached, ale na pozadí aktualizuje cache
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      const fetchPromise = fetch(req).then((res) => {
+        if (res && res.status === 200 && res.type === 'basic') {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, clone)).catch(() => {});
+        }
+        return res;
+      }).catch(() => cached);
+      return cached || fetchPromise;
+    }),
+  );
 });
 
 self.addEventListener('push', (event) => {
