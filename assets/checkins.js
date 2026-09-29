@@ -1,5 +1,5 @@
 // ============================================================
-// CHECK-INS + ODZNAKY — i18n verzia
+// CHECK-INS + ODZNAKY
 // ============================================================
 
 async function loadUserCheckins(userId) {
@@ -18,16 +18,51 @@ async function loadUserBadges(userId) {
   if (state.overlay?.type === 'badges') renderApp();
 }
 
+// ============================================================
+// CREATE CHECK-IN — modal cez overlay (renderCreateCheckinOverlay)
+// Volá sa z events.js cez action "open-create-checkin"
+// ============================================================
+function openCheckinCreateOverlay(kind, id, name) {
+  if (!isLoggedIn()) { showToast(t('checkins.loginRequired')); switchTab('account'); return; }
+  state.overlayStack.push(state.overlay);
+  state.overlay = { type: 'create-checkin', kind, id, name, note: '' };
+  pushHistoryState('overlay');
+  renderApp();
+}
+
+function renderCreateCheckinOverlay() {
+  const o = state.overlay;
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader(t('checkins.title'))}
+      <div class="profile-section">
+        <p style="font-size:14px;margin-bottom:16px;color:var(--c-text-muted)">${escapeHtml(o.name || '')}</p>
+        <form data-action="submit-checkin" data-kind="${escapeAttr(o.kind)}" data-id="${escapeAttr(o.id)}">
+          <div class="form-field">
+            <label class="form-label">${escapeHtml(t('checkins.note'))}</label>
+            <textarea class="form-textarea" name="note" maxlength="500" rows="4" placeholder="${escapeAttr(t('checkins.notePlaceholder'))}">${escapeHtml(o.note || '')}</textarea>
+          </div>
+          <button class="form-submit-btn" type="submit">${escapeHtml(t('checkins.addNote'))}</button>
+        </form>
+      </div>
+    </div>`;
+}
+
 async function handleCheckinSubmit(form) {
   const kind = form.dataset.kind;
   const id = form.dataset.id;
   const fd = new FormData(form);
+  const note = (fd.get('note') || '').toString().trim() || null;
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn) { btn.disabled = true; btn.textContent = t('common.saving'); }
+
   try {
     const res = await apiPost('/api/checkins', {
       business_id: id,
       business_kind: kind,
-      note: fd.get('note') || null,
+      note,
     });
+
     if (res.new_badges && res.new_badges.length > 0) {
       const list = res.new_badges.map((b) => `${tBadge(b.key, b.name)} L${b.level}`).join(', ');
       showToast(t('checkins.newBadge', { list }));
@@ -36,18 +71,22 @@ async function handleCheckinSubmit(form) {
     } else {
       showToast(t('checkins.added'));
     }
-    state.overlay = null;
-    if (state.overlayStack.length > 0) {
-      const prev = state.overlayStack.pop();
-      state.overlay = prev;
-      if (prev?.type === 'profile') {
-        delete state.profiles[`${prev.kind}:${prev.id}`];
-        loadProfile(prev.kind, prev.id);
-      }
+
+    // Zavri overlay a vráť sa na predchádzajúci (typicky profil)
+    state.overlay = state.overlayStack.pop() || null;
+
+    // Reset statusu, aby sa v profile znovu načítal
+    state._checkinStatus = undefined;
+    state._userProfileCheckins = undefined;
+
+    if (state.overlay?.type === 'profile') {
+      delete state.profiles[`${state.overlay.kind}:${state.overlay.id}`];
+      loadProfile(state.overlay.kind, state.overlay.id);
     }
     renderApp();
   } catch (err) {
     showToast(err.message);
+    if (btn) { btn.disabled = false; btn.textContent = t('checkins.addNote'); }
   }
 }
 
@@ -76,7 +115,7 @@ function renderBadgeCard(b) {
       <p class="badge-desc">${escapeHtml(b.description || '')}</p>
       <div class="badge-progress">
         <span>${b.progress}${b.next_tier ? ` / ${b.next_tier}` : ''}</span>
-        <span class="badge-levels">${'★'.repeat(b.level)}${'☆'.repeat(b.max_level - b.level)}</span>
+        <span class="badge-levels">${'★'.repeat(b.level)}${'☆'.repeat((b.max_level || 5) - b.level)}</span>
       </div>
     </div>`;
 }
