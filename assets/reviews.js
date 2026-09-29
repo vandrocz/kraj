@@ -1,19 +1,39 @@
 // ============================================================
-// RECENZIE — i18n verzia
+// RECENZIE
 // ============================================================
 
 async function loadReviews(kind, id) {
+  const capturedKind = kind;
+  const capturedId = id;
+
   try {
-    const data = await apiGet(`/api/reviews/business/${kind}/${id}`);
+    const data = await apiGet(`/api/reviews/business/${capturedKind}/${capturedId}`);
+
+    // Guard: overlay sa medzitým mohol zmeniť na iný profil
+    if (state.overlay?.type !== 'profile') { state._reviewsLoading = false; return; }
+    if (state.overlay.kind !== capturedKind || state.overlay.id !== capturedId) { state._reviewsLoading = false; return; }
+
     state._reviews = data;
+
     if (isLoggedIn()) {
       try {
-        const mine = await apiGet(`/api/reviews/me/${kind}/${id}`);
-        state._myReview = mine.review || null;
+        const mine = await apiGet(`/api/reviews/me/${capturedKind}/${capturedId}`);
+        if (state.overlay?.kind === capturedKind && state.overlay?.id === capturedId) {
+          state._myReview = mine.review || null;
+        }
       } catch { state._myReview = null; }
     }
-  } catch { state._reviews = { reviews: [], summary: { total: 0, average: 0, distribution: {} } }; }
-  if (state.overlay?.type === 'profile' && state._bizProfileTab === 'reviews') renderApp();
+  } catch {
+    if (state.overlay?.kind === capturedKind && state.overlay?.id === capturedId) {
+      state._reviews = { reviews: [], summary: { total: 0, average: 0, distribution: {} } };
+    }
+  }
+
+  state._reviewsLoading = false;
+
+  if (state.overlay?.type === 'profile' && state._bizProfileTab === 'reviews') {
+    if (state.overlay.kind === capturedKind && state.overlay.id === capturedId) renderApp();
+  }
 }
 
 function renderStars(rating, size = 16) {
@@ -160,6 +180,7 @@ async function handleReviewSubmit(form) {
     state.overlayStack.pop();
     state.overlay = state.overlayStack[state.overlayStack.length - 1] || null;
     state._reviews = null;
+    state._reviewsLoading = false;
     state._myReview = null;
     if (state.overlay?.type === 'profile') {
       loadReviews(state.overlay.kind, state.overlay.id);
