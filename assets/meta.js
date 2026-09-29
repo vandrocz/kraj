@@ -1,4 +1,8 @@
-const FALLBACK_REGIONS = {
+// ============================================================
+// Regióny ČR + SR (kraje → okresy)
+// ============================================================
+
+const CZ_FALLBACK_REGIONS = {
   'Hlavní město Praha': ['Praha'],
   'Středočeský kraj': ['Benešov', 'Beroun', 'Kladno', 'Kolín', 'Kutná Hora', 'Mělník', 'Mladá Boleslav', 'Nymburk', 'Praha-východ', 'Praha-západ', 'Příbram', 'Rakovník'],
   'Jihočeský kraj': ['České Budějovice', 'Český Krumlov', 'Jindřichův Hradec', 'Písek', 'Prachatice', 'Strakonice', 'Tábor'],
@@ -14,6 +18,30 @@ const FALLBACK_REGIONS = {
   'Zlínský kraj': ['Kroměříž', 'Uherské Hradiště', 'Vsetín', 'Zlín'],
   'Moravskoslezský kraj': ['Bruntál', 'Frýdek-Místek', 'Karviná', 'Nový Jičín', 'Opava', 'Ostrava-město'],
 };
+
+const SK_FALLBACK_REGIONS = {
+  'Bratislavský kraj': ['Bratislava I', 'Bratislava II', 'Bratislava III', 'Bratislava IV', 'Bratislava V', 'Malacky', 'Pezinok', 'Senec'],
+  'Trnavský kraj': ['Dunajská Streda', 'Galanta', 'Hlohovec', 'Piešťany', 'Senica', 'Skalica', 'Trnava'],
+  'Trenčiansky kraj': ['Bánovce nad Bebravou', 'Ilava', 'Myjava', 'Nové Mesto nad Váhom', 'Partizánske', 'Považská Bystrica', 'Prievidza', 'Púchov', 'Trenčín'],
+  'Nitriansky kraj': ['Komárno', 'Levice', 'Nitra', 'Nové Zámky', 'Šaľa', 'Topoľčany', 'Zlaté Moravce'],
+  'Žilinský kraj': ['Bytča', 'Čadca', 'Dolný Kubín', 'Kysucké Nové Mesto', 'Liptovský Mikuláš', 'Martin', 'Námestovo', 'Ružomberok', 'Turčianske Teplice', 'Tvrdošín', 'Žilina'],
+  'Banskobystrický kraj': ['Banská Bystrica', 'Banská Štiavnica', 'Brezno', 'Detva', 'Krupina', 'Lučenec', 'Poltár', 'Revúca', 'Rimavská Sobota', 'Veľký Krtíš', 'Zvolen', 'Žarnovica', 'Žiar nad Hronom'],
+  'Prešovský kraj': ['Bardejov', 'Humenné', 'Kežmarok', 'Levoča', 'Medzilaborce', 'Poprad', 'Prešov', 'Sabinov', 'Snina', 'Stará Ľubovňa', 'Stropkov', 'Svidník', 'Vranov nad Topľou'],
+  'Košický kraj': ['Gelnica', 'Košice I', 'Košice II', 'Košice III', 'Košice IV', 'Košice-okolie', 'Michalovce', 'Rožňava', 'Sobrance', 'Spišská Nová Ves', 'Trebišov'],
+};
+
+const CZ_REGION_SET = new Set(Object.keys(CZ_FALLBACK_REGIONS));
+const SK_REGION_SET = new Set(Object.keys(SK_FALLBACK_REGIONS));
+
+// Deterministicky zisti krajinu z kraja
+function getCountryForRegion(region) {
+  if (!region) return null;
+  if (SK_REGION_SET.has(region)) return 'sk';
+  if (CZ_REGION_SET.has(region)) return 'cz';
+  return null;
+}
+
+const FALLBACK_REGIONS = { ...CZ_FALLBACK_REGIONS, ...SK_FALLBACK_REGIONS };
 
 const FALLBACK_TYPES = {
   organization: [
@@ -55,6 +83,7 @@ const FALLBACK_TYPES = {
   ],
   cuisine: [
     { value: 'ceska', label: 'Česká' },
+    { value: 'slovenska', label: 'Slovenská' },
     { value: 'italska', label: 'Italská' },
     { value: 'asijska', label: 'Asijská' },
     { value: 'vegan', label: 'Veganská' },
@@ -79,7 +108,55 @@ async function loadMetaFromApi() {
 }
 
 // ============================================================
-// OBCE — retry, fallback, cache aj v localStorage
+// Pomocné funkcie pre prácu s regiónmi
+// ============================================================
+
+function normalizeStr(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+/**
+ * Nájde najbližší match kraja v REGIONS (diakritika-nezávislý).
+ * @param {string} region - názov z geocodéru (napr. "Bratislavský kraj", "Bratislava Region")
+ */
+function matchRegion(region) {
+  if (!region) return null;
+  const norm = normalizeStr(region);
+  // Presná zhoda
+  for (const r of Object.keys(REGIONS)) {
+    if (normalizeStr(r) === norm) return r;
+  }
+  // Čiastočná zhoda
+  for (const r of Object.keys(REGIONS)) {
+    const rNorm = normalizeStr(r);
+    if (rNorm.includes(norm) || norm.includes(rNorm)) return r;
+  }
+  return null;
+}
+
+/**
+ * Nájde najbližší match okresu v danom kraji.
+ */
+function matchDistrict(region, district) {
+  if (!region || !district) return null;
+  const list = REGIONS[region] || [];
+  const norm = normalizeStr(district);
+  for (const d of list) {
+    if (normalizeStr(d) === norm) return d;
+  }
+  for (const d of list) {
+    const dNorm = normalizeStr(d);
+    if (dNorm.includes(norm) || norm.includes(dNorm)) return d;
+  }
+  return null;
+}
+
+// ============================================================
+// OBCE — s cache, retry a fallbackom
 // ============================================================
 const _citiesCache = {};
 
