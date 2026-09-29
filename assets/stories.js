@@ -3,7 +3,7 @@
 // ============================================================
 
 const STORY_MAX_DURATION = 10000;
-const STORY_PHOTO_DURATION = 3333;
+const STORY_PHOTO_DURATION = 5000; // zosúladené s CSS animáciou (storyProgressFill 5s)
 const STORY_ASPECT = 9 / 16;
 const STORY_OUT_WIDTH = 1080;
 
@@ -19,7 +19,7 @@ async function loadStoriesFeed() {
 }
 
 // ============================================================
-// Stories bar — jedna flexibilná horizontálna lišta
+// Stories bar
 // ============================================================
 function renderStoriesBar() {
   if (!isLoggedIn()) return '';
@@ -31,7 +31,7 @@ function renderStoriesBar() {
 
   const circles = [];
 
-  // 1) Osobný "me" circle (pre všetkých, okrem admina)
+  // 1) Osobný "me" circle
   if (state.user.role !== 'admin') {
     circles.push(`
       <button class="story-circle story-circle--me"
@@ -48,7 +48,7 @@ function renderStoriesBar() {
     `);
   }
 
-  // 2) Business circles (pre každý podnik aktuálneho usera)
+  // 2) Business circles
   const myBusinesses = state.businesses || [];
   for (const biz of myBusinesses) {
     const bizGroup = myBizGroups.find((g) => g.business_id === biz.id);
@@ -71,7 +71,7 @@ function renderStoriesBar() {
     `);
   }
 
-  // 3) Sledovaní (users + businesses)
+  // 3) Sledovaní
   for (const g of others) {
     const storyThumb = getFirstStoryThumb(g);
     circles.push(`
@@ -126,16 +126,20 @@ function openStoryViewer(groupKey) {
 }
 
 let _storyTimer = null;
+let _storyVideoTimeout = null;
+
 function startStoryAutoAdvance() {
   stopStoryAutoAdvance();
   _storyTimer = setInterval(() => {
     if (state.overlay?.type !== 'story-viewer') { stopStoryAutoAdvance(); return; }
+    if (document.hidden) return; // šetrí CPU, keď je tab skrytý
+
     const groups = state.stories?.groups || [];
     const group = groups.find((g) => g.key === state.overlay.groupKey);
     if (!group) return;
     const story = group.stories[state.overlay.index];
     if (!story) return;
-    if (story.media_type === 'video') return;
+    if (story.media_type === 'video') return; // video si riadi sám cez onended
 
     const storyMediaList = getStoryMediaList(story);
     const elapsed = Date.now() - (state.overlay.slideStartAt || Date.now());
@@ -155,6 +159,8 @@ function startStoryAutoAdvance() {
 function stopStoryAutoAdvance() {
   if (_storyTimer) clearInterval(_storyTimer);
   _storyTimer = null;
+  if (_storyVideoTimeout) clearTimeout(_storyVideoTimeout);
+  _storyVideoTimeout = null;
 }
 
 function getStoryMediaList(story) {
@@ -183,8 +189,9 @@ function renderStoryViewerOverlay() {
   const currentMedia = storyMediaList[mediaIndex] || storyMediaList[0];
   const isVideo = story.media_type === 'video' || (currentMedia || '').match(/\.(mp4|webm|mov)$/i);
 
+  // Video: bezpečný fallback cez addEventListener (nie inline onended, aby nezávisel na globálnom scope)
   const mediaHtml = isVideo
-    ? `<video src="${escapeAttr(currentMedia)}" class="story-viewer-media" autoplay muted playsinline onended="storyNext()"></video>`
+    ? `<video src="${escapeAttr(currentMedia)}" class="story-viewer-media" autoplay muted playsinline data-story-video></video>`
     : `<img src="${escapeAttr(currentMedia)}" alt="" class="story-viewer-media" />`;
 
   const bars = group.stories.map((_, i) => {
@@ -238,6 +245,30 @@ function renderStoryViewerOverlay() {
 }
 
 // ============================================================
+// Video autoplay + fallback (po každom renderi)
+// ============================================================
+function bindStoryVideo() {
+  const v = document.querySelector('[data-story-video]');
+  if (!v) return;
+  stopStoryAutoAdvance(); // pri videu interval nechceme
+
+  const goNext = () => {
+    if (state.overlay?.type === 'story-viewer') storyNext();
+  };
+  v.addEventListener('ended', goNext, { once: true });
+
+  // Fallback ak video zamrzne (max 15s)
+  _storyVideoTimeout = setTimeout(() => {
+    if (state.overlay?.type === 'story-viewer') goNext();
+  }, 15000);
+
+  // Ak sa video neprehrá (autoplay blokovaný), posuň po 2s
+  v.play?.().catch(() => {
+    _storyVideoTimeout = setTimeout(goNext, 2000);
+  });
+}
+
+// ============================================================
 // Story swipe handling
 // ============================================================
 let _storySwipeSetup = false;
@@ -251,7 +282,6 @@ function setupStorySwipe() {
 
   document.addEventListener('touchstart', (e) => {
     if (!document.getElementById('story-viewer-root')) return;
-    // Ignoruj ak klikol na tlačidlo (like, close, author)
     if (e.target.closest('button')) return;
     const t = e.touches[0];
     startX = t.clientX;
@@ -270,14 +300,12 @@ function setupStorySwipe() {
     const dy = t.clientY - startY;
     const dt = Date.now() - startTime;
 
-    // Swipe dole = zavrieť (rýchly alebo veľký pohyb)
     if (dy > 80 && Math.abs(dy) > Math.abs(dx)) {
       stopStoryAutoAdvance();
       closeStoryViewer();
       return;
     }
 
-    // Swipe vľavo/vpravo = navigácia
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
       stopStoryAutoAdvance();
       if (dx < 0) storyNext();
@@ -285,13 +313,11 @@ function setupStorySwipe() {
       return;
     }
 
-    // Krátky tap (do 250 ms, malý pohyb) = zónová navigácia
     if (dt < 250 && Math.abs(dx) < 10 && Math.abs(dy) < 10) {
       const w = window.innerWidth;
       stopStoryAutoAdvance();
       if (t.clientX < w * 0.3) storyPrev();
       else if (t.clientX > w * 0.7) storyNext();
-      // Stred nič nerobí (nechceme pauzovať, keďže auto-advance ide sám)
     }
   }, { passive: true });
 }
@@ -303,7 +329,7 @@ async function storyLike(storyId) {
     const res = await apiPost(`/api/stories/${storyId}/like`, {});
     if (!state.overlay.likes) state.overlay.likes = {};
     state.overlay.likes[storyId] = res.liked;
-    for (const g of state.stories.groups) {
+    for (const g of (state.stories?.groups || [])) {
       const s = g.stories.find((x) => x.id === storyId);
       if (s) s.likes = res.likes;
     }
@@ -314,7 +340,7 @@ async function storyLike(storyId) {
 function storyNext() {
   if (state.overlay?.type !== 'story-viewer') return;
   const { groupKey, index, mediaIndex } = state.overlay;
-  const group = state.stories.groups.find((g) => g.key === groupKey);
+  const group = (state.stories?.groups || []).find((g) => g.key === groupKey);
   if (!group) return;
 
   const story = group.stories[index];
@@ -362,11 +388,9 @@ function closeStoryViewer() {
   closeOverlay();
 }
 
-// Autor z story viewera → otvor profil
 function openStoryAuthor(authorId, authorKind) {
   if (!authorId) return;
 
-  // Zavri story viewer (spolu s history cleanupom)
   stopStoryAutoAdvance();
   if (state._historyPushed) {
     try { history.back(); } catch {}
@@ -511,7 +535,7 @@ async function onStoryFileSelected(inputEl) {
     console.error('Crop error:', err);
     o.cropBusy = false;
     renderApp();
-    showToast('Nepodařilo se ořezat obrázky.');
+    showToast(t('errors.generic'));
     return;
   }
 
