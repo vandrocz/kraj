@@ -39,16 +39,12 @@ async function maybeSubscribePush() {
   } catch {}
 }
 
-// ------------------------------------------------------------------
-// C3: S krátkym oneskorením po prihlásení vyžiadaj povolenie
-// ------------------------------------------------------------------
 async function maybeRequestPushPermission() {
   if (!isLoggedIn()) return;
   if (state._pushPrompted) return;
   if (!('Notification' in window)) return;
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
   if (Notification.permission === 'granted') {
-    // Už má povolenie — len tichý subscribe
     maybeSubscribePush();
     return;
   }
@@ -56,7 +52,7 @@ async function maybeRequestPushPermission() {
 
   state._pushPrompted = true;
 
-  // Krátke oneskorenie, aby výzva nebola rušivá (8 sekúnd)
+  // 8s oneskorenie, aby výzva nebola rušivá
   setTimeout(async () => {
     if (!isLoggedIn()) return;
     try {
@@ -86,6 +82,7 @@ async function enablePushNotifications() {
 
     const res = await apiGet('/api/push/vapid-public-key');
     const publicKey = res.publicKey;
+    if (!publicKey) { showToast('Push nie je nakonfigurovaný.'); return; }
 
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
