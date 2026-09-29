@@ -134,14 +134,14 @@ function renderSocialPostCard(post, feedKey) {
             ${escapeHtml(post.business.name)}
             ${isVerified ? icon('check', { size: 12, className: 'verified-badge-inline' }) : ''}
           </p>
-          <p class="post-time">${post.business.city ? `${escapeHtml(post.business.city)}, ` : ''}${escapeHtml(post.business.district)} · ${timeAgo(post.created_at)}</p>
+          <p class="post-time">${post.business.city ? `${escapeHtml(post.business.city)}, ` : ''}${escapeHtml(post.business.district || '')} · ${timeAgo(post.created_at)}</p>
         </div>
         <button class="post-more" data-action="report-post" data-id="${post.id}">${icon('more', { size: 18 })}</button>
       </header>
       ${renderMediaCarousel(post)}
       <div class="post-actions">
         <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${feedKey}">
-          ${icon('spark', { size: 22, filled: !!post.__liked })}
+          ${icon('clover', { size: 22, filled: !!post.__liked })}
         </button>
         <button class="post-action" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(captionText)}">
           ${icon('comment', { size: 21 })}
@@ -239,7 +239,7 @@ async function togglePostLike(postId, feedKey, btnEl) {
 function updateLikeButtonsDOM(postId, liked, likes) {
   document.querySelectorAll(`[data-action="toggle-post-like"][data-id="${postId}"]`).forEach((btn) => {
     btn.classList.toggle('is-liked', !!liked);
-    btn.innerHTML = icon('spark', { size: 22, filled: !!liked });
+    btn.innerHTML = icon('clover', { size: 22, filled: !!liked });
   });
 
   document.querySelectorAll(`[data-like-count="${postId}"]`).forEach((el) => {
