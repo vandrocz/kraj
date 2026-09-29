@@ -5127,3 +5127,167 @@ body > .upload-overlay { pointer-events: auto; }
 /* Post place picker */
 .post-place-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .post-place-input { flex: 1; min-width: 200px; position: relative; }
+
+/* ============================================================
+   COLLECTIONS — phase bar, progress, queue, header
+   ============================================================ */
+
+.phase-bar {
+  padding: 7px 14px;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: white;
+  background: var(--c-text-muted);
+  text-align: center;
+}
+.phase-bar.preparing { background: #F5B23A; color: #3A2500; }
+.phase-bar.running { background: var(--c-primary); }
+.phase-bar.completed { background: var(--c-gold); color: #3A2500; }
+
+.post-progress {
+  padding: 8px 14px 6px;
+}
+.post-progress-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--c-text);
+  margin-bottom: 6px;
+}
+.post-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--c-bg);
+  overflow: hidden;
+}
+.post-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--c-primary), var(--c-primary-dark));
+  border-radius: 999px;
+  transition: width .35s ease;
+}
+
+.queue-section-title {
+  font-size: 12.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--c-text-muted);
+  padding: 14px 16px 8px;
+}
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--c-border);
+}
+.queue-item:last-child { border-bottom: none; }
+.queue-rank {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--c-text-muted);
+  min-width: 26px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.queue-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--c-border);
+}
+.queue-info {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.queue-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-org {
+  font-size: 11.5px;
+  color: var(--c-text-muted);
+  margin-top: 2px;
+}
+.queue-like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.queue-like-btn:hover {
+  border-color: var(--c-primary);
+  color: var(--c-primary-dark);
+}
+.queue-like-btn.is-liked {
+  background: #FFF3D6;
+  border-color: var(--c-gold);
+  color: #8A5B00;
+}
+
+/* ---- Story progress bar — čistá verzia s premennou ---- */
+.story-progress-bar.is-active {
+  background: rgba(255,255,255,0.35);
+  position: relative;
+  overflow: hidden;
+}
+.story-progress-bar.is-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  border-radius: 2px;
+  transform-origin: left;
+  animation: storyProgressFill 5s linear forwards;
+}
+@keyframes storyProgressFill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* ---- Upload overlay fix (nikdy neblokuje klikanie po skrytí) ---- */
+.upload-overlay { pointer-events: none; }
+.upload-overlay.is-visible { pointer-events: auto; }
+
+/* ---- Fix pre iOS: 100vh issues ---- */
+@supports (-webkit-touch-callout: none) {
+  .lightbox-inner { height: -webkit-fill-available; }
+  .story-viewer { height: -webkit-fill-available; }
+}
+
+/* ---- Focus visible fix pre header buttons ---- */
+.header-icon-btn:focus-visible {
+  outline: 2px solid var(--c-primary-dark);
+  outline-offset: 2px;
+}
+
+/* ---- Place suggest fix (dropdown nad inputom) ---- */
+.place-suggest-list { position: absolute; top: 100%; left: 0; right: 0; }
+
+/* ---- Map picker: dropdown search musí byť nad mapou ---- */
+.map-picker-search .place-suggest-list { z-index: 1000; }
+
+/* ---- Cookie banner: nad všetkým ---- */
+.cookie-banner { z-index: 400; }
