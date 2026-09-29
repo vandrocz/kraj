@@ -1,660 +1,520 @@
-import { Hono } from 'hono';
-import { verify } from 'hono/jwt';
-import { newId } from '../auth.js';
-import { ensureActiveProjectRotation } from '../cron.js';
-import { checkText, flagContent, sanitizeHtml, htmlToPlain, escapeLike } from '../moderation.js';
-import { rateLimit } from '../ratelimit.js';
-import { extractHashtags } from '../hashtags.js';
-import { sendPushToUser } from '../push.js';
+// ============================================================
+// SOCIÁLNY FEED
+// ============================================================
 
-export const feedRoutes = new Hono();
-
-const PROTECTION_MS = 30 * 60 * 1000;
-
-function projectPhase(project) {
-  if (project.status === 'waiting') return 'waiting';
-  if (project.status === 'completed') return 'completed';
-  if (!project.activated_at) return 'preparing';
-  const activatedMs = new Date(project.activated_at + 'Z').getTime();
-  return Date.now() - activatedMs < PROTECTION_MS ? 'preparing' : 'running';
+// Vyber text podle aktuálního jazyka (CZ/SK/EN)
+function getPostTextLang(post) {
+  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+  if (lang === 'en' && post && post.text_en) return post.text_en;
+  return (post && (post.text || post.text_content)) || '';
+}
+function getPostHtmlLang(post) {
+  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+  if (lang === 'en' && post && post.html_en) return post.html_en;
+  return (post && (post.html || post.text || post.text_content)) || '';
 }
 
-async function attachLikes(env, projects) {
-  return Promise.all(projects.map(async (p) => {
-    const raw = await env.NASKRAJ_LAJKY.get(`likecount:${p.id}`);
-    return { ...p, likes: raw ? parseInt(raw, 10) : 0 };
-  }));
+function buildFeedQuery(feedKey) {
+  const f = state.socialFeeds[feedKey];
+  const params = new URLSearchParams();
+  if (f.search) params.set('search', f.search);
+  if (f.region) params.set('region', f.region);
+  if (f.district) params.set('district', f.district);
+  if (f.type) params.set('type', f.type);
+  if (feedKey === 'gastro' && f.cuisine) params.set('cuisine', f.cuisine);
+  if (f.sort) params.set('sort', f.sort);
+  return params.toString();
 }
 
-async function fetchMediaForPosts(env, postIds) {
-  if (postIds.length === 0) return {};
-  const ph = postIds.map(() => '?').join(',');
-  const { results } = await env.DB.prepare(
-    `SELECT post_id, image_url FROM post_media WHERE post_id IN (${ph}) ORDER BY sort_order ASC`,
-  ).bind(...postIds).all();
-  const map = {};
-  for (const r of results) {
-    if (!map[r.post_id]) map[r.post_id] = [];
-    map[r.post_id].push(r.image_url);
+async function loadSocialFeed(feedKey, loadMore = false) {
+  const f = state.socialFeeds[feedKey];
+  if (loadMore && !f.next_cursor) return;
+  if (loadMore && f.loading_more) return;
+  if (loadMore) f.loading_more = true;
+  else state.loading[feedKey] = true;
+
+  try {
+    const q = buildFeedQuery(feedKey);
+    const url = `/api/feed/${feedKey}${q ? `?${q}` : ''}${loadMore && f.next_cursor ? `${q ? '&' : '?'}cursor=${encodeURIComponent(f.next_cursor)}` : ''}`;
+    const data = await apiGet(url);
+    if (loadMore) f.items = [...f.items, ...(data.feed || [])];
+    else f.items = data.feed || [];
+    f.next_cursor = data.next_cursor || null;
+  } catch (err) {
+    console.error(`Feed ${feedKey}:`, err.message);
+    showToast(t('errors.loadPostsFailed'));
+  } finally {
+    state.loading[feedKey] = false;
+    f.loading_more = false;
+    renderApp();
   }
-  return map;
 }
 
-function escapePlain(t) {
-  return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+let filterDebounceTimer = null;
+function onFilterChange(feedKey, field, value) {
+  state.socialFeeds[feedKey][field] = value;
+  if (field === 'region') state.socialFeeds[feedKey].district = '';
+  state.socialFeeds[feedKey].next_cursor = null;
+  renderApp();
+  clearTimeout(filterDebounceTimer);
+  filterDebounceTimer = setTimeout(() => loadSocialFeed(feedKey), 250);
 }
 
-async function getBlockedIds(env, viewerId) {
-  if (!viewerId) return new Set();
-  try {
-    const { results: a } = await env.DB.prepare(`SELECT blocked_id AS id FROM blocks WHERE blocker_id = ?`).bind(viewerId).all();
-    const { results: b } = await env.DB.prepare(`SELECT blocker_id AS id FROM blocks WHERE blocked_id = ?`).bind(viewerId).all();
-    return new Set([...a.map((r) => r.id), ...b.map((r) => r.id)]);
-  } catch { return new Set(); }
+function onSearchChange(feedKey, value) {
+  state.socialFeeds[feedKey].search = value;
+  state.socialFeeds[feedKey].next_cursor = null;
+  clearTimeout(filterDebounceTimer);
+  filterDebounceTimer = setTimeout(() => loadSocialFeed(feedKey), 400);
 }
 
-async function getViewerId(c, env) {
-  const h = c.req.header('Authorization') || '';
-  if (!h.startsWith('Bearer ')) return null;
-  try {
-    const payload = await verify(h.slice(7), env.JWT_SECRET, 'HS256');
-    return payload.sub;
-  } catch { return null; }
+function renderMediaCarousel(post) {
+  const media = post.media && post.media.length ? post.media : (post.image_url ? [post.image_url] : []);
+  const caption = escapeAttr(getPostTextLang(post));
+
+  if (media.length === 0) {
+    return `
+      <div class="post-image-wrap post-image-empty">
+        <div class="post-image-placeholder">
+          ${icon('image', { size: 36 })}
+          <span>${escapeHtml(t('feed.noPhoto'))}</span>
+        </div>
+      </div>`;
+  }
+
+  if (media.length === 1) {
+    return `
+      <button class="post-image-wrap" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${caption}">
+        <img src="${media[0]}" alt="" class="post-image" loading="lazy" />
+      </button>`;
+  }
+
+  const slides = media.map((url, idx) => `
+    <button class="post-carousel-slide" data-action="open-lightbox" data-post-id="${post.id}" data-index="${idx}" data-caption="${caption}">
+      <img src="${url}" alt="" class="post-image" loading="lazy" />
+    </button>`).join('');
+  const dots = media.map((_, i) => `<span class="post-carousel-dot ${i === 0 ? 'is-active' : ''}"></span>`).join('');
+  return `
+    <div class="post-carousel" data-post-carousel="${post.id}">
+      <div class="post-carousel-track" data-carousel-track>${slides}</div>
+      <div class="post-carousel-dots">${dots}</div>
+    </div>`;
 }
 
-function encodeCursor(createdAt, id) { return btoa(`${createdAt}|${id}`); }
-function decodeCursor(cursor) {
-  try {
-    const [createdAt, id] = atob(cursor).split('|');
-    if (!createdAt || !id) return null;
-    return { createdAt, id };
-  } catch { return null; }
+function renderBusinessAvatar(business, feedKey, size = 38) {
+  const logo = business.logo_url || business.image_url;
+  const initial = (business.name || '?').charAt(0).toUpperCase();
+  const fontSize = Math.round(size * 0.42);
+
+  if (logo) {
+    return `
+      <button class="post-avatar" data-action="open-profile" data-kind="${feedKey}" data-id="${business.id}"
+              style="width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;padding:0;border:2px solid var(--c-primary-light);flex-shrink:0;background:var(--c-surface);">
+        <img src="${escapeAttr(logo)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" />
+      </button>`;
+  }
+  return `
+    <button class="post-avatar" data-action="open-profile" data-kind="${feedKey}" data-id="${business.id}"
+            style="display:flex;align-items:center;justify-content:center;background:var(--c-primary-light);color:var(--c-primary-dark);font-weight:800;font-size:${fontSize}px;border-radius:50%;width:${size}px;height:${size}px;flex-shrink:0;border:2px solid var(--c-primary-light);">
+      ${initial}
+    </button>`;
 }
 
-async function deletePostMediaFromR2(env, urls) {
-  if (!env.MEDIA || !urls || urls.length === 0) return;
-  const publicBase = env.R2_PUBLIC_BASE || '';
-  for (const url of urls) {
-    if (!url) continue;
-    try {
-      let key = url;
-      if (publicBase && url.startsWith(publicBase + '/')) {
-        key = url.slice(publicBase.length + 1);
-      }
-      if (key && !key.startsWith('http')) {
-        await env.MEDIA.delete(key);
-      }
-    } catch (err) {
-      console.warn('[feed] R2 delete failed for', url, err.message);
+function renderSocialPostCard(post, feedKey) {
+  const isMinePost = isLoggedIn() && state.businesses.some((b) => b.id === post.business.id);
+  const isVerified = Number(post.business.is_verified) === 1 || post.business.is_verified === true;
+
+  const htmlLang = getPostHtmlLang(post);
+  const { text: captionText, links: captionLinks } = extractLinks(htmlLang);
+
+  const linksHtml = captionLinks.length > 0
+    ? `<div class="post-links">
+        ${captionLinks.map((l) => `
+          <a href="${escapeAttr(l.href)}" target="_blank" rel="noopener nofollow ugc" title="${escapeAttr(l.href)}">
+            <span class="post-link-label">${escapeHtml(l.label)}</span>
+          </a>
+        `).join('')}
+       </div>`
+    : '';
+
+  const likeText = post.likes > 0 ? `${fmt(post.likes)} ${t('feed.likesMe')}` : t('feed.likesMe');
+
+  return `
+    <article class="post-card" data-post-id="${post.id}">
+      <header class="post-card-head">
+        ${renderBusinessAvatar(post.business, feedKey, 38)}
+        <div class="post-head-text" data-action="open-profile" data-kind="${feedKey}" data-id="${post.business.id}" style="cursor:pointer">
+          <p class="post-author">
+            ${escapeHtml(post.business.name)}
+            ${isVerified ? icon('check', { size: 12, className: 'verified-badge-inline' }) : ''}
+          </p>
+          <p class="post-time">${post.business.city ? `${escapeHtml(post.business.city)}, ` : ''}${escapeHtml(post.business.district || '')} · ${timeAgo(post.created_at)}</p>
+        </div>
+        <button class="post-more" data-action="report-post" data-id="${post.id}">${icon('more', { size: 18 })}</button>
+      </header>
+      ${renderMediaCarousel(post)}
+      <div class="post-actions">
+        <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${feedKey}">
+          ${icon('clover', { size: 22, filled: !!post.__liked })}
+        </button>
+        <button class="post-action" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(captionText)}">
+          ${icon('comment', { size: 21 })}
+          ${post.comment_count > 0 ? `<span class="post-action-badge">${post.comment_count > 99 ? '99+' : post.comment_count}</span>` : ''}
+        </button>
+        <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(getPostTextLang(post))}">${icon('share', { size: 21 })}</button>
+        ${isLoggedIn() ? `<button class="post-action ${post.__bookmarked ? 'is-bookmarked' : ''}" data-action="toggle-bookmark" data-id="${post.id}">${icon('bookmark', { size: 20, filled: !!post.__bookmarked })}</button>` : ''}
+        ${isMinePost ? `<button class="post-action" data-action="edit-post" data-id="${post.id}" data-feed="${feedKey}">${icon('edit', { size: 18 })}</button>` : ''}
+        ${isMinePost ? `<button class="post-action" data-action="delete-post" data-id="${post.id}" data-feed="${feedKey}" style="color:#B3273C">${icon('trash', { size: 18 })}</button>` : ''}
+      </div>
+      <div class="post-body">
+        <p class="post-likes" data-like-count="${post.id}">${likeText}${post.views ? ` · ${fmt(post.views)} ${t('feed.views')}` : ''}</p>
+        <p class="post-caption" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(captionText)}">
+          <strong class="post-caption-author">${escapeHtml(post.business.name)}</strong>
+          <span class="post-caption-text">${linkifyHashtags(captionText)}</span>
+        </p>
+        ${linksHtml}
+        ${post.geo ? `<p class="post-geo">${icon('location', { size: 13 })} ${escapeHtml(post.geo.place)}</p>` : ''}
+      </div>
+    </article>`;
+}
+
+function findPostAnywhere(postId) {
+  for (const k of Object.keys(state.socialFeeds)) {
+    const p = state.socialFeeds[k].items.find((x) => x.id === postId);
+    if (p) return p;
+  }
+  for (const k of Object.keys(state.profiles)) {
+    const d = state.profiles[k];
+    if (d?.posts) {
+      const p = d.posts.find((x) => x.id === postId);
+      if (p) return p;
     }
   }
-}
-
-async function saveHashtags(env, postId, text) {
-  const tags = extractHashtags(text);
-  if (tags.length === 0) return [];
-  try {
-    await env.DB.prepare(`DELETE FROM post_hashtags WHERE post_id = ?`).bind(postId).run();
-    const stmt = env.DB.prepare(`INSERT OR IGNORE INTO post_hashtags (post_id, hashtag) VALUES (?, ?)`);
-    await env.DB.batch(tags.map((t) => stmt.bind(postId, t)));
-  } catch (err) { console.warn('saveHashtags:', err.message); }
-  return tags;
-}
-
-feedRoutes.get('/collections', async (c) => {
-  await ensureActiveProjectRotation(c.env);
-  const active = await c.env.DB.prepare(
-    `SELECT projects.*, organizations.name AS org_name, organizations.logo_url AS org_logo
-     FROM projects JOIN organizations ON organizations.id = projects.organization_id
-     WHERE projects.status IN ('active', 'completed') ORDER BY projects.activated_at DESC LIMIT 1`,
-  ).first();
-  const { results: waitingRaw } = await c.env.DB.prepare(
-    `SELECT projects.*, organizations.name AS org_name, organizations.logo_url AS org_logo
-     FROM projects JOIN organizations ON organizations.id = projects.organization_id
-     WHERE projects.status = 'waiting' ORDER BY projects.created_at DESC`,
-  ).all();
-  const waitingWithLikes = await attachLikes(c.env, waitingRaw);
-  waitingWithLikes.sort((a, b) => b.likes - a.likes);
-  const activeOut = active ? { ...(await attachLikes(c.env, [active]))[0], phase: projectPhase(active) } : null;
-  return c.json({ active: activeOut, waiting: waitingWithLikes.slice(0, 10).map((p) => ({ ...p, phase: 'waiting' })) });
-});
-
-feedRoutes.post('/collections/:id/like', async (c) => {
-  const user = c.get('user');
-  const projectId = c.req.param('id');
-  const project = await c.env.DB.prepare('SELECT id, status FROM projects WHERE id = ?').bind(projectId).first();
-  if (!project) return c.json({ error: 'Nenájdené.' }, 404);
-  if (project.status !== 'waiting') return c.json({ error: 'Lajkovať sa dá len v poradovníku.' }, 400);
-  const likeKey = `like:${projectId}:${user.sub}`;
-  if (await c.env.NASKRAJ_LAJKY.get(likeKey)) return c.json({ liked: true });
-  await c.env.NASKRAJ_LAJKY.put(likeKey, '1');
-  const cur = await c.env.NASKRAJ_LAJKY.get(`likecount:${projectId}`);
-  const n = (cur ? parseInt(cur, 10) : 0) + 1;
-  await c.env.NASKRAJ_LAJKY.put(`likecount:${projectId}`, String(n));
-  return c.json({ liked: true, likes: n }, 201);
-});
-
-// Personalizace podle země uživatele
-function scorePostForUser(post, { followedIds, userCity, userRegion, userCountry, verifiedBoost = true }) {
-  const now = Date.now();
-  const createdStr = (post.created_at || '').replace(' ', 'T') + 'Z';
-  const created = new Date(createdStr).getTime();
-  if (isNaN(created)) return 0;
-  const ageHours = (now - created) / 3600000;
-  let score = 100 * Math.pow(0.5, ageHours / 24);
-  score += (post.likes || 0) * 2;
-  score += (post.comment_count || 0) * 5;
-  if (verifiedBoost && post.business?.is_verified) score *= 1.3;
-
-  // Boost podle země — uživatel vidí primárně obsah z jeho země
-  if (userCountry && post.business?.country_code) {
-    if (post.business.country_code === userCountry) score *= 2.0;
-    else score *= 0.5;
-  }
-
-  if (followedIds?.has(post.business?.id)) score *= 2.5;
-  if (userCity && post.business?.city === userCity) score *= 1.8;
-  else if (userRegion && post.business?.region === userRegion) score *= 1.3;
-  score *= 0.9 + Math.random() * 0.2;
-  return score;
-}
-
-function logoColumnFor(table) {
-  if (table === 'organizations') return 'logo_url';
-  if (table === 'accommodation') return 'image_url';
-  if (table === 'restaurants') return 'image_url';
+  if (state.lightbox?.post?.id === postId) return state.lightbox.post;
   return null;
 }
 
-async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
-  const search = (c.req.query('search') || '').trim();
-  const region = c.req.query('region') || '';
-  const district = c.req.query('district') || '';
-  const type = c.req.query('type') || '';
-  const cuisine = c.req.query('cuisine') || '';
-  const businessId = c.req.query('business_id') || '';
-  const sort = c.req.query('sort') || 'for_you';
-  const cursorRaw = c.req.query('cursor') || null;
-  const limit = Math.min(parseInt(c.req.query('limit') || '12', 10), 30);
-
-  const viewerId = await getViewerId(c, c.env);
-  const blockedIds = await getBlockedIds(c.env, viewerId);
-
-  const conditions = [`posts.target_feed = ?`, `posts.status = 'published'`];
-  const params = [targetFeed];
-
-  if (businessId) { conditions.push('posts.business_id = ?'); params.push(businessId); }
-  if (search) { conditions.push(`${table}.name LIKE ? ESCAPE '\\'`); params.push(`%${escapeLike(search)}%`); }
-  if (region) { conditions.push(`${table}.region = ?`); params.push(region); }
-  if (district) { conditions.push(`${table}.district = ?`); params.push(district); }
-  if (type) { conditions.push(`${table}.type = ?`); params.push(type); }
-  if (cuisine && extraFilterCols?.includes('cuisine_type')) { conditions.push(`${table}.cuisine_type = ?`); params.push(cuisine); }
-
-  if (blockedIds.size > 0) {
-    const placeholders = [...blockedIds].map(() => '?').join(',');
-    conditions.push(`posts.user_id NOT IN (${placeholders})`);
-    for (const id of blockedIds) params.push(id);
+function updatePostEverywhere(postId, updater) {
+  const seen = new Set();
+  const apply = (p) => {
+    if (!p || p.id !== postId) return;
+    if (seen.has(p)) return;
+    seen.add(p);
+    updater(p);
+  };
+  for (const k of Object.keys(state.socialFeeds)) {
+    apply(state.socialFeeds[k].items.find((x) => x.id === postId));
   }
-
-  const cursor = cursorRaw ? decodeCursor(cursorRaw) : null;
-  if (cursor && sort === 'recent') {
-    conditions.push(`(posts.created_at < ? OR (posts.created_at = ? AND posts.id < ?))`);
-    params.push(cursor.createdAt, cursor.createdAt, cursor.id);
+  for (const k of Object.keys(state.profiles)) {
+    const d = state.profiles[k];
+    if (d?.posts) apply(d.posts.find((x) => x.id === postId));
   }
-
-  const logoCol = logoColumnFor(table);
-  const logoSelect = logoCol ? `, ${table}.${logoCol} AS business_logo` : ', NULL AS business_logo';
-
-  const sql = `
-    SELECT posts.id, posts.user_id, posts.text_content, posts.content_html, posts.image_url, posts.created_at,
-           posts.geo_lat, posts.geo_lng, posts.geo_place, posts.view_count,
-           ${table}.id AS business_id, ${table}.name AS business_name, ${table}.type AS business_type,
-           ${table}.region, ${table}.district, ${table}.city, ${table}.is_verified,
-           ${table}.country_code AS business_country
-           ${logoSelect}
-           ${extraFilterCols?.includes('cuisine_type') ? `, ${table}.cuisine_type` : ''}
-    FROM posts JOIN ${table} ON ${table}.id = posts.business_id
-    WHERE ${conditions.join(' AND ')}
-    ORDER BY posts.created_at DESC
-    LIMIT ${sort === 'recent' ? limit + 1 : 60}
-  `;
-
-  const { results } = await c.env.DB.prepare(sql).bind(...params).all();
-  const mediaMap = await fetchMediaForPosts(c.env, results.map((r) => r.id));
-
-  let followedIds = new Set(), userCity = null, userRegion = null, userCountry = null;
-  if (viewerId && sort !== 'recent') {
-    try {
-      const { results: fol } = await c.env.DB.prepare(
-        `SELECT target_id FROM follows WHERE follower_id = ? AND target_type = ?`,
-      ).bind(viewerId, table).all();
-      followedIds = new Set(fol.map((r) => r.target_id));
-      const u = await c.env.DB.prepare('SELECT geo_city, country_code FROM users WHERE id = ?').bind(viewerId).first();
-      userCity = u?.geo_city || null;
-      userCountry = u?.country_code || null;
-      if (userCity) {
-        const cRow = await c.env.DB.prepare(`SELECT region FROM ${table} WHERE city = ? LIMIT 1`).bind(userCity).first();
-        userRegion = cRow?.region || null;
-      }
-    } catch {}
-  }
-
-  let bookmarkedSet = new Set();
-  if (viewerId && results.length > 0) {
-    try {
-      const ids = results.map((r) => r.id);
-      const ph = ids.map(() => '?').join(',');
-      const { results: bms } = await c.env.DB.prepare(
-        `SELECT post_id FROM bookmarks WHERE user_id = ? AND post_id IN (${ph})`,
-      ).bind(viewerId, ...ids).all();
-      bookmarkedSet = new Set(bms.map((r) => r.post_id));
-    } catch {}
-  }
-
-  let out = await Promise.all(results.map(async (post) => {
-    const cc = await c.env.DB.prepare('SELECT COUNT(*) as n FROM comments WHERE post_id = ?').bind(post.id).first();
-    const likesRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${post.id}`);
-    const likes = likesRaw ? parseInt(likesRaw, 10) : 0;
-    let liked = false;
-    if (viewerId) {
-      try { liked = !!(await c.env.NASKRAJ_LAJKY.get(`like:post:${post.id}:${viewerId}`)); } catch {}
-    }
-    return {
-      id: post.id,
-      text: post.text_content,
-      html: post.content_html || escapePlain(post.text_content),
-      image_url: post.image_url,
-      media: mediaMap[post.id] || (post.image_url ? [post.image_url] : []),
-      created_at: post.created_at,
-      comment_count: cc?.n || 0,
-      likes,
-      views: post.view_count || 0,
-      __liked: liked,
-      __bookmarked: bookmarkedSet.has(post.id),
-      geo: post.geo_place ? { place: post.geo_place, lat: post.geo_lat, lng: post.geo_lng } : null,
-      business: {
-        id: post.business_id,
-        name: post.business_name,
-        type: post.business_type,
-        region: post.region,
-        district: post.district,
-        city: post.city,
-        country_code: post.business_country || null,
-        is_verified: !!post.is_verified,
-        logo_url: post.business_logo || null,
-        cuisine_type: post.cuisine_type || null,
-      },
-    };
-  }));
-
-  if (sort === 'trending') {
-    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, {}) })).sort((a, b) => b.__score - a.__score);
-    out = out.slice(0, limit);
-  } else if (sort === 'for_you') {
-    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedIds, userCity, userRegion, userCountry }) })).sort((a, b) => b.__score - a.__score);
-    out = out.slice(0, limit);
-  } else {
-    const hasMore = out.length > limit;
-    out = out.slice(0, limit);
-    const last = out[out.length - 1];
-    const nextCursor = hasMore && last ? encodeCursor(last.created_at, last.id) : null;
-    return c.json({ feed: out, next_cursor: nextCursor });
-  }
-
-  return c.json({ feed: out, next_cursor: null });
+  apply(state.lightbox?.post);
 }
 
-feedRoutes.get('/organization', (c) => loadSocialFeed(c, { targetFeed: 'organization', table: 'organizations' }));
-feedRoutes.get('/accommodation', (c) => loadSocialFeed(c, { targetFeed: 'accommodation', table: 'accommodation' }));
-feedRoutes.get('/gastro', (c) => loadSocialFeed(c, { targetFeed: 'gastro', table: 'restaurants', extraFilterCols: ['cuisine_type'] }));
+async function togglePostLike(postId, feedKey, btnEl) {
+  if (!isLoggedIn()) { showToast(t('post.loginToComment')); switchTab('account'); return; }
 
-feedRoutes.get('/post-by-id/:id', async (c) => {
-  const id = c.req.param('id');
-  const post = await c.env.DB.prepare(
-    `SELECT posts.*,
-            COALESCE(o.id, a.id, r.id) AS business_id,
-            COALESCE(o.name, a.name, r.name) AS business_name,
-            COALESCE(o.type, a.type, r.type) AS business_type,
-            COALESCE(o.region, a.region, r.region) AS region,
-            COALESCE(o.district, a.district, r.district) AS district,
-            COALESCE(o.city, a.city, r.city) AS city,
-            COALESCE(o.country_code, a.country_code, r.country_code) AS business_country,
-            COALESCE(o.is_verified, a.is_verified, r.is_verified) AS is_verified,
-            COALESCE(o.logo_url, a.image_url, r.image_url) AS logo_url
-     FROM posts
-     LEFT JOIN organizations o ON o.id = posts.business_id AND posts.target_feed = 'organization'
-     LEFT JOIN accommodation a ON a.id = posts.business_id AND posts.target_feed = 'accommodation'
-     LEFT JOIN restaurants r ON r.id = posts.business_id AND posts.target_feed = 'gastro'
-     WHERE posts.id = ? AND posts.status = 'published'`,
-  ).bind(id).first();
-  if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
+  const post = findPostAnywhere(postId);
+  if (!post) return;
 
-  const viewerId = await getViewerId(c, c.env);
-  const mediaMap = await fetchMediaForPosts(c.env, [post.id]);
-  const likesRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${post.id}`);
-  const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(post.id).first();
-  let liked = false, bookmarked = false;
-  if (viewerId) {
-    try { liked = !!(await c.env.NASKRAJ_LAJKY.get(`like:post:${post.id}:${viewerId}`)); } catch {}
-    try { bookmarked = !!(await c.env.DB.prepare(`SELECT 1 FROM bookmarks WHERE user_id = ? AND post_id = ?`).bind(viewerId, post.id).first()); } catch {}
+  if (post.__likePending) return;
+  post.__likePending = true;
+
+  const wasLiked = !!post.__liked;
+  const optimisticLiked = !wasLiked;
+  const optimisticLikes = Math.max(0, (post.likes || 0) + (wasLiked ? -1 : 1));
+
+  updatePostEverywhere(postId, (p) => {
+    p.__liked = optimisticLiked;
+    p.likes = optimisticLikes;
+  });
+  updateLikeButtonsDOM(postId, optimisticLiked, optimisticLikes);
+
+  try {
+    const data = await apiPost(`/api/feed/${postId}/like`, {});
+    updatePostEverywhere(postId, (p) => {
+      p.__liked = !!data.liked;
+      p.likes = data.likes || 0;
+    });
+    updateLikeButtonsDOM(postId, !!data.liked, data.likes || 0);
+  } catch (err) {
+    updatePostEverywhere(postId, (p) => {
+      p.__liked = wasLiked;
+      p.likes = Math.max(0, (p.likes || 0) + (wasLiked ? 1 : -1));
+    });
+    updateLikeButtonsDOM(postId, wasLiked, post.likes);
+    showToast(err.message);
+  } finally {
+    updatePostEverywhere(postId, (p) => { p.__likePending = false; });
   }
+}
 
-  return c.json({
-    post: {
-      id: post.id,
-      text: post.text_content,
-      html: post.content_html || escapePlain(post.text_content),
-      image_url: post.image_url,
-      media: mediaMap[post.id] || (post.image_url ? [post.image_url] : []),
-      created_at: post.created_at,
-      comment_count: cc?.n || 0,
-      likes: likesRaw ? parseInt(likesRaw, 10) : 0,
-      views: post.view_count || 0,
-      __liked: liked,
-      __bookmarked: bookmarked,
-      geo: post.geo_place ? { place: post.geo_place, lat: post.geo_lat, lng: post.geo_lng } : null,
-      business: {
-        id: post.business_id,
-        name: post.business_name,
-        type: post.business_type,
-        region: post.region,
-        district: post.district,
-        city: post.city,
-        country_code: post.business_country || null,
-        is_verified: !!post.is_verified,
-        logo_url: post.logo_url,
-      },
-      __feedKey: post.target_feed === 'organization' ? 'organization' : post.target_feed === 'accommodation' ? 'accommodation' : 'gastro',
+function updateLikeButtonsDOM(postId, liked, likes) {
+  document.querySelectorAll(`[data-action="toggle-post-like"][data-id="${postId}"]`).forEach((btn) => {
+    btn.classList.toggle('is-liked', !!liked);
+    btn.innerHTML = icon('clover', { size: 22, filled: !!liked });
+  });
+
+  document.querySelectorAll(`[data-like-count="${postId}"]`).forEach((el) => {
+    el.textContent = likes > 0 ? `${fmt(likes)} ${t('feed.likesMe')}` : t('feed.likesMe');
+  });
+
+  if (state.lightbox?.post?.id === postId) {
+    const stat = document.querySelector('.lightbox-stat');
+    if (stat) stat.textContent = `${fmt(likes)} ${t('post.like')}`;
+  }
+}
+
+async function toggleBookmark(postId, btnEl) {
+  if (!isLoggedIn()) { showToast(t('post.loginToComment')); switchTab('account'); return; }
+  try {
+    const data = await apiPost(`/api/feed/${postId}/bookmark`, {});
+    updatePostEverywhere(postId, (p) => { p.__bookmarked = !!data.bookmarked; });
+
+    document.querySelectorAll(`[data-action="toggle-bookmark"][data-id="${postId}"]`).forEach((b) => {
+      b.classList.toggle('is-bookmarked', !!data.bookmarked);
+      b.innerHTML = icon('bookmark', { size: 20, filled: !!data.bookmarked });
+    });
+
+    showToast(data.bookmarked ? t('toasts.saved') : t('toasts.removedFromWishlist'));
+  } catch (err) { showToast(err.message); }
+}
+
+async function sharePost(postId, text) {
+  const url = `${location.origin}${location.pathname}?post=${encodeURIComponent(postId)}`;
+  if (navigator.share) {
+    try { await navigator.share({ title: 'VANDRO', text: text || '', url }); return; } catch { return; }
+  }
+  try { await navigator.clipboard.writeText(url); showToast(t('toasts.copied')); }
+  catch { showToast(t('toasts.shareFailed')); }
+}
+
+function renderFeedPage(feedKey, typeOptions, showCuisine) {
+  const title = getFeedTitle(feedKey);
+  return `
+    <div class="page-scroll">
+      ${renderHeader(title, `
+        <button class="header-icon-btn" data-action="open-nearby" aria-label="${escapeAttr(t('nearby.title'))}">${icon('location', { size: 19 })}</button>
+        <button class="header-icon-btn" data-action="open-search" aria-label="${escapeAttr(t('search.title'))}">${icon('search', { size: 19 })}</button>
+      `)}
+      ${renderStoriesBar(feedKey)}
+      ${renderFilterBar(feedKey, typeOptions, showCuisine)}
+      ${renderSocialFeedBody(feedKey)}
+    </div>`;
+}
+
+function renderSocialFeedBody(feedKey) {
+  const f = state.socialFeeds[feedKey];
+  const items = f.items;
+  if (state.loading[feedKey] && items.length === 0) return `<p class="empty-state">${escapeHtml(t('feed.loadingPosts'))}</p>`;
+  if (items.length === 0) return `<p class="empty-state">${escapeHtml(t('feed.noPosts'))}</p>`;
+  return `
+    <div class="post-feed-grid">${items.map((p) => renderSocialPostCard(p, feedKey)).join('')}</div>
+    ${f.loading_more ? `<p class="empty-state">${escapeHtml(t('common.loadingMore'))}</p>` : ''}
+    ${f.next_cursor ? `<div data-load-more style="height:1px"></div>` : ''}
+  `;
+}
+
+function reportPost(postId) {
+  if (!isLoggedIn()) { showToast(t('post.loginToComment')); switchTab('account'); return; }
+  openModal({
+    title: t('post.reportTitle'),
+    body: `
+      <div class="form-field">
+        <label class="form-label">${escapeHtml(t('post.reportReason'))}</label>
+        <textarea class="form-textarea" name="reason" rows="3" maxlength="500" placeholder="${escapeAttr(t('post.reportReasonPlaceholder'))}"></textarea>
+      </div>`,
+    submitLabel: t('post.reportSend'),
+    danger: true,
+    onSubmit: async (data) => {
+      state._modalLoading = true; renderApp();
+      try {
+        await apiPost(`/api/feed/${postId}/report`, { reason: data.reason || null });
+        closeModal();
+        showToast(t('toasts.reportSent'));
+      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
     },
   });
-});
+}
 
-feedRoutes.post('/:id/view', async (c) => {
-  const postId = c.req.param('id');
+function deletePost(postId, feedKey) {
+  openModal({
+    title: t('post.deleteTitle'),
+    body: `<p style="font-size:14px;line-height:1.6">${escapeHtml(t('post.deleteText'))}</p>`,
+    submitLabel: t('common.delete'),
+    danger: true,
+    onSubmit: async () => {
+      state._modalLoading = true; renderApp();
+      try {
+        await apiDelete(`/api/feed/post/${postId}`);
+        if (state.socialFeeds[feedKey]) state.socialFeeds[feedKey].items = state.socialFeeds[feedKey].items.filter((p) => p.id !== postId);
+        if (state.lightbox?.post?.id === postId) closeLightbox();
+        closeModal();
+        showToast(t('toasts.postDeleted'));
+      } catch (err) { showToast(err.message); state._modalLoading = false; renderApp(); }
+    },
+  });
+}
+
+async function deleteComment(commentId, feedKey, postId) {
   try {
-    await c.env.DB.prepare(`UPDATE posts SET view_count = COALESCE(view_count, 0) + 1 WHERE id = ? AND status = 'published'`).bind(postId).run();
-  } catch {}
-  return c.json({ ok: true });
-});
-
-feedRoutes.post('/:id/like', async (c) => {
-  const user = c.get('user');
-  const postId = c.req.param('id');
-  const post = await c.env.DB.prepare(`SELECT id, user_id FROM posts WHERE id = ? AND status = 'published'`).bind(postId).first();
-  if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
-
-  const likeKey = `like:post:${postId}:${user.sub}`;
-  const existing = await c.env.NASKRAJ_LAJKY.get(likeKey);
-  const curRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${postId}`);
-  let cur = curRaw ? parseInt(curRaw, 10) : 0;
-
-  if (existing) {
-    await c.env.NASKRAJ_LAJKY.delete(likeKey);
-    cur = Math.max(0, cur - 1);
-    await c.env.NASKRAJ_LAJKY.put(`likecount:post:${postId}`, String(cur));
-    return c.json({ liked: false, likes: cur });
-  }
-
-  await c.env.NASKRAJ_LAJKY.put(likeKey, '1');
-  cur = cur + 1;
-  await c.env.NASKRAJ_LAJKY.put(`likecount:post:${postId}`, String(cur));
-
-  if (post.user_id && post.user_id !== user.sub) {
-    try {
-      const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
-      const actorName = actor?.display_name || 'Někdo';
-
-      await c.env.DB.prepare(
-        `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
-         VALUES (?, ?, 'like', ?, 'post', ?, 'dal(a) iskru tvému příspěvku')`,
-      ).bind(newId('notif'), post.user_id, user.sub, postId).run();
-
-      await sendPushToUser(c.env, post.user_id, {
-        title: 'Nová iskra',
-        body: `${actorName} dal(a) iskru tvému příspěvku`,
-        url: `/?post=${postId}`,
-        tag: `like-${postId}`,
-      });
-    } catch (err) { console.warn('[like] notif/push zlyhal:', err.message); }
-  }
-
-  return c.json({ liked: true, likes: cur }, 201);
-});
-
-feedRoutes.get('/bookmarks', async (c) => {
-  const user = c.get('user');
-  const { results } = await c.env.DB.prepare(
-    `SELECT posts.id, posts.text_content, posts.content_html, posts.image_url, posts.created_at, posts.target_feed,
-            organizations.name AS org_name, accommodation.name AS acc_name, restaurants.name AS rest_name
-     FROM bookmarks
-     JOIN posts ON posts.id = bookmarks.post_id
-     LEFT JOIN organizations ON organizations.id = posts.business_id AND posts.target_feed = 'organization'
-     LEFT JOIN accommodation ON accommodation.id = posts.business_id AND posts.target_feed = 'accommodation'
-     LEFT JOIN restaurants ON restaurants.id = posts.business_id AND posts.target_feed = 'gastro'
-     WHERE bookmarks.user_id = ? AND posts.status = 'published'
-     ORDER BY bookmarks.created_at DESC LIMIT 100`,
-  ).bind(user.sub).all();
-  return c.json({ bookmarks: results });
-});
-
-feedRoutes.post('/:id/bookmark', async (c) => {
-  const user = c.get('user');
-  const postId = c.req.param('id');
-  const post = await c.env.DB.prepare(`SELECT id FROM posts WHERE id = ? AND status = 'published'`).bind(postId).first();
-  if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
-  const existing = await c.env.DB.prepare(`SELECT 1 FROM bookmarks WHERE user_id = ? AND post_id = ?`).bind(user.sub, postId).first();
-  if (existing) {
-    await c.env.DB.prepare(`DELETE FROM bookmarks WHERE user_id = ? AND post_id = ?`).bind(user.sub, postId).run();
-    return c.json({ bookmarked: false });
-  }
-  await c.env.DB.prepare(`INSERT INTO bookmarks (user_id, post_id) VALUES (?, ?)`).bind(user.sub, postId).run();
-  return c.json({ bookmarked: true }, 201);
-});
-
-feedRoutes.get('/:id/bookmarked', async (c) => {
-  const user = c.get('user');
-  const postId = c.req.param('id');
-  const row = await c.env.DB.prepare(`SELECT 1 FROM bookmarks WHERE user_id = ? AND post_id = ?`).bind(user.sub, postId).first();
-  return c.json({ bookmarked: !!row });
-});
-
-feedRoutes.patch('/post/:id', async (c) => {
-  const user = c.get('user');
-  const id = c.req.param('id');
-  const body = await c.req.json().catch(() => ({}));
-  const contentHtml = typeof body.html === 'string' ? sanitizeHtml(body.html) : null;
-  const plainText = contentHtml != null ? htmlToPlain(contentHtml) : null;
-
-  if (!contentHtml && plainText == null) return c.json({ error: 'Chýba text.' }, 400);
-  if (plainText && plainText.length > 3000) return c.json({ error: 'Text je příliš dlouhý.' }, 400);
-
-  const post = await c.env.DB.prepare(`SELECT id, user_id, status FROM posts WHERE id = ?`).bind(id).first();
-  if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
-  if (post.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
-  if (post.status === 'removed') return c.json({ error: 'Příspěvek byl smazán.' }, 400);
-
-  if (plainText) {
-    const mod = checkText(plainText);
-    if (!mod.clean && mod.severity >= 2) {
-      await flagContent(c.env, { userId: user.sub, postId: id, reason: mod.reason, severity: mod.severity });
-      return c.json({ error: 'Zakázaný obsah.' }, 400);
+    await apiDelete(`/api/feed/comment/${commentId}`);
+    if (state.lightbox?.post?.id === postId) {
+      try {
+        const c = await apiGet(`/api/feed/${postId}/comments`);
+        state.lightbox.post.__comments = c.comments || [];
+        state.lightbox.post.comment_count = c.total || 0;
+        updateLightboxDOM();
+      } catch {}
     }
+    showToast(t('toasts.deleted'));
+  } catch (err) { showToast(err.message); }
+}
+
+async function openPostFromProfile(postId, kind, businessId) {
+  const cacheKey = `${kind}:${businessId}`;
+  const d = state.profiles[cacheKey];
+  if (!d || !d.posts) return;
+  const post = d.posts.find((p) => p.id === postId);
+  if (!post) return;
+  const media = post.media || (post.image_url ? [post.image_url] : []);
+  if (!media.length) return;
+  post.__feedKey = d.feedKey || null;
+  openLightbox(media, 0, getPostTextLang(post), post);
+}
+
+async function loadBookmarks() {
+  try {
+    const data = await apiGet('/api/feed/bookmarks');
+    state._bookmarks = data.bookmarks || [];
+  } catch { state._bookmarks = []; }
+  if (state.overlay?.type === 'bookmarks') renderApp();
+}
+
+function renderBookmarksOverlay() {
+  const list = state._bookmarks;
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader(t('settings.savedPosts'))}
+      <div class="profile-section">
+        ${list == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
+          : list.length === 0 ? `<p class="empty-state">${escapeHtml(t('wishlist.empty'))}</p>`
+          : list.map((b) => {
+            const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+            const txt = (lang === 'en' && b.text_content_en) ? b.text_content_en : (b.text_content || '');
+            return `
+            <button class="user-list-item" data-action="open-post-bookmark" data-id="${b.id}">
+              ${b.image_url ? `<img src="${b.image_url}" class="user-list-avatar" style="border-radius:12px" alt="" />` : `<span class="user-list-avatar user-list-avatar-init">${icon('image', { size: 18 })}</span>`}
+              <div style="flex:1;min-width:0">
+                <p class="user-list-name">${escapeHtml(b.org_name || b.acc_name || b.rest_name || '')}</p>
+                <p class="user-list-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;">${escapeHtml(txt.slice(0, 80))}</p>
+              </div>
+            </button>`;
+          }).join('')}
+      </div>
+    </div>`;
+}
+
+function openEditPost(postId, feedKey) {
+  const post = findPostAnywhere(postId);
+  if (!post) return;
+  state.overlayStack.push(state.overlay);
+  state.overlay = {
+    type: 'edit-post',
+    postId,
+    feedKey,
+    html: getPostHtmlLang(post),
+    html_en: post.html_en || '',
+  };
+  pushHistoryState('overlay');
+  renderApp();
+}
+
+function renderEditPostOverlay() {
+  const { postId, feedKey, html, html_en } = state.overlay;
+  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+  return `
+    <div class="page-scroll">
+      ${renderBackHeader(t('post.writeEdit'))}
+      <div class="profile-section">
+        <form data-action="submit-edit-post" data-post-id="${postId}" data-feed="${feedKey}">
+          ${renderRichEditor('text_html', t('post.textPlaceholder'), html)}
+          <details class="edit-post-en-toggle" style="margin-top:6px">
+            <summary style="cursor:pointer;font-size:12.5px;color:var(--c-text-muted);font-weight:700;padding:8px 0;">🌐 ${escapeHtml(t('post.englishVersion'))}</summary>
+            <div style="margin-top:8px">
+              ${renderRichEditor('text_html_en', t('post.textPlaceholderEn'), html_en)}
+            </div>
+          </details>
+          <button class="form-submit-btn" type="submit">${escapeHtml(t('post.saveChanges'))}</button>
+        </form>
+      </div>
+    </div>`;
+}
+
+async function handleEditPostSubmit(form) {
+  const postId = form.dataset.postId;
+  const feedKey = form.dataset.feed;
+  const html = getEditorHtml(form);
+  const htmlEnEl = form.querySelector('[name="text_html_en"]');
+  const htmlEn = htmlEnEl ? htmlEnEl.value : '';
+
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn) { btn.disabled = true; btn.textContent = t('common.saving'); }
+
+  try {
+    const payload = { html };
+    if (htmlEn && htmlEn.trim() && htmlEn !== '<br>') payload.html_en = htmlEn;
+    const res = await apiPatch(`/api/feed/post/${postId}`, payload);
+    updatePostEverywhere(postId, (p) => {
+      if (res.html != null) p.html = res.html;
+      if (res.text != null) p.text = res.text;
+      if (res.html_en !== undefined) p.html_en = res.html_en;
+      if (res.text_en !== undefined) p.text_en = res.text_en;
+    });
+    closeOverlay();
+    showToast(t('toasts.saved'));
+  } catch (err) {
+    showToast(err.message);
+    if (btn) { btn.disabled = false; btn.textContent = t('post.saveChanges'); }
   }
+}
 
-  await c.env.DB.prepare(`UPDATE posts SET text_content = ?, content_html = ? WHERE id = ?`)
-    .bind(plainText, contentHtml, id).run();
+async function submitLightboxComment(postId, feedKey, text, parentId = null) {
+  if (!text.trim()) return;
+  if (!isLoggedIn()) { showToast(t('post.loginToComment')); return; }
 
-  if (plainText) await saveHashtags(c.env, id, plainText);
+  try {
+    const payload = { text: text.trim() };
+    if (parentId) payload.parent_id = parentId;
+    await apiPost(`/api/feed/${postId}/comment`, payload);
 
-  return c.json({ ok: true, id, text: plainText, html: contentHtml });
-});
-
-feedRoutes.delete('/post/:id', async (c) => {
-  const user = c.get('user');
-  const id = c.req.param('id');
-
-  const post = await c.env.DB.prepare(
-    'SELECT id, user_id, image_url FROM posts WHERE id = ?',
-  ).bind(id).first();
-  if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
-  if (post.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
-
-  const { results: mediaRows } = await c.env.DB.prepare(
-    `SELECT image_url FROM post_media WHERE post_id = ?`,
-  ).bind(id).all();
-
-  const allUrls = [
-    post.image_url,
-    ...(mediaRows || []).map((m) => m.image_url),
-  ].filter(Boolean);
-
-  await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE id = ?`).bind(id).run();
-  await c.env.DB.prepare(`DELETE FROM post_media WHERE post_id = ?`).bind(id).run();
-  await c.env.DB.prepare(`DELETE FROM post_hashtags WHERE post_id = ?`).bind(id).run();
-
-  await deletePostMediaFromR2(c.env, allUrls);
-
-  return c.json({ ok: true, deleted_media: allUrls.length });
-});
-
-feedRoutes.delete('/comment/:id', async (c) => {
-  const user = c.get('user');
-  const id = c.req.param('id');
-  const row = await c.env.DB.prepare('SELECT id, user_id FROM comments WHERE id = ?').bind(id).first();
-  if (!row) return c.json({ error: 'Nenalezeno.' }, 404);
-  if (row.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
-  await c.env.DB.prepare('DELETE FROM comments WHERE id = ?').bind(id).run();
-  return c.json({ ok: true });
-});
-
-feedRoutes.get('/:id/comments', async (c) => {
-  const postId = c.req.param('id');
-  const viewerId = await getViewerId(c, c.env);
-  const blockedIds = await getBlockedIds(c.env, viewerId);
-
-  const { results } = await c.env.DB.prepare(
-    `SELECT comments.id, comments.comment_text, comments.created_at, comments.parent_id,
-            users.id AS user_id, users.display_name AS user_name, users.handle AS user_handle, users.avatar_url AS user_avatar
-     FROM comments JOIN users ON users.id = comments.user_id
-     WHERE post_id = ? ORDER BY comments.created_at ASC`,
-  ).bind(postId).all();
-
-  const filtered = results.filter((r) => !blockedIds.has(r.user_id));
-  const byId = {};
-  const roots = [];
-  for (const r of filtered) byId[r.id] = { ...r, replies: [] };
-  for (const r of filtered) {
-    if (r.parent_id && byId[r.parent_id]) byId[r.parent_id].replies.push(byId[r.id]);
-    else roots.push(byId[r.id]);
-  }
-  return c.json({ comments: roots, total: filtered.length });
-});
-
-feedRoutes.post('/:id/comment', async (c) => {
-  const user = c.get('user');
-  const postId = c.req.param('id');
-  const rl = await rateLimit(c.env, 'comment', user.sub, 60, 3600);
-  if (!rl.ok) return c.json({ error: 'Příliš mnoho komentářů.' }, 429);
-
-  const body = await c.req.json().catch(() => ({}));
-  const text = (body.text || '').trim();
-  const parentId = body.parent_id ? String(body.parent_id) : null;
-  if (!text) return c.json({ error: 'Prázdný komentář.' }, 400);
-
-  const mod = checkText(text);
-  if (!mod.clean && mod.severity >= 2) {
-    await flagContent(c.env, { userId: user.sub, reason: mod.reason, severity: mod.severity });
-    return c.json({ error: 'Zakázaný obsah.' }, 400);
-  }
-
-  const post = await c.env.DB.prepare(`SELECT id, user_id FROM posts WHERE id = ? AND status = 'published'`).bind(postId).first();
-  if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
-
-  let parentComment = null;
-  if (parentId) {
-    parentComment = await c.env.DB.prepare('SELECT id, user_id FROM comments WHERE id = ? AND post_id = ?').bind(parentId, postId).first();
-    if (!parentComment) return c.json({ error: 'Nadřazený komentář nenalezen.' }, 400);
-  }
-
-  const id = newId('comment');
-  await c.env.DB.prepare('INSERT INTO comments (id, post_id, user_id, comment_text, parent_id) VALUES (?, ?, ?, ?, ?)')
-    .bind(id, postId, user.sub, text, parentId).run();
-
-  const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
-  const actorName = actor?.display_name || 'Někdo';
-  const preview = text.length > 80 ? text.slice(0, 77) + '…' : text;
-
-  if (post.user_id && post.user_id !== user.sub) {
+    let newComments = null;
+    let newTotal = null;
     try {
-      await c.env.DB.prepare(
-        `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
-         VALUES (?, ?, 'comment', ?, 'post', ?, 'okomentoval(a) tvůj příspěvek')`,
-      ).bind(newId('notif'), post.user_id, user.sub, postId).run();
+      const c = await apiGet(`/api/feed/${postId}/comments`);
+      newComments = c.comments || [];
+      newTotal = (c.total != null) ? c.total : newComments.length;
+    } catch {}
 
-      await sendPushToUser(c.env, post.user_id, {
-        title: 'Nový komentář',
-        body: `${actorName}: ${preview}`,
-        url: `/?post=${postId}`,
-        tag: `comment-${postId}`,
+    if (state.lightbox?.post?.id === postId) {
+      if (newComments) state.lightbox.post.__comments = newComments;
+      if (newTotal != null) state.lightbox.post.comment_count = newTotal;
+      updateLightboxDOM();
+    }
+
+    updatePostEverywhere(postId, (p) => {
+      if (newTotal != null) p.comment_count = newTotal;
+      if (newComments) p.__comments = newComments;
+    });
+
+    if (newTotal != null) {
+      document.querySelectorAll(`.post-card[data-post-id="${postId}"] .post-action-badge`).forEach((badge) => {
+        badge.textContent = newTotal > 99 ? '99+' : String(newTotal);
       });
-    } catch (err) { console.warn('[comment] notif/push zlyhal:', err.message); }
+    }
+
+    showToast(parentId ? t('post.replyAdded') : t('toasts.commentAdded'));
+  } catch (err) {
+    showToast(err.message);
   }
-
-  if (parentComment && parentComment.user_id !== user.sub && parentComment.user_id !== post.user_id) {
-    try {
-      await c.env.DB.prepare(
-        `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
-         VALUES (?, ?, 'reply', ?, 'post', ?, 'odpověděl(a) na tvůj komentář')`,
-      ).bind(newId('notif'), parentComment.user_id, user.sub, postId).run();
-
-      await sendPushToUser(c.env, parentComment.user_id, {
-        title: 'Odpověď na komentář',
-        body: `${actorName}: ${preview}`,
-        url: `/?post=${postId}`,
-        tag: `reply-${id}`,
-      });
-    } catch (err) { console.warn('[reply] notif/push zlyhal:', err.message); }
-  }
-
-  return c.json({ id, post_id: postId, parent_id: parentId, text, created_at: new Date().toISOString() }, 201);
-});
-
-feedRoutes.post('/:id/report', async (c) => {
-  const user = c.get('user');
-  const postId = c.req.param('id');
-  const body = await c.req.json().catch(() => ({}));
-  const post = await c.env.DB.prepare('SELECT id, user_id, report_count, hidden_by_reports FROM posts WHERE id = ?').bind(postId).first();
-  if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
-
-  const id = newId('report');
-  await c.env.DB.prepare('INSERT INTO reports (id, post_id, reporter_id, reason) VALUES (?, ?, ?, ?)')
-    .bind(id, postId, user.sub, body.reason || null).run();
-
-  const newCount = (post.report_count || 0) + 1;
-  await c.env.DB.prepare('UPDATE posts SET report_count = ? WHERE id = ?').bind(newCount, postId).run();
-
-  const HIDE_THRESHOLD = 5;
-  if (newCount >= HIDE_THRESHOLD && !post.hidden_by_reports) {
-    await c.env.DB.prepare(
-      `UPDATE posts SET status = 'hidden_by_reports', hidden_by_reports = 1 WHERE id = ?`
-    ).bind(postId).run();
-
-    try {
-      await c.env.DB.prepare(
-        `INSERT INTO notifications (id, user_id, type, entity_type, entity_id, text)
-         VALUES (?, ?, 'moderation_hidden', 'post', ?, ?)`,
-      ).bind(newId('notif'), post.user_id, postId,
-        'Tvůj příspěvek byl dočasně skryt kvůli vyššímu počtu nahlášení. Provozovatel jej posoudí.').run();
-
-      await sendPushToUser(c.env, post.user_id, {
-        title: 'Příspěvek dočasně skryt',
-        body: 'Tvůj příspěvek byl dočasně skryt kvůli nahlášením.',
-        url: '/',
-      });
-    } catch (err) { console.warn('auto-hide notif failed:', err); }
-  }
-
-  return c.json({ id, ok: true, report_count: newCount }, 201);
-});
-
-export { saveHashtags, deletePostMediaFromR2 };
+}
