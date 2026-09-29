@@ -27,11 +27,14 @@ async function updateLastLogin(env, userId, ip) {
   } catch (err) { console.warn('updateLastLogin failed:', err.message); }
 }
 
-function buildBusinessesList(user, acc, rest, orgs) {
+async function loadBusinesses(env, user) {
   if (user.role === 'organization') {
+    const orgs = await env.DB.prepare('SELECT id, name, is_verified FROM organizations WHERE user_id = ?').bind(user.id).all();
     return (orgs.results || []).map((r) => ({ ...r, kind: 'organization' }));
   }
   if (user.role === 'hotelier') {
+    const acc = await env.DB.prepare('SELECT id, name, is_verified FROM accommodation WHERE user_id = ?').bind(user.id).all();
+    const rest = await env.DB.prepare('SELECT id, name, is_verified FROM restaurants WHERE user_id = ?').bind(user.id).all();
     return [
       ...(acc.results || []).map((r) => ({ ...r, kind: 'accommodation' })),
       ...(rest.results || []).map((r) => ({ ...r, kind: 'gastro' })),
@@ -40,17 +43,14 @@ function buildBusinessesList(user, acc, rest, orgs) {
   return [];
 }
 
-async function loadBusinesses(env, user) {
-  if (user.role === 'organization') {
-    const orgs = await env.DB.prepare('SELECT id, name, is_verified FROM organizations WHERE user_id = ?').bind(user.id).all();
-    return buildBusinessesList(user, { results: [] }, { results: [] }, orgs);
-  }
-  if (user.role === 'hotelier') {
-    const acc = await env.DB.prepare('SELECT id, name, is_verified FROM accommodation WHERE user_id = ?').bind(user.id).all();
-    const rest = await env.DB.prepare('SELECT id, name, is_verified FROM restaurants WHERE user_id = ?').bind(user.id).all();
-    return buildBusinessesList(user, acc, rest, { results: [] });
-  }
-  return [];
+// Detekce země z kraje (záloha pokud neuživatel nezadal country_code explicitně)
+function detectCountryFromRegion(region) {
+  if (!region) return null;
+  const skKeywords = ['Bratislavský', 'Trnavský', 'Trenčiansky', 'Nitriansky', 'Žilinský', 'Banskobystrický', 'Prešovský', 'Košický'];
+  const czKeywords = ['Praha', 'Středočeský', 'Jihočeský', 'Plzeňský', 'Karlovarský', 'Ústecký', 'Liberecký', 'Královéhradecký', 'Pardubický', 'Vysočina', 'Jihomoravský', 'Olomoucký', 'Zlínský', 'Moravskoslezský'];
+  for (const k of skKeywords) if (region.includes(k)) return 'sk';
+  for (const k of czKeywords) if (region.includes(k)) return 'cz';
+  return null;
 }
 
 authRoutes.post('/register', async (c) => {
@@ -97,10 +97,17 @@ authRoutes.post('/register', async (c) => {
 
   const handle = await generateUniqueHandle(c.env, handleBase);
 
+  // Geo data (pro org/hotelier)
+  const geoLat = body.geo_lat != null && body.geo_lat !== '' ? parseFloat(body.geo_lat) : null;
+  const geoLng = body.geo_lng != null && body.geo_lng !== '' ? parseFloat(body.geo_lng) : null;
+  const geoPlace = (body.geo_place || body.address || '').toString().slice(0, 250) || null;
+  const address = (body.address || '').toString().slice(0, 250) || null;
+  const countryCode = (body.country_code || '').toString().slice(0, 4) || null;
+
   await c.env.DB.prepare(
-    `INSERT INTO users (id, email, password_hash, password_salt, display_name, handle, role, credit_balance, terms_accepted_at, terms_version, age_confirmed, email_verified, auth_provider)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), '1.0', 1, 0, 'password')`,
-  ).bind(userId, lower, hash, salt, finalDisplayName, handle, role).run();
+    `INSERT INTO users (id, email, password_hash, password_salt, display_name, handle, role, credit_balance, terms_accepted_at, terms_version, age_confirmed, email_verified, auth_provider, country_code, geo_lat, geo_lng, geo_city)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), '1.0', 1, 0, 'password', ?, ?, ?, ?)`,
+  ).bind(userId, lower, hash, salt, finalDisplayName, handle, role, countryCode, geoLat, geoLng, geoPlace).run();
 
   let business = null;
 
@@ -110,11 +117,17 @@ authRoutes.post('/register', async (c) => {
       return c.json({ error: 'Pre organizáciu vyžadujeme názov, typ, kraj, okres a obec.' }, 400);
     }
     const orgId = newId('org');
+    const finalCountry = countryCode || detectCountryFromRegion(region);
     await c.env.DB.prepare(
-      `INSERT INTO organizations (id, user_id, name, type, region, district, city, description, is_verified)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-    ).bind(orgId, userId, orgName, orgType, region, district, city, description || '').run();
-    business = { id: orgId, kind: 'organization', name: orgName };
+      `INSERT INTO organizations (id, user_id, name, type, region, district, city, address, description, is_verified, geo_lat, geo_lng, geo_place, country_code)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+    ).bind(
+      orgId, userId, orgName, orgType, region, district, city,
+      address || geoPlace || null,
+      description || '',
+      geoLat, geoLng, geoPlace, finalCountry,
+    ).run();
+    business = { id: orgId, kind: 'organization', name: orgName, address: address || geoPlace };
   }
 
   if (role === 'hotelier') {
@@ -122,20 +135,32 @@ authRoutes.post('/register', async (c) => {
     if (!businessName || !businessKind || !businessType || !region || !district || !city) {
       return c.json({ error: 'Pre podnik vyžadujeme názov, druh, typ, kraj, okres a obec.' }, 400);
     }
+    const finalCountry = countryCode || detectCountryFromRegion(region);
     if (businessKind === 'accommodation') {
       const accId = newId('acc');
       await c.env.DB.prepare(
-        `INSERT INTO accommodation (id, user_id, name, type, region, district, city, description, capacity, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(accId, userId, businessName, businessType, region, district, city, description || '', capacity || null).run();
-      business = { id: accId, kind: 'accommodation', name: businessName };
+        `INSERT INTO accommodation (id, user_id, name, type, region, district, city, address, description, capacity, is_verified, geo_lat, geo_lng, geo_place, country_code)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+      ).bind(
+        accId, userId, businessName, businessType, region, district, city,
+        address || geoPlace || null,
+        description || '',
+        capacity || null,
+        geoLat, geoLng, geoPlace, finalCountry,
+      ).run();
+      business = { id: accId, kind: 'accommodation', name: businessName, address: address || geoPlace };
     } else if (businessKind === 'gastro') {
       const restId = newId('rest');
       await c.env.DB.prepare(
-        `INSERT INTO restaurants (id, user_id, name, type, cuisine_type, region, district, city, description, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(restId, userId, businessName, businessType, cuisineType || null, region, district, city, description || '').run();
-      business = { id: restId, kind: 'gastro', name: businessName };
+        `INSERT INTO restaurants (id, user_id, name, type, cuisine_type, region, district, city, address, description, is_verified, geo_lat, geo_lng, geo_place, country_code)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+      ).bind(
+        restId, userId, businessName, businessType, cuisineType || null, region, district, city,
+        address || geoPlace || null,
+        description || '',
+        geoLat, geoLng, geoPlace, finalCountry,
+      ).run();
+      business = { id: restId, kind: 'gastro', name: businessName, address: address || geoPlace };
     } else {
       return c.json({ error: 'businessKind musí byť "accommodation" alebo "gastro".' }, 400);
     }
@@ -256,7 +281,6 @@ authRoutes.post('/login', async (c) => {
   );
 
   const businesses = await loadBusinesses(c.env, user);
-
   return c.json({ token, user: publicUser(user), businesses });
 });
 
@@ -349,7 +373,6 @@ authRoutes.post('/verify-2fa', async (c) => {
   );
 
   const businesses = await loadBusinesses(c.env, user);
-
   return c.json({ token, user: publicUser(user), businesses, recovery_remaining: updatedCodes?.length });
 });
 
