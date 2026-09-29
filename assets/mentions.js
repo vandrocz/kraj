@@ -1,3 +1,7 @@
+// ============================================================
+// MENTIONS — @zmienky v rich editore
+// ============================================================
+
 let mentionPickerEl = null;
 let mentionQuery = '';
 let mentionResults = [];
@@ -9,6 +13,15 @@ function openMentionPicker(editorEl) {
   mentionQuery = '';
   mentionResults = [];
   renderMentionPicker();
+  // Po prvom otvorení počúvaj klik mimo
+  if (!openMentionPicker._outsideBound) {
+    openMentionPicker._outsideBound = true;
+    document.addEventListener('mousedown', (e) => {
+      if (!mentionPickerEl) return;
+      if (mentionPickerEl.contains(e.target)) return;
+      closeMentionPicker();
+    });
+  }
 }
 
 function renderMentionPicker() {
@@ -21,11 +34,14 @@ function renderMentionPicker() {
   mentionPickerEl.innerHTML = `
     <div class="mention-picker-head">Zmínit uživatele</div>
     <div class="mention-picker-list">
-      ${mentionResults.length === 0 ? '<p class="mention-empty">Piš jméno…</p>'
+      ${mentionResults.length === 0
+        ? '<p class="mention-empty">Piš jméno…</p>'
         : mentionResults.map((u) => `
-          <button type="button" class="mention-item" data-action="insert-mention" data-name="${escapeAttr(u.display_name)}">
-            ${u.avatar_url ? `<img src="${u.avatar_url}" class="mention-avatar" />` : `<span class="mention-avatar mention-avatar-init">${(u.display_name || '?').charAt(0).toUpperCase()}</span>`}
-            <span>${escapeHtml(u.display_name)}</span>
+          <button type="button" class="mention-item" data-action="insert-mention" data-name="${escapeAttr(u.display_name)}" data-handle="${escapeAttr(u.handle || '')}">
+            ${u.avatar_url
+              ? `<img src="${escapeAttr(u.avatar_url)}" class="mention-avatar" alt="" />`
+              : `<span class="mention-avatar mention-avatar-init">${(u.display_name || '?').charAt(0).toUpperCase()}</span>`}
+            <span>${escapeHtml(u.display_name)}${u.handle ? ` <small style="opacity:.6">@${escapeHtml(u.handle)}</small>` : ''}</span>
           </button>`).join('')}
     </div>
   `;
@@ -44,19 +60,27 @@ function onMentionInput(value) {
   }, 220);
 }
 
-function insertMention(name) {
+function insertMention(name, handle) {
   if (mentionEditor) {
     mentionEditor.focus();
-    document.execCommand('insertText', false, `@${name} `);
+    // Vlož handle ak existuje, inak display_name
+    const tag = handle || name;
+    document.execCommand('insertText', false, `@${tag} `);
     const wrap = mentionEditor.closest?.('[data-editor-wrap]');
-    if (wrap) { const h = wrap.querySelector('[data-rich-hidden]'); const c = wrap.querySelector('[data-rich-content]'); if (h && c) h.value = c.innerHTML; }
+    if (wrap) {
+      const h = wrap.querySelector('[data-rich-hidden]');
+      const c = wrap.querySelector('[data-rich-content]');
+      if (h && c) h.value = c.innerHTML;
+    }
   }
   closeMentionPicker();
 }
 
 function closeMentionPicker() {
-  mentionPickerEl?.remove();
-  mentionPickerEl = null;
+  if (mentionPickerEl) {
+    mentionPickerEl.remove();
+    mentionPickerEl = null;
+  }
   mentionResults = [];
   mentionQuery = '';
 }
