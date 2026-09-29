@@ -281,7 +281,7 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
     out = out.map((p) => ({ ...p, __score: scorePostForUser(p, {}) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
   } else if (sort === 'for_you') {
-    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedId: null, followedIds, userCity, userRegion }) })).sort((a, b) => b.__score - a.__score);
+    out = out.map((p) => ({ ...p, __score: scorePostForUser(p, { followedIds, userCity, userRegion }) })).sort((a, b) => b.__score - a.__score);
     out = out.slice(0, limit);
   } else {
     const hasMore = out.length > limit;
