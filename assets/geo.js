@@ -1,5 +1,5 @@
 // ============================================================
-// GEO — poloha, place search, map picker
+// GEO — poloha, place search, map picker, auto-fill kraj/okres/obec
 // ============================================================
 
 let _geoWatchId = null;
@@ -16,8 +16,7 @@ async function getCurrentLocation() {
 }
 
 /**
- * Reverse geocoding — vracia detailné údaje.
- * @returns {Promise<{ place, city, district, region, country_code, display_name }>}
+ * Reverse geocoding — vrací detailní údaje včetně kraje/okresu/obce.
  */
 async function reverseGeocode(lat, lng) {
   try {
@@ -29,19 +28,19 @@ async function reverseGeocode(lat, lng) {
       region: data.region || '',
       country_code: (data.country_code || '').toLowerCase(),
       display_name: data.display_name || data.place || '',
+      lat, lng,
     };
   } catch {
     const fallback = `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
     return {
       place: fallback, city: '', district: '', region: '',
-      country_code: '', display_name: fallback,
+      country_code: '', display_name: fallback, lat, lng,
     };
   }
 }
 
 // ------------------------------------------------------------
-// Place search — Nominatim cez náš backend
-// Vracia: [{ name, display_name, lat, lng, type, address: { city, district, region, country } }]
+// Place search — Nominatim přes náš backend
 // ------------------------------------------------------------
 let _placeSearchTimers = {};
 
@@ -61,7 +60,7 @@ async function searchPlaces(query, opts = {}) {
 }
 
 // ------------------------------------------------------------
-// Debounced live search pri písaní
+// Debounced live search
 // ------------------------------------------------------------
 function attachPlaceSearch(inputEl, opts = {}) {
   if (!inputEl) return;
@@ -84,8 +83,8 @@ function attachPlaceSearch(inputEl, opts = {}) {
       if (it.address?.city) metaParts.push(it.address.city);
       if (it.address?.district) metaParts.push(it.address.district);
       if (it.address?.region) metaParts.push(it.address.region);
-      if (it.address?.country === 'sk') metaParts.unshift('SK');
-      if (it.address?.country === 'cz') metaParts.unshift('CZ');
+      if (it.address?.country === 'sk') metaParts.unshift('🇸🇰');
+      else if (it.address?.country === 'cz') metaParts.unshift('🇨🇿');
       return `
         <button type="button" class="place-suggest-item" data-place-idx="${i}">
           <span class="place-suggest-name">${escapeHtml(it.name || it.display_name)}</span>
@@ -125,7 +124,7 @@ function attachPlaceSearch(inputEl, opts = {}) {
 
 // ------------------------------------------------------------
 // Map picker — Leaflet modal
-// Vracia: Promise<{ lat, lng, place, city, district, region, country_code, display_name } | null>
+// Vrací Promise<{ lat, lng, place, city, district, region, country_code, display_name } | null>
 // ------------------------------------------------------------
 function openMapPicker(opts = {}) {
   return new Promise((resolve) => {
@@ -230,7 +229,7 @@ function openMapPicker(opts = {}) {
       console.warn('Leaflet load failed:', err);
     });
 
-    // Search v pickeri
+    // Search v pickeru
     let searchTimer = null;
     searchInput.addEventListener('input', () => {
       clearTimeout(searchTimer);
@@ -290,7 +289,166 @@ function openMapPicker(opts = {}) {
 }
 
 // ------------------------------------------------------------
-// Pomocná: pripojí place-search input + tlačidlo na mapu
+// Automatické vyplnění kraje/okresu/obce z geocodéru
+// ------------------------------------------------------------
+async function fillRegionDistrictCityFromPlace(form, data) {
+  if (!form || !data) return;
+
+  const addr = data.address || {};
+  const city = addr.city || data.city || data.name || '';
+  const district = addr.district || data.district || '';
+  const region = addr.region || data.region || '';
+
+  const regionSelect = form.querySelector('select[name="region"]');
+  const districtSelect = form.querySelector('select[name="district"]');
+  const citySelect = form.querySelector('select[name="city"]');
+  const cityInput = form.querySelector('input[name="city"]');
+
+  // Kraj
+  if (regionSelect && region && typeof matchRegion === 'function') {
+    const matchedRegion = matchRegion(region);
+    if (matchedRegion) regionSelect.value = matchedRegion;
+  }
+
+  // Naplň okresy (nespoléhat na change event)
+  if (districtSelect && regionSelect?.value) {
+    const districts = REGIONS[regionSelect.value] || [];
+    districtSelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerSelectDistrict'))}</option>${districts.map((d) => `<option value="${escapeAttr(d)}">${escapeHtml(d)}</option>`).join('')}`;
+
+    if (district && typeof matchDistrict === 'function') {
+      const matchedDistrict = matchDistrict(regionSelect.value, district);
+      if (matchedDistrict) districtSelect.value = matchedDistrict;
+    }
+  }
+
+  // Naplň obce
+  if (citySelect && districtSelect?.value && typeof loadCitiesForDistrict === 'function') {
+    citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerLoadingCities'))}</option>`;
+    try {
+      const cities = await loadCitiesForDistrict(districtSelect.value);
+      if (cities.length > 0) {
+        citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerSelectCity'))}</option>` +
+          cities.map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join('');
+        if (city) {
+          const cityNorm = typeof normalizeStr === 'function' ? normalizeStr(city) : city.toLowerCase();
+          const cMatch = cities.find((c) => {
+            const cNorm = typeof normalizeStr === 'function' ? normalizeStr(c) : c.toLowerCase();
+            return cNorm === cityNorm;
+          });
+          if (cMatch) {
+            citySelect.value = cMatch;
+          } else {
+            const opt = document.createElement('option');
+            opt.value = city;
+            opt.textContent = city;
+            citySelect.appendChild(opt);
+            citySelect.value = city;
+          }
+        }
+      } else {
+        citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerNoCities'))}</option>`;
+      }
+    } catch {
+      citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerNoCities'))}</option>`;
+    }
+  } else if (cityInput && city) {
+    cityInput.value = city;
+  }
+}
+
+// ------------------------------------------------------------
+// Uloží geo data do datasetu formuláře
+// ------------------------------------------------------------
+function setFormGeoData(form, data) {
+  if (!form || !data) return;
+  if (data.lat != null) form.dataset.geoLat = String(data.lat);
+  if (data.lng != null) form.dataset.geoLng = String(data.lng);
+  form.dataset.geoPlace = data.display_name || data.place || '';
+  form.dataset.geoCountry = data.country_code || '';
+}
+
+// ------------------------------------------------------------
+// Sdílená logika: aplikuje vybrané místo do formuláře
+// - vyplní [data-place-input]
+// - vyplní kraj/okres/obec
+// - uloží geo do datasetu + hidden inputů (pro modal)
+// - vyplní [data-place-geo-label]
+// ------------------------------------------------------------
+async function applySelectedPlace(form, placeData) {
+  if (!form || !placeData) return;
+
+  const input = form.querySelector('[data-place-input]');
+  const displayName = placeData.display_name || placeData.place || placeData.name || '';
+  if (input && displayName) input.value = displayName;
+
+  await fillRegionDistrictCityFromPlace(form, placeData);
+  setFormGeoData(form, placeData);
+
+  // Hidden inputs (modal-based submit)
+  const hiddenLat = form.querySelector('[name="geo_lat"]');
+  const hiddenLng = form.querySelector('[name="geo_lng"]');
+  const hiddenPlace = form.querySelector('[name="geo_place"]');
+  const hiddenCountry = form.querySelector('[name="country_code"]');
+  if (hiddenLat) hiddenLat.value = String(placeData.lat ?? '');
+  if (hiddenLng) hiddenLng.value = String(placeData.lng ?? '');
+  if (hiddenPlace) hiddenPlace.value = displayName;
+  if (hiddenCountry) hiddenCountry.value = placeData.country_code || '';
+
+  const label = form.querySelector('[data-place-geo-label]');
+  if (label) label.textContent = displayName ? `📍 ${displayName}` : '';
+}
+
+// ------------------------------------------------------------
+// Klik na "Vybrat na mapě" — otevře map picker a aplikuje výsledek
+// ------------------------------------------------------------
+async function pickPlaceOnMap(buttonEl) {
+  const form = buttonEl?.closest('form');
+  if (!form) return;
+
+  const input = form.querySelector('[data-place-input]');
+  const initialLat = parseFloat(form.dataset.geoLat) || undefined;
+  const initialLng = parseFloat(form.dataset.geoLng) || undefined;
+
+  const result = await openMapPicker({
+    title: t('geo.pickOnMap'),
+    lat: initialLat,
+    lng: initialLng,
+  });
+  if (!result) return;
+
+  await applySelectedPlace(form, result);
+}
+
+// ------------------------------------------------------------
+// Bindne place-search na všechny [data-place-input] v DOM
+// Volá se po každém renderApp()
+// ------------------------------------------------------------
+function bindAllPlaceInputs(root = document) {
+  root.querySelectorAll('[data-place-input]').forEach((input) => {
+    if (input.dataset.placeBound === '1') return;
+    input.dataset.placeBound = '1';
+
+    const form = input.closest('form');
+
+    attachPlaceSearch(input, {
+      onSelect: async (item) => {
+        if (!form) return;
+        await applySelectedPlace(form, {
+          address: item.address || {},
+          name: item.name,
+          display_name: item.display_name,
+          place: item.name || item.display_name,
+          lat: item.lat,
+          lng: item.lng,
+          country_code: item.address?.country || '',
+        });
+      },
+    });
+  });
+}
+
+// ------------------------------------------------------------
+// Pomocná: attach inputu + map button
 // ------------------------------------------------------------
 function attachPlacePicker(inputEl, mapBtnEl, onSelect) {
   if (inputEl) {
@@ -347,91 +505,4 @@ async function saveMyLocation() {
     }
     showToast(t('toasts.locationSaved'));
   } catch (err) { showToast(err.message); }
-}
-
-// ============================================================
-// NOVÉ: Automatické vyplnenie kraja/okresu/obce z adresy
-// ============================================================
-
-/**
- * Vyplní polia `select[name="region"]`, `select[name="district"]`,
- * `select[name="city"]` (alebo `input[name="city"]`) na základe
- * výsledku z geocodéra (Nominatim).
- *
- * @param {HTMLFormElement} form - formulár s poľami
- * @param {Object} place - { address: { city, district, region }, name }
- */
-async function fillRegionDistrictCityFromPlace(form, place) {
-  if (!form || !place) return;
-
-  const addr = place.address || {};
-  const city = addr.city || place.city || place.name || '';
-  const district = addr.district || place.district || '';
-  const region = addr.region || place.region || '';
-
-  const regionSelect = form.querySelector('select[name="region"]');
-  const districtSelect = form.querySelector('select[name="district"]');
-  const citySelect = form.querySelector('select[name="city"]');
-  const cityInput = form.querySelector('input[name="city"]');
-
-  // Kraj
-  if (regionSelect && region && typeof matchRegion === 'function') {
-    const matchedRegion = matchRegion(region);
-    if (matchedRegion) regionSelect.value = matchedRegion;
-  }
-
-  // Manuálne naplň okresy (nespoliehaj sa na change event)
-  if (districtSelect && regionSelect?.value) {
-    const districts = REGIONS[regionSelect.value] || [];
-    districtSelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerSelectDistrict'))}</option>${districts.map((d) => `<option value="${escapeAttr(d)}">${escapeHtml(d)}</option>`).join('')}`;
-
-    if (district && typeof matchDistrict === 'function') {
-      const matchedDistrict = matchDistrict(regionSelect.value, district);
-      if (matchedDistrict) districtSelect.value = matchedDistrict;
-    }
-  }
-
-  // Obce
-  if (citySelect && districtSelect?.value && typeof loadCitiesForDistrict === 'function') {
-    citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerLoadingCities'))}</option>`;
-    try {
-      const cities = await loadCitiesForDistrict(districtSelect.value);
-      if (cities.length > 0) {
-        citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerSelectCity'))}</option>` +
-          cities.map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join('');
-        if (city) {
-          const cityNorm = normalizeStr(city);
-          const cMatch = cities.find((c) => normalizeStr(c) === cityNorm);
-          if (cMatch) {
-            citySelect.value = cMatch;
-          } else {
-            // Ak nie je v zozname, pridaj manuálne
-            const opt = document.createElement('option');
-            opt.value = city;
-            opt.textContent = city;
-            citySelect.appendChild(opt);
-            citySelect.value = city;
-          }
-        }
-      } else {
-        citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerNoCities'))}</option>`;
-      }
-    } catch {
-      citySelect.innerHTML = `<option value="">${escapeHtml(t('auth.registerNoCities'))}</option>`;
-    }
-  } else if (cityInput && city) {
-    cityInput.value = city;
-  }
-}
-
-/**
- * Nastaví skryté geo_* polia formulára (dataset atribúty).
- * Používa sa pri odosielaní — `submit-register`, `submit-edit-profile`, `submit-create-event`.
- */
-function setFormGeoData(form, place) {
-  if (!form || !place) return;
-  if (place.lat != null) form.dataset.geoLat = String(place.lat);
-  if (place.lng != null) form.dataset.geoLng = String(place.lng);
-  form.dataset.geoPlace = place.display_name || place.place || '';
-  form.dataset.geoCountry = place.country_code || '';
 }
