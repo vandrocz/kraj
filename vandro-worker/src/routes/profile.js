@@ -34,6 +34,14 @@ async function getFollowCount(env, type, id) {
 function escapePlain(t) {
   return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+function detectCountryFromRegion(region) {
+  if (!region) return null;
+  const skKeywords = ['Bratislavský', 'Trnavský', 'Trenčiansky', 'Nitriansky', 'Žilinský', 'Banskobystrický', 'Prešovský', 'Košický'];
+  const czKeywords = ['Praha', 'Středočeský', 'Jihočeský', 'Plzeňský', 'Karlovarský', 'Ústecký', 'Liberecký', 'Královéhradecký', 'Pardubický', 'Vysočina', 'Jihomoravský', 'Olomoucký', 'Zlínský', 'Moravskoslezský'];
+  for (const k of skKeywords) if (region.includes(k)) return 'sk';
+  for (const k of czKeywords) if (region.includes(k)) return 'cz';
+  return null;
+}
 
 profileRoutes.get('/search', async (c) => {
   const user = c.get('user');
@@ -209,6 +217,12 @@ profileRoutes.patch('/me/user', async (c) => {
   const fields = ['display_name', 'bio', 'location', 'website', 'phone'];
   for (const f of fields) if (f in body) { sets.push(`${f} = ?`); params.push(body[f] ?? null); }
 
+  // Geo pole pro uživatele
+  if ('geo_lat' in body) { sets.push('geo_lat = ?'); params.push(body.geo_lat != null && body.geo_lat !== '' ? parseFloat(body.geo_lat) : null); }
+  if ('geo_lng' in body) { sets.push('geo_lng = ?'); params.push(body.geo_lng != null && body.geo_lng !== '' ? parseFloat(body.geo_lng) : null); }
+  if ('geo_place' in body) { sets.push('geo_city = ?'); params.push(body.geo_place || null); }
+  if ('country_code' in body) { sets.push('country_code = ?'); params.push(body.country_code || null); }
+
   if ('onboarding_done' in body) {
     sets.push('onboarding_done = ?');
     params.push(body.onboarding_done ? 1 : 0);
@@ -219,7 +233,7 @@ profileRoutes.patch('/me/user', async (c) => {
   await c.env.DB.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run();
 
   const updated = await c.env.DB.prepare(
-    `SELECT id, email, role, display_name, handle, bio, avatar_url, cover_url, location, website, phone, email_verified, totp_enabled, onboarding_done FROM users WHERE id = ?`,
+    `SELECT id, email, role, display_name, handle, bio, avatar_url, cover_url, location, website, phone, email_verified, totp_enabled, onboarding_done, country_code, geo_city FROM users WHERE id = ?`,
   ).bind(user.sub).first();
   return c.json({ user: updated });
 });
@@ -247,7 +261,9 @@ profileRoutes.post('/me/business', async (c) => {
   const description = (body.description || '').toString().trim().slice(0, 500);
   const geoLat = body.geo_lat != null && body.geo_lat !== '' ? parseFloat(body.geo_lat) : null;
   const geoLng = body.geo_lng != null && body.geo_lng !== '' ? parseFloat(body.geo_lng) : null;
-  const address = (body.address || '').toString().trim().slice(0, 250) || null;
+  const geoPlace = (body.geo_place || '').toString().trim().slice(0, 250) || null;
+  const address = (body.address || geoPlace || '').toString().trim().slice(0, 250) || null;
+  const countryCode = (body.country_code || '').toString().slice(0, 4) || detectCountryFromRegion(region);
 
   if (!name || !type || !region || !district) {
     return c.json({ error: 'Vyplň názov, typ, kraj a okres.' }, 400);
@@ -258,21 +274,21 @@ profileRoutes.post('/me/business', async (c) => {
   try {
     if (kind === 'organizations') {
       await c.env.DB.prepare(
-        `INSERT INTO organizations (id, user_id, name, type, region, district, city, description, geo_lat, geo_lng, address, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(id, user.sub, name, type, region, district, city, description || '', geoLat, geoLng, address).run();
+        `INSERT INTO organizations (id, user_id, name, type, region, district, city, address, description, geo_lat, geo_lng, geo_place, country_code, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, region, district, city, address, description || '', geoLat, geoLng, geoPlace, countryCode).run();
     } else if (kind === 'accommodation') {
       const capacity = body.capacity ? parseInt(body.capacity, 10) : null;
       await c.env.DB.prepare(
-        `INSERT INTO accommodation (id, user_id, name, type, region, district, city, description, capacity, geo_lat, geo_lng, address, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(id, user.sub, name, type, region, district, city, description || '', capacity, geoLat, geoLng, address).run();
+        `INSERT INTO accommodation (id, user_id, name, type, region, district, city, address, description, capacity, geo_lat, geo_lng, geo_place, country_code, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, region, district, city, address, description || '', capacity, geoLat, geoLng, geoPlace, countryCode).run();
     } else {
       const cuisineType = (body.cuisine_type || '').toString().trim() || null;
       await c.env.DB.prepare(
-        `INSERT INTO restaurants (id, user_id, name, type, cuisine_type, region, district, city, description, geo_lat, geo_lng, address, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(id, user.sub, name, type, cuisineType, region, district, city, description || '', geoLat, geoLng, address).run();
+        `INSERT INTO restaurants (id, user_id, name, type, cuisine_type, region, district, city, address, description, geo_lat, geo_lng, geo_place, country_code, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, cuisineType, region, district, city, address, description || '', geoLat, geoLng, geoPlace, countryCode).run();
     }
   } catch (err) {
     console.error('[add business]', err);
@@ -280,7 +296,7 @@ profileRoutes.post('/me/business', async (c) => {
   }
 
   const businessKind = kind === 'organizations' ? 'organization' : kind === 'accommodation' ? 'accommodation' : 'gastro';
-  return c.json({ business: { id, kind: businessKind, name, is_verified: 0 } }, 201);
+  return c.json({ business: { id, kind: businessKind, name, is_verified: 0, address, geo_lat: geoLat, geo_lng: geoLng, country_code: countryCode } }, 201);
 });
 
 profileRoutes.patch('/me/:type/:id', async (c) => {
@@ -305,6 +321,14 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
 
   if ('geo_lat' in body) { sets.push('geo_lat = ?'); params.push(body.geo_lat != null && body.geo_lat !== '' ? parseFloat(body.geo_lat) : null); }
   if ('geo_lng' in body) { sets.push('geo_lng = ?'); params.push(body.geo_lng != null && body.geo_lng !== '' ? parseFloat(body.geo_lng) : null); }
+  if ('geo_place' in body) { sets.push('geo_place = ?'); params.push(body.geo_place || null); }
+  if ('country_code' in body) { sets.push('country_code = ?'); params.push(body.country_code || null); }
+
+  // Auto-detect country from region, pokud region v body ale country_code ne
+  if ('region' in body && !('country_code' in body)) {
+    const detected = detectCountryFromRegion(body.region);
+    if (detected) { sets.push('country_code = ?'); params.push(detected); }
+  }
 
   if (sets.length === 0) return c.json({ error: 'Žiadne polia.' }, 400);
   params.push(id);
@@ -313,7 +337,6 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
   return c.json({ business: updated });
 });
 
-// Zmazanie podniku vlastníkom (len neverifikované, alebo admin)
 profileRoutes.delete('/me/business/:type/:id', async (c) => {
   const user = c.get('user');
   const table = TYPE_TO_TABLE[normalizeType(c.req.param('type'))];
@@ -363,7 +386,6 @@ profileRoutes.delete('/me/business/:type/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-// Upload obrázka
 profileRoutes.post('/me/upload', async (c) => {
   const user = c.get('user');
   const form = await c.req.parseBody();
@@ -451,7 +473,6 @@ profileRoutes.post('/me/request-verification', async (c) => {
 });
 
 profileRoutes.get('/me/verification-status/:kind/:id', async (c) => {
-  const user = c.get('user');
   const kind = c.req.param('kind');
   const id = c.req.param('id');
   const req = await c.env.DB.prepare(
@@ -674,9 +695,6 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
   }
 });
 
-// ============================================================
-// GALÉRIA "O NÁS"
-// ============================================================
 profileRoutes.get('/:type/:id/gallery', async (c) => {
   const type = normalizeType(c.req.param('type'));
   const id = c.req.param('id');
@@ -792,7 +810,7 @@ profileRoutes.get('/:type/:id', async (c) => {
 
   if (table === 'users') {
     const user = await c.env.DB.prepare(
-      `SELECT id, display_name, handle, bio, avatar_url, cover_url, location, website, role, created_at, email_verified, totp_enabled, public_checkins
+      `SELECT id, display_name, handle, bio, avatar_url, cover_url, location, website, role, created_at, email_verified, totp_enabled, public_checkins, country_code
        FROM users WHERE id = ? AND deleted_at IS NULL`,
     ).bind(id).first();
     if (!user) return c.json({ error: 'Užívateľ nenájdený.' }, 404);
