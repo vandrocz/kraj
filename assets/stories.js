@@ -365,13 +365,16 @@ function closeStoryViewer() {
 // Autor z story viewera → otvor profil
 function openStoryAuthor(authorId, authorKind) {
   if (!authorId) return;
-  // Zavri story viewer
+
+  // Zavri story viewer (spolu s history cleanupom)
   stopStoryAutoAdvance();
+  if (state._historyPushed) {
+    try { history.back(); } catch {}
+    state._historyPushed = false;
+  }
   state.overlay = null;
   state.overlayStack = [];
-  state._historyPushed = false;
 
-  // Otvor profil
   let kind = authorKind || 'user';
   if (kind === 'organizations') kind = 'organizations';
   else if (kind === 'accommodation') kind = 'accommodation';
