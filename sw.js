@@ -2,7 +2,7 @@
 // SERVICE WORKER — PWA + Push notifikácie
 // ============================================================
 
-const CACHE_NAME = 'naskraj-v3';
+const CACHE_NAME = 'vandro-v1';
 const PRECACHE = [
   '/',
   '/index.html',
@@ -31,7 +31,6 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // API volania nechávame vždy na sieť
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
   if (req.method !== 'GET') return;
@@ -41,7 +40,6 @@ self.addEventListener('fetch', (event) => {
                  url.pathname === '/index.html';
 
   if (isHtml) {
-    // Network-first pre HTML — vždy chceme najnovšiu verziu kódu
     event.respondWith(
       fetch(req).then((res) => {
         if (res && res.status === 200) {
@@ -54,8 +52,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Pre ostatné (assets, obrázky) — stale-while-revalidate
-  // Okamžite vráti cached, ale na pozadí aktualizuje cache
   event.respondWith(
     caches.match(req).then((cached) => {
       const fetchPromise = fetch(req).then((res) => {
@@ -71,7 +67,7 @@ self.addEventListener('fetch', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  let data = { title: 'Náš kraj', body: 'Nová notifikace', url: '/' };
+  let data = { title: 'VANDRO', body: 'Nová notifikace', url: '/' };
   try { if (event.data) data = { ...data, ...event.data.json() }; }
   catch (e) { try { data.body = event.data.text(); } catch {} }
 
@@ -80,11 +76,11 @@ self.addEventListener('push', (event) => {
     icon: data.icon || 'https://cdn.vandro.cz/Untitled15_20260522160351.png',
     badge: 'https://cdn.vandro.cz/Untitled15_20260522160351.png',
     data: { url: data.url || '/' },
-    tag: data.tag || 'naskraj',
+    tag: data.tag || 'vandro',
     renotify: true,
   };
 
-  event.waitUntil(self.registration.showNotification(data.title || 'Náš kraj', options));
+  event.waitUntil(self.registration.showNotification(data.title || 'VANDRO', options));
 });
 
 self.addEventListener('notificationclick', (event) => {
