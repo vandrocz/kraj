@@ -99,7 +99,6 @@ eventsApiRoutes.post('/', async (c) => {
     .filter((f) => f && typeof f !== 'string' && f.size > 0)
     .slice(0, MAX_EVENT_PHOTOS);
 
-  // MIME + size + magic bytes validácia PRED uploadom
   for (const file of fileList) {
     const v = await validateUpload(file, 'image');
     if (!v.ok) {
@@ -118,7 +117,13 @@ eventsApiRoutes.post('/', async (c) => {
   const contentHtml = sanitizeHtml(rawHtml);
   const plain = htmlToPlain(contentHtml);
 
+  // EN varianta
+  const rawHtmlEn = (form.description_html_en || '').toString();
+  const contentHtmlEn = rawHtmlEn ? sanitizeHtml(rawHtmlEn) : null;
+  const plainEn = contentHtmlEn ? htmlToPlain(contentHtmlEn) : null;
+
   const title = (form.title || '').toString().trim().slice(0, 200);
+  const titleEn = (form.title_en || '').toString().trim().slice(0, 200) || null;
   const startAt = (form.start_at || '').toString();
   const endAt = (form.end_at || '').toString() || null;
   const locationName = (form.location_name || '').toString().slice(0, 200);
@@ -128,11 +133,14 @@ eventsApiRoutes.post('/', async (c) => {
   const businessKind = (form.business_kind || '').toString();
   const geoLat = form.geo_lat ? parseFloat(form.geo_lat) : null;
   const geoLng = form.geo_lng ? parseFloat(form.geo_lng) : null;
+  const geoPlace = (form.geo_place || '').toString().slice(0, 250) || null;
+  const countryCode = (form.country_code || '').toString().slice(0, 4) || null;
 
   if (!title) return c.json({ error: 'Chýba název.' }, 400);
   if (!startAt) return c.json({ error: 'Chýba datum začátku.' }, 400);
   if (!businessId || !BUSINESS_TABLE[businessKind]) return c.json({ error: 'Chýba podnik.' }, 400);
   if (plain && plain.length > 5000) return c.json({ error: 'Popis je příliš dlouhý.' }, 400);
+  if (plainEn && plainEn.length > 5000) return c.json({ error: 'Anglický popis je příliš dlouhý.' }, 400);
 
   const mod = checkText(`${title} ${plain}`);
   if (!mod.clean && mod.severity >= 2) {
@@ -160,15 +168,26 @@ eventsApiRoutes.post('/', async (c) => {
   const coverUrl = galleryUrls[0] || null;
   const id = newId('event');
   await c.env.DB.prepare(
-    `INSERT INTO events (id, user_id, business_id, business_kind, title, description, content_html, cover_image_url, gallery_json, start_at, end_at, location_name, city, region, geo_lat, geo_lng, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')`,
+    `INSERT INTO events (id, user_id, business_id, business_kind, title, title_en, description, description_en, content_html, content_html_en, cover_image_url, gallery_json, start_at, end_at, location_name, city, region, geo_lat, geo_lng, geo_place, country_code, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')`,
   ).bind(
-    id, user.sub, businessId, businessKind, title, plain, contentHtml, coverUrl,
+    id, user.sub, businessId, businessKind,
+    title, titleEn,
+    plain, plainEn,
+    contentHtml, contentHtmlEn,
+    coverUrl,
     galleryUrls.length > 0 ? JSON.stringify(galleryUrls) : null,
-    startAt, endAt, locationName || null, city || null, region || null, geoLat, geoLng,
+    startAt, endAt,
+    locationName || null, city || null, region || null,
+    geoLat, geoLng, geoPlace, countryCode,
   ).run();
 
-  return c.json({ id, cover_image_url: coverUrl, gallery: galleryUrls, title, start_at: startAt }, 201);
+  return c.json({
+    id, cover_image_url: coverUrl, gallery: galleryUrls,
+    title, title_en: titleEn,
+    description: plain, description_en: plainEn,
+    start_at: startAt,
+  }, 201);
 });
 
 eventsApiRoutes.delete('/:id', async (c) => {
