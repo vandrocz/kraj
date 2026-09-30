@@ -8,9 +8,12 @@ const ICON_PATHS = {
   help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z M9.5 9a2.5 2.5 0 0 1 5 0c0 1.5-2 1.7-2 3.3 M12 16.5v.1',
   chart: 'M4 20V10 M10 20V4 M16 20v-7 M4 20h16',
   heart: 'M12 20.5s-7.5-4.6-9.7-9A5.5 5.5 0 0 1 12 6.2 5.5 5.5 0 0 1 21.7 11.5c-2.2 4.4-9.7 9-9.7 9Z',
-  // Štvorlístok pre lajk — 4 okvetné lístky v tvare X
-  clover: 'M12 12c0-1.5-1-2.5-2.5-2.5S7 10.5 7 12c-1.5 0-2.5 1-2.5 2.5S5.5 17 7 17c1.5 0 2.5-1 2.5-2.5 0 1.5 1 2.5 2.5 2.5s2.5-1 2.5-2.5c1.5 0 2.5-1 2.5-2.5S16.5 9.5 15 9.5c-1.5 0-2.5 1-2.5 2.5z M12 12v0',
-  // Starý spark — nechávam pre spätnú kompatibilitu (badges, staré súbory)
+  // LEAF — turistický list (používá se pro lajk)
+  // Stroke path z lucide "leaf" — vypadá dobře i vyplněný
+  leaf: 'M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12',
+  // Alias pro zpětnou kompatibilitu (staré kódy volají `clover`)
+  clover: 'M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12',
+  // Stará záře — necháváme pro badges
   spark: 'M12 2c0 0 .6 5.4 3 7.8C17.4 12.2 22 12 22 12c0 0-4.6-.2-7 2.2C12.6 16.6 12 22 12 22c0 0-.6-5.4-3-7.8C6.6 11.8 2 12 2 12c0 0 4.6.2 7-2.2C11.4 7.4 12 2 12 2Z',
   comment: 'M4 5h16v11H8l-4 4V5Z',
   share: 'M8 12h9 M13 7l5 5-5 5 M6 5v14',
