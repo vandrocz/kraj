@@ -9,11 +9,12 @@ seoRoutes.get('/og', async (c) => {
   const type = c.req.query('type') || '';
   const kind = c.req.query('kind') || '';
   const id = c.req.query('id') || '';
+  const lang = (c.req.query('lang') || 'cs').toLowerCase();
   if (!type || !id) return c.json({ error: 'Chýba typ nebo id.' }, 400);
 
   const defaultOg = {
-    title: 'Náš kraj — regionální platforma',
-    description: 'Objevuj hrady, zámky, ubytování a gastro v Česku.',
+    title: 'VANDRO — regionální platforma',
+    description: 'Objevuj hrady, zámky, ubytování a gastro v Česku a na Slovensku.',
     image: DEFAULT_IMAGE,
     url: SITE_URL,
   };
@@ -25,12 +26,14 @@ seoRoutes.get('/og', async (c) => {
       const row = await c.env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(id).first();
       if (!row) return c.json(defaultOg);
       const name = row.name || row.display_name || 'Profil';
-      const desc = row.description || row.bio || 'Profil na Náš kraj';
+      const descBase = (lang === 'en' && row.description_en)
+        ? row.description_en
+        : (row.description || row.bio || 'Profil na VANDRO');
       const image = row.cover_url || row.logo_url || row.image_url || row.avatar_url || DEFAULT_IMAGE;
       const profilePath = kind === 'user' ? `?profile=user:${id}` : `?profile=${kind}:${id}`;
       return c.json({
-        title: `${name} — Náš kraj`,
-        description: desc.slice(0, 160),
+        title: `${name} — VANDRO`,
+        description: descBase.slice(0, 160),
         image,
         url: `${SITE_URL}/${profilePath}`,
       });
@@ -47,12 +50,13 @@ seoRoutes.get('/og', async (c) => {
          WHERE posts.id = ?`,
       ).bind(id).first();
       if (!row) return c.json(defaultOg);
-      const biz = row.org_name || row.acc_name || row.rest_name || 'Náš kraj';
-      const text = (row.text_content || '').slice(0, 160) || 'Příspěvek na Náš kraj';
+      const biz = row.org_name || row.acc_name || row.rest_name || 'VANDRO';
+      const text = (lang === 'en' && row.text_content_en ? row.text_content_en : row.text_content) || '';
+      const textSlice = text.slice(0, 160) || 'Příspěvek na VANDRO';
       const image = row.image_url || row.biz_logo || DEFAULT_IMAGE;
       return c.json({
-        title: `${biz} — Náš kraj`,
-        description: text,
+        title: `${biz} — VANDRO`,
+        description: textSlice,
         image,
         url: `${SITE_URL}/?post=${id}`,
       });
@@ -69,10 +73,12 @@ seoRoutes.get('/og', async (c) => {
       ).bind(id).first();
       if (!row) return c.json(defaultOg);
       const loc = row.location_name || row.city || '';
-      const desc = `${row.start_at || ''} · ${loc} — ${(row.description || '').slice(0, 120)}`;
+      const title = (lang === 'en' && row.title_en) ? row.title_en : row.title;
+      const desc = (lang === 'en' && row.description_en) ? row.description_en : (row.description || '');
+      const descFull = `${row.start_at || ''} · ${loc} — ${desc.slice(0, 120)}`;
       return c.json({
-        title: `${row.title} — Akce`,
-        description: desc,
+        title: `${title} — Akce`,
+        description: descFull,
         image: row.cover_image_url || DEFAULT_IMAGE,
         url: `${SITE_URL}/?event=${id}`,
       });
