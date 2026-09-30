@@ -97,6 +97,8 @@ function renderEventsList() {
 }
 
 function renderEventCard(ev) {
+  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+  const title = (lang === 'en' && ev.title_en) ? ev.title_en : ev.title;
   const cover = ev.cover_image_url || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&h=500&fit=crop';
   const logo = ev.business_logo;
   const logoHtml = logo
@@ -111,7 +113,7 @@ function renderEventCard(ev) {
       </div>
       <div class="event-card-body">
         <div class="event-card-date">${icon('calendar', { size: 14 })} ${formatEventDate(ev.start_at)}</div>
-        <h3 class="event-card-title">${escapeHtml(ev.title)}</h3>
+        <h3 class="event-card-title">${escapeHtml(title)}</h3>
         ${ev.location_name || ev.city ? `<p class="event-card-loc">${icon('location', { size: 13 })} ${escapeHtml(ev.location_name || '')}${ev.city ? `${ev.location_name ? ' · ' : ''}${escapeHtml(ev.city)}` : ''}</p>` : ''}
         <div class="event-card-business" data-action="open-profile" data-kind="${ev.business_kind}" data-id="${ev.business_id}">
           ${logoHtml}
@@ -142,13 +144,18 @@ function renderEventDetailOverlay() {
   const gallery = Array.isArray(ev.gallery) && ev.gallery.length > 0 ? ev.gallery : (ev.cover_image_url ? [ev.cover_image_url] : []);
   const cover = gallery[0] || null;
 
+  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+  const title = (lang === 'en' && ev.title_en) ? ev.title_en : ev.title;
+  const description = (lang === 'en' && ev.description_en) ? ev.description_en : ev.description;
+  const contentHtml = (lang === 'en' && ev.content_html_en) ? ev.content_html_en : ev.content_html;
+
   const startDate = ev.start_at ? new Date((String(ev.start_at).replace(' ', 'T')) + 'Z') : null;
   const endDate = ev.end_at ? new Date((String(ev.end_at).replace(' ', 'T')) + 'Z') : null;
 
   const dateBlock = startDate && !isNaN(startDate.getTime()) ? {
     day: startDate.getDate(),
-    month: startDate.toLocaleDateString(getLanguage() === 'en' ? 'en' : getLanguage() === 'sk' ? 'sk' : 'cs', { month: 'short' }).toUpperCase(),
-    weekday: startDate.toLocaleDateString(getLanguage() === 'en' ? 'en' : getLanguage() === 'sk' ? 'sk' : 'cs', { weekday: 'long' }),
+    month: startDate.toLocaleDateString(lang === 'en' ? 'en' : lang === 'sk' ? 'sk' : 'cs', { month: 'short' }).toUpperCase(),
+    weekday: startDate.toLocaleDateString(lang === 'en' ? 'en' : lang === 'sk' ? 'sk' : 'cs', { weekday: 'long' }),
     time: `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`,
     year: startDate.getFullYear(),
   } : null;
@@ -166,12 +173,12 @@ function renderEventDetailOverlay() {
       <div class="event-detail-cover-narrow">
         ${cover ? `
           <button class="event-detail-cover-image" data-action="open-event-gallery" data-event-id="${ev.id}" data-index="0">
-            <img src="${escapeAttr(cover)}" alt="${escapeAttr(ev.title)}" />
+            <img src="${escapeAttr(cover)}" alt="${escapeAttr(title)}" />
             ${gallery.length > 1 ? `<span class="event-detail-gallery-badge">${icon('grid', { size: 12 })} ${gallery.length}</span>` : ''}
           </button>` : ''}
         <div class="event-detail-cover-content">
           <span class="event-detail-kind">${escapeHtml(kindLabel)}</span>
-          <h1 class="event-detail-title">${escapeHtml(ev.title)}</h1>
+          <h1 class="event-detail-title">${escapeHtml(title)}</h1>
         </div>
       </div>
 
@@ -205,10 +212,10 @@ function renderEventDetailOverlay() {
             ${ev.geo_lat && ev.geo_lng ? `<a class="event-detail-info-map-btn" href="https://www.openstreetmap.org/?mlat=${ev.geo_lat}&mlon=${ev.geo_lng}#map=16/${ev.geo_lat}/${ev.geo_lng}" target="_blank" rel="noopener" aria-label="${escapeAttr(t('geo.pickOnMap'))}">${icon('mapPin', { size: 18 })}</a>` : ''}
           </div>` : ''}
 
-        ${ev.content_html || ev.description ? `
+        ${contentHtml || description ? `
           <div class="event-detail-description">
             <h3 class="event-detail-section-title">${escapeHtml(t('events.aboutEvent'))}</h3>
-            <div class="rich-text">${linkifyHashtags(htmlToPlain(ev.content_html || ev.description || ''))}</div>
+            <div class="rich-text">${linkifyHashtags(htmlToPlain(contentHtml || description || ''))}</div>
           </div>` : ''}
 
         <div class="event-detail-organizer">
@@ -289,11 +296,15 @@ function addEventToGoogleCalendar(eventId) {
   const end = endDate ? formatCalDate(endDate.toISOString()) : '';
   if (!start || !end) { showToast(t('events.dateNotSpecified')); return; }
 
-  const title = encodeURIComponent(ev.title || '');
-  const details = encodeURIComponent((ev.description || '').slice(0, 800));
+  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+  const title = (lang === 'en' && ev.title_en) ? ev.title_en : ev.title;
+  const desc = (lang === 'en' && ev.description_en) ? ev.description_en : (ev.description || '');
+
+  const encTitle = encodeURIComponent(title || '');
+  const details = encodeURIComponent(desc.slice(0, 800));
   const location = encodeURIComponent([ev.location_name, ev.address, ev.city, ev.region].filter(Boolean).join(', '));
 
-  const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${location}&sf=true&output=xml`;
+  const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encTitle}&dates=${start}/${end}&details=${details}&location=${location}&sf=true&output=xml`;
   window.open(url, '_blank', 'noopener');
   showToast(t('events.savedToCalendar'));
 }
@@ -306,6 +317,10 @@ function downloadEventIcs(eventId) {
   const end = endDate ? formatCalDate(endDate.toISOString()) : '';
   if (!start || !end) { showToast(t('events.dateNotSpecified')); return; }
 
+  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+  const title = (lang === 'en' && ev.title_en) ? ev.title_en : ev.title;
+  const desc = (lang === 'en' && ev.description_en) ? ev.description_en : (ev.description || '');
+
   const ics = [
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//VANDRO//Event//CS', 'CALSCALE:GREGORIAN',
     'BEGIN:VEVENT',
@@ -313,8 +328,8 @@ function downloadEventIcs(eventId) {
     `DTSTAMP:${formatCalDate(new Date().toISOString())}`,
     `DTSTART:${start}`,
     `DTEND:${end}`,
-    `SUMMARY:${(ev.title || '').replace(/\n/g, ' ')}`,
-    `DESCRIPTION:${(ev.description || '').replace(/\n/g, ' ')}`,
+    `SUMMARY:${(title || '').replace(/\n/g, ' ')}`,
+    `DESCRIPTION:${(desc || '').replace(/\n/g, ' ')}`,
     `LOCATION:${([ev.location_name, ev.address, ev.city, ev.region].filter(Boolean).join(', ')).replace(/\n/g, ' ')}`,
     `URL:https://naskraj.vandro.cz/?event=${encodeURIComponent(ev.id)}`,
     'END:VEVENT', 'END:VCALENDAR',
@@ -324,7 +339,7 @@ function downloadEventIcs(eventId) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${(ev.title || 'event').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`;
+  a.download = `${(title || 'event').replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -339,9 +354,13 @@ function addEventToOutlook(eventId) {
   if (isNaN(startDate.getTime())) { showToast(t('events.dateNotSpecified')); return; }
   const endDate = getEventEndDate(ev) || new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
 
+  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
+  const title = (lang === 'en' && ev.title_en) ? ev.title_en : ev.title;
+  const desc = (lang === 'en' && ev.description_en) ? ev.description_en : (ev.description || '');
+
   const url = `https://outlook.live.com/calendar/0/deeplink/compose?` + new URLSearchParams({
     path: '/calendar/action/compose', rru: 'addevent',
-    subject: ev.title || '', body: (ev.description || '').slice(0, 800),
+    subject: title || '', body: desc.slice(0, 800),
     startdt: startDate.toISOString(), enddt: endDate.toISOString(),
     location: [ev.location_name, ev.address, ev.city, ev.region].filter(Boolean).join(', '),
   }).toString();
@@ -411,6 +430,11 @@ function renderCreateEventOverlay() {
           </div>
 
           <div class="form-field"><label class="form-label">${escapeHtml(t('events.title2'))}</label><input class="form-input" name="title" required maxlength="200" /></div>
+          <details class="event-en-toggle" style="margin-bottom:12px">
+            <summary style="cursor:pointer;font-size:12.5px;color:var(--c-text-muted);font-weight:700;padding:8px 0;">🌐 ${escapeHtml(t('post.englishVersion'))}</summary>
+            <div class="form-field" style="margin-top:8px"><label class="form-label">${escapeHtml(t('events.englishTitle'))}</label><input class="form-input" name="title_en" maxlength="200" placeholder="${escapeAttr(t('events.title2'))}" /></div>
+          </details>
+
           <div class="form-field"><label class="form-label">${escapeHtml(t('events.startDate'))}</label><input class="form-input" type="datetime-local" name="start_at" required /></div>
           <div class="form-field"><label class="form-label">${escapeHtml(t('events.endDate'))}</label><input class="form-input" type="datetime-local" name="end_at" /></div>
 
@@ -451,6 +475,10 @@ function renderCreateEventOverlay() {
           </div>
 
           <div class="form-field"><label class="form-label">${escapeHtml(t('events.description'))}</label><textarea class="form-textarea" name="description" rows="5" placeholder="${escapeAttr(t('events.descriptionPh'))}"></textarea></div>
+          <details class="event-en-desc-toggle" style="margin-bottom:14px">
+            <summary style="cursor:pointer;font-size:12.5px;color:var(--c-text-muted);font-weight:700;padding:8px 0;">🌐 ${escapeHtml(t('events.englishDescription'))}</summary>
+            <div class="form-field" style="margin-top:8px"><textarea class="form-textarea" name="description_en" rows="5" placeholder="${escapeAttr(t('events.descriptionPh'))}"></textarea></div>
+          </details>
 
           <button class="form-submit-btn" type="submit" ${state.overlay.uploading ? 'disabled' : ''}>
             ${state.overlay.uploading ? escapeHtml(t('events.creating')) : escapeHtml(t('events.publishEvent'))}
@@ -497,6 +525,7 @@ async function handleCreateEventSubmit(form) {
     if (form.dataset.geoLat) fd.set('geo_lat', form.dataset.geoLat);
     if (form.dataset.geoLng) fd.set('geo_lng', form.dataset.geoLng);
     if (form.dataset.geoPlace) fd.set('geo_place', form.dataset.geoPlace);
+    if (form.dataset.geoCountry) fd.set('country_code', form.dataset.geoCountry);
 
     await apiPost('/api/events', fd);
     showToast(t('events.published'));
