@@ -3014,3 +3014,53 @@ body.no-scroll { overflow: hidden; }
   display: flex; gap: 8px; flex-wrap: wrap;
   margin-top: 8px;
 }
+
+/* Map picker loading + custom marker */
+.map-picker-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-bg);
+  gap: 12px;
+  z-index: 1;
+}
+.map-picker-loading p {
+  font-size: 13px;
+  color: var(--c-text-muted);
+}
+.map-picker-spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid var(--c-border);
+  border-top-color: var(--c-primary);
+  animation: uploadSpin 0.9s linear infinite;
+}
+.map-picker-error {
+  padding: 24px;
+  text-align: center;
+  max-width: 340px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.vandro-map-marker {
+  background: transparent !important;
+  border: none !important;
+}
+.vandro-map-marker-pin {
+  width: 24px;
+  height: 24px;
+  border-radius: 50% 50% 50% 0;
+  background: var(--c-primary);
+  border: 3px solid white;
+  transform: rotate(-45deg);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.35);
+  margin: 0 auto;
+}
