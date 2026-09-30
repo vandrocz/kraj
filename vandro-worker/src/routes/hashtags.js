@@ -3,7 +3,6 @@ import { normalizeHashtag } from '../hashtags.js';
 
 export const hashtagsRoutes = new Hono();
 
-// GET /api/hashtags/trending?limit=10
 hashtagsRoutes.get('/trending', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '10', 10), 30);
   const { results } = await c.env.DB.prepare(
@@ -17,14 +16,15 @@ hashtagsRoutes.get('/trending', async (c) => {
   return c.json({ hashtags: results });
 });
 
-// GET /api/hashtags/:tag/posts?limit=30&cursor=...
 hashtagsRoutes.get('/:tag/posts', async (c) => {
   const tag = normalizeHashtag(c.req.param('tag'));
   if (!tag) return c.json({ posts: [] });
   const limit = Math.min(parseInt(c.req.query('limit') || '30', 10), 60);
 
   const { results } = await c.env.DB.prepare(
-    `SELECT posts.id, posts.text_content, posts.content_html, posts.image_url, posts.created_at,
+    `SELECT posts.id, posts.text_content, posts.content_html,
+            posts.text_content_en, posts.content_html_en,
+            posts.image_url, posts.created_at,
             posts.target_feed, posts.user_id,
             COALESCE(o.id, a.id, r.id) AS business_id,
             COALESCE(o.name, a.name, r.name) AS business_name,
@@ -32,6 +32,7 @@ hashtagsRoutes.get('/:tag/posts', async (c) => {
             COALESCE(o.region, a.region, r.region) AS region,
             COALESCE(o.district, a.district, r.district) AS district,
             COALESCE(o.city, a.city, r.city) AS city,
+            COALESCE(o.country_code, a.country_code, r.country_code) AS business_country,
             COALESCE(o.is_verified, a.is_verified, r.is_verified) AS is_verified,
             COALESCE(o.logo_url, a.image_url, r.image_url) AS logo_url
      FROM post_hashtags
@@ -44,7 +45,7 @@ hashtagsRoutes.get('/:tag/posts', async (c) => {
      LIMIT ?`,
   ).bind(tag, limit).all();
 
-  // Doplň media
+  // Media batch
   const ids = results.map((r) => r.id);
   const mediaMap = {};
   if (ids.length > 0) {
@@ -58,36 +59,53 @@ hashtagsRoutes.get('/:tag/posts', async (c) => {
     }
   }
 
-  // Likes
-  const out = await Promise.all(results.map(async (p) => {
-    const likesRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`);
-    const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first();
-    return {
-      id: p.id,
-      text: p.text_content,
-      html: p.content_html || p.text_content,
-      image_url: p.image_url,
-      media: mediaMap[p.id] || (p.image_url ? [p.image_url] : []),
-      created_at: p.created_at,
-      comment_count: cc?.n || 0,
-      likes: likesRaw ? parseInt(likesRaw, 10) : 0,
-      business: {
-        id: p.business_id,
-        name: p.business_name,
-        type: p.business_type,
-        region: p.region,
-        district: p.district,
-        city: p.city,
-        is_verified: !!p.is_verified,
-        logo_url: p.logo_url,
-      },
-    };
+  // Likes + comment counts v jednom batch
+  const likesMap = {};
+  const commentCountMap = {};
+  if (ids.length > 0) {
+    const ph = ids.map(() => '?').join(',');
+    try {
+      const { results: likeRows } = await c.env.DB.prepare(
+        `SELECT post_id, COUNT(*) AS n FROM post_likes WHERE post_id IN (${ph}) GROUP BY post_id`,
+      ).bind(...ids).all();
+      for (const r of likeRows) likesMap[r.post_id] = r.n;
+    } catch {}
+    try {
+      const { results: cRows } = await c.env.DB.prepare(
+        `SELECT post_id, COUNT(*) AS n FROM comments WHERE post_id IN (${ph}) GROUP BY post_id`,
+      ).bind(...ids).all();
+      for (const r of cRows) commentCountMap[r.post_id] = r.n;
+    } catch {}
+  }
+
+  const out = results.map((p) => ({
+    id: p.id,
+    text: p.text_content,
+    html: p.content_html || p.text_content,
+    text_en: p.text_content_en || null,
+    html_en: p.content_html_en || null,
+    image_url: p.image_url,
+    media: mediaMap[p.id] || (p.image_url ? [p.image_url] : []),
+    created_at: p.created_at,
+    comment_count: commentCountMap[p.id] || 0,
+    likes: likesMap[p.id] || 0,
+    business: {
+      id: p.business_id,
+      name: p.business_name,
+      type: p.business_type,
+      region: p.region,
+      district: p.district,
+      city: p.city,
+      country_code: p.business_country || null,
+      is_verified: !!p.is_verified,
+      logo_url: p.logo_url,
+    },
+    __feedKey: p.target_feed === 'organization' ? 'organization' : p.target_feed === 'accommodation' ? 'accommodation' : 'gastro',
   }));
 
   return c.json({ tag, posts: out });
 });
 
-// GET /api/hashtags/suggest?q=...
 hashtagsRoutes.get('/suggest', async (c) => {
   const q = normalizeHashtag(c.req.query('q') || '');
   if (!q || q.length < 1) return c.json({ suggestions: [] });
