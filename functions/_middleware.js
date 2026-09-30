@@ -1,14 +1,12 @@
 // ============================================================
 // Cloudflare Pages Function — dynamické OG meta tagy pre boty
-// Beží na edge pre každý request. Ak ide o socialbota, vráti HTML
-// s dynamickými OG tagmi pre zdieľanie.
 // ============================================================
 
 const API_BASE = 'https://naskraj-api.vandrocz-contact.workers.dev';
 const SITE_URL = 'https://naskraj.vandro.cz';
 const DEFAULT_IMAGE = 'https://cdn.vandro.cz/Untitled15_20260522160351.png';
 const DEFAULT_TITLE = 'VANDRO — regionální platforma';
-const DEFAULT_DESC = 'Objevuj hrady, zámky, ubytování a gastro v Česku. Podpoř regionální projekty.';
+const DEFAULT_DESC = 'Objevuj hrady, zámky, ubytování a gastro v Česku a na Slovensku. Podpoř regionální projekty.';
 
 function isBot(ua) {
   return /facebookexternalhit|twitterbot|whatsapp|telegrambot|slackbot|discordbot|linkedinbot|pinterest|applebot|googlebot|bingbot|embedly|quora|outbrain|vkshare|w3c_validator|redditbot|skypeuripreview|seznam|duckduckbot/i.test(ua || '');
@@ -65,7 +63,6 @@ export async function onRequest(context) {
   const ua = request.headers.get('user-agent') || '';
   const pathname = url.pathname;
 
-  // Landing page pre boty (rovnaké OG ako index, ale inak zostavíme)
   if (pathname === '/landing.html' || pathname === '/landing') {
     if (isBot(ua)) {
       return new Response(buildOgHtml({
@@ -88,7 +85,6 @@ export async function onRequest(context) {
   const eventId = url.searchParams.get('event');
   const hashtag = url.searchParams.get('hashtag');
 
-  // Bez dynamických OG parametrov — spracuj default len pre boty
   if (!postId && !profile && !eventId && !hashtag) {
     if (isBot(ua) && pathname === '/') {
       return new Response(buildOgHtml({
