@@ -11,15 +11,15 @@ function layout(title, bodyHtml) {
 <tr><td align="center">
 <table role="presentation" width="100%" style="max-width:520px;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 8px 24px rgba(16,32,26,0.08);">
 <tr><td style="padding:28px 28px 12px;text-align:center;">
-<div style="display:inline-block;width:44px;height:44px;border-radius:12px;background:#2FBF71;color:#fff;font-size:22px;font-weight:800;line-height:44px;">N</div>
-<div style="font-size:19px;font-weight:700;color:#10201A;margin-top:8px;">Náš kraj</div>
+<div style="display:inline-block;width:44px;height:44px;border-radius:12px;background:#2FBF71;color:#fff;font-size:22px;font-weight:800;line-height:44px;">V</div>
+<div style="font-size:19px;font-weight:700;color:#10201A;margin-top:8px;">VANDRO</div>
 </td></tr>
 <tr><td style="padding:8px 28px 28px;">
 <h1 style="font-size:20px;color:#10201A;margin:0 0 12px;">${title}</h1>
 ${bodyHtml}
 </td></tr>
 <tr><td style="padding:16px 28px 24px;border-top:1px solid #E4ECE6;text-align:center;font-size:11.5px;color:#64766D;">
-Náš kraj — regionální platforma pro Česko<br>
+VANDRO — regionální platforma pro Česko a Slovensko<br>
 Tento e-mail ti přišel z <a href="https://app.vandro.cz" style="color:#1B8F52;">app.vandro.cz</a>.
 </td></tr>
 </table></td></tr></table></body></html>`;
@@ -35,9 +35,9 @@ export async function sendEmail(env, { to, subject, html }) {
     return { skipped: true, reason: 'no_credentials' };
   }
 
-  const from = env.MAIL_FROM || 'Náš kraj <noreply@vandro.cz>';
+  const from = env.MAIL_FROM || 'VANDRO <noreply@vandro.cz>';
   const fromMatch = from.match(/^(.+?)\s*<(.+?)>$/);
-  const senderName = fromMatch ? fromMatch[1] : 'Náš kraj';
+  const senderName = fromMatch ? fromMatch[1] : 'VANDRO';
   const senderEmail = fromMatch ? fromMatch[2] : 'noreply@vandro.cz';
 
   try {
@@ -78,7 +78,7 @@ export async function sendVerificationEmail(env, { to, token, displayName }) {
     ${button(url, 'Ověřit e-mail')}
     <p style="font-size:12px;color:#64766D;word-break:break-all;">${url}</p>
   `);
-  return sendEmail(env, { to, subject: 'Ověření e-mailu — Náš kraj', html });
+  return sendEmail(env, { to, subject: 'Ověření e-mailu — VANDRO', html });
 }
 
 export async function sendPasswordResetEmail(env, { to, token, displayName }) {
@@ -91,7 +91,7 @@ export async function sendPasswordResetEmail(env, { to, token, displayName }) {
     <p style="font-size:12px;color:#64766D;word-break:break-all;">${url}</p>
     <p style="font-size:12.5px;color:#64766D;margin-top:20px;">Pokud jsi o změnu nežádal, tento e-mail ignoruj — heslo zůstane beze změny.</p>
   `);
-  return sendEmail(env, { to, subject: 'Obnovení hesla — Náš kraj', html });
+  return sendEmail(env, { to, subject: 'Obnovení hesla — VANDRO', html });
 }
 
 export async function sendNewDeviceEmail(env, { to, ip, ua, displayName }) {
@@ -103,7 +103,7 @@ export async function sendNewDeviceEmail(env, { to, ip, ua, displayName }) {
       <li>Zařízení: <strong>${ua || 'neznámé'}</strong></li>
     </ul>
   `);
-  return sendEmail(env, { to, subject: 'Nové přihlášení — Náš kraj', html });
+  return sendEmail(env, { to, subject: 'Nové přihlášení — VANDRO', html });
 }
 
 export async function sendMentionEmail(env, { to, actorName, postPreview, displayName }) {
@@ -114,5 +114,5 @@ export async function sendMentionEmail(env, { to, actorName, postPreview, displa
     <p style="font-size:13.5px;color:#10201A;padding:12px;background:#F6FAF7;border-radius:10px;">${postPreview}</p>
     ${button(url, 'Zobrazit příspěvek')}
   `);
-  return sendEmail(env, { to, subject: 'Zmínka v příspěvku — Náš kraj', html });
+  return sendEmail(env, { to, subject: 'Zmínka v příspěvku — VANDRO', html });
 }
