@@ -1,5 +1,5 @@
 // ============================================================
-// i18n — Podpora CZ / SK / EN
+// i18n — Podpora CZ / SK / EN (kompletní verze)
 // ============================================================
 
 const TRANSLATIONS = {
@@ -32,8 +32,8 @@ const TRANSLATIONS = {
       displayNameBusinessHint: 'Toto jméno se zobrazí v aplikaci. U podniků/organizací zadejte název podniku.',
       passwordHint: 'Alespoň 8 znaků.', termsText: 'Souhlasím s', termsLink: 'obchodními podmínkami',
       termsAnd: 'a se', gdprLink: 'zpracováním osobních údajů', gdprSuffix: '(GDPR).',
-      welcomeTitle: 'Vítej v Náš kraj',
-      welcomeLead: 'Objevuj hrady, zámky, ubytování a gastro v Česku. Sdílej zážitky, sbírej odznaky a podporuj regionální projekty.',
+      welcomeTitle: 'Vítej ve VANDRO',
+      welcomeLead: 'Objevuj hrady, zámky, ubytování a gastro v Česku a na Slovensku. Sdílej zážitky, sbírej odznaky a podporuj regionální projekty.',
       welcomeFeature1: 'Objevuj památky', welcomeFeature2: 'Najdi ubytování',
       welcomeFeature3: 'Objevuj gastro', welcomeFeature4: 'Sleduj oblíbené',
       emailVerified: 'E-mail ověřen!', verifyEmail: 'Ověř svůj e-mail',
@@ -168,6 +168,9 @@ const TRANSLATIONS = {
       currentLocation: 'Moje aktuální poloha',
       clearLocation: 'Odebrat polohu',
       locationLabel: 'Poloha',
+      englishVersion: 'Anglická verze (nepovinné)',
+      textPlaceholderEn: 'Post text in English…',
+      englishHint: 'Zobrazí se uživatelům s anglickým rozhraním.',
     },
     notifications: {
       title: 'Notifikace', empty: 'Žádné notifikace.',
@@ -226,6 +229,9 @@ const TRANSLATIONS = {
       addressFromBusiness: 'Použít adresu podniku',
       pickOnMap: 'Vybrat na mapě',
       addressLabel: 'Adresa konání',
+      englishTitle: 'Anglický název (nepovinné)',
+      englishDescription: 'Anglický popis (nepovinné)',
+      englishHint: 'Zobrazí se uživatelům s anglickým rozhraním.',
     },
     checkins: {
       title: 'Byl jsem tady', note: 'Poznámka (nepovinné)',
@@ -280,7 +286,7 @@ const TRANSLATIONS = {
       title: 'Hashtag', noPosts: 'Zatím žádné příspěvky s', trending: 'Trendy',
     },
     onboarding: {
-      welcomeTitle: 'Vítej v Náš kraj!',
+      welcomeTitle: 'Vítej ve VANDRO!',
       welcomeLead: 'Pomůžeme ti nastavit si profil a najít super místa, která tě budou bavit.',
       continueBtn: 'Pokračovat', skip: 'Přeskočit',
       pickTitle: 'Vyber si místa',
@@ -391,6 +397,7 @@ const TRANSLATIONS = {
       generic: 'Něco se pokazilo. Zkus to znovu.',
       loadPostsFailed: 'Příspěvky se nepodařilo načíst.',
       loadFailed: 'Nepodařilo se načíst.',
+      mapLoadFailed: 'Mapu se nepodařilo načíst',
       requiredFields: 'Vyplň povinná pole.',
       commentsFailed: 'Komentáře se nepodařilo načíst.',
       openConversationFailed: 'Nepodařilo se otevřít konverzaci.',
@@ -432,8 +439,8 @@ const TRANSLATIONS = {
       displayNameBusinessHint: 'Toto meno sa zobrazí v aplikácii. Pri podnikoch/organizáciách zadajte názov podniku.',
       passwordHint: 'Aspoň 8 znakov.', termsText: 'Súhlasím s', termsLink: 'obchodnými podmienkami',
       termsAnd: 'a so', gdprLink: 'spracovaním osobných údajov', gdprSuffix: '(GDPR).',
-      welcomeTitle: 'Vitaj v Náš kraj',
-      welcomeLead: 'Objavuj hrady, zámky, ubytovanie a gastro v Česku. Zdieľaj zážitky, zbieraj odznaky a podporuj regionálne projekty.',
+      welcomeTitle: 'Vitaj vo VANDRO',
+      welcomeLead: 'Objavuj hrady, zámky, ubytovanie a gastro v Česku a na Slovensku. Zdieľaj zážitky, zbieraj odznaky a podporuj regionálne projekty.',
       welcomeFeature1: 'Objavuj pamiatky', welcomeFeature2: 'Nájdi ubytovanie',
       welcomeFeature3: 'Objavuj gastro', welcomeFeature4: 'Sleduj obľúbené',
       emailVerified: 'E-mail overený!', verifyEmail: 'Over svoj e-mail',
@@ -568,6 +575,9 @@ const TRANSLATIONS = {
       currentLocation: 'Moja aktuálna poloha',
       clearLocation: 'Odobrať polohu',
       locationLabel: 'Poloha',
+      englishVersion: 'Anglická verzia (nepovinné)',
+      textPlaceholderEn: 'Text príspevku v angličtine…',
+      englishHint: 'Zobrazí sa používateľom s anglickým rozhraním.',
     },
     notifications: {
       title: 'Notifikácie', empty: 'Žiadne notifikácie.',
@@ -626,6 +636,9 @@ const TRANSLATIONS = {
       addressFromBusiness: 'Použiť adresu podniku',
       pickOnMap: 'Vybrať na mape',
       addressLabel: 'Adresa konania',
+      englishTitle: 'Anglický názov (nepovinné)',
+      englishDescription: 'Anglický popis (nepovinné)',
+      englishHint: 'Zobrazí sa používateľom s anglickým rozhraním.',
     },
     checkins: {
       title: 'Bol som tu', note: 'Poznámka (nepovinné)',
@@ -680,7 +693,7 @@ const TRANSLATIONS = {
       title: 'Hashtag', noPosts: 'Zatiaľ žiadne príspevky s', trending: 'Trendy',
     },
     onboarding: {
-      welcomeTitle: 'Vitaj v Náš kraj!',
+      welcomeTitle: 'Vitaj vo VANDRO!',
       welcomeLead: 'Pomôžeme ti nastaviť si profil a nájsť super miesta, ktoré ťa budú baviť.',
       continueBtn: 'Pokračovať', skip: 'Preskočiť',
       pickTitle: 'Vyber si miesta',
@@ -791,6 +804,7 @@ const TRANSLATIONS = {
       generic: 'Niečo sa pokazilo. Skús znova.',
       loadPostsFailed: 'Príspevky sa nepodarilo načítať.',
       loadFailed: 'Nepodarilo sa načítať.',
+      mapLoadFailed: 'Mapu sa nepodarilo načítať',
       requiredFields: 'Vyplň povinné polia.',
       commentsFailed: 'Komentáre sa nepodarilo načítať.',
       openConversationFailed: 'Nepodarilo sa otvoriť konverzáciu.',
@@ -832,8 +846,8 @@ const TRANSLATIONS = {
       displayNameBusinessHint: 'This name will be shown in the app. For businesses/organizations enter the business name.',
       passwordHint: 'At least 8 characters.', termsText: 'I agree to the', termsLink: 'Terms of Service',
       termsAnd: 'and', gdprLink: 'Privacy Policy', gdprSuffix: '(GDPR).',
-      welcomeTitle: 'Welcome to Náš kraj',
-      welcomeLead: 'Discover castles, chateaux, stays and food across Czechia. Share experiences, collect badges and support regional projects.',
+      welcomeTitle: 'Welcome to VANDRO',
+      welcomeLead: 'Discover castles, chateaux, stays and food across Czechia and Slovakia. Share experiences, collect badges and support regional projects.',
       welcomeFeature1: 'Discover landmarks', welcomeFeature2: 'Find accommodation',
       welcomeFeature3: 'Explore food', welcomeFeature4: 'Follow favorites',
       emailVerified: 'Email verified!', verifyEmail: 'Verify your email',
@@ -968,6 +982,9 @@ const TRANSLATIONS = {
       currentLocation: 'My current location',
       clearLocation: 'Remove location',
       locationLabel: 'Location',
+      englishVersion: 'English version (optional)',
+      textPlaceholderEn: 'Post text in English…',
+      englishHint: 'Will be shown to users with English interface.',
     },
     notifications: {
       title: 'Notifications', empty: 'No notifications.',
@@ -1026,6 +1043,9 @@ const TRANSLATIONS = {
       addressFromBusiness: 'Use business address',
       pickOnMap: 'Pick on map',
       addressLabel: 'Event address',
+      englishTitle: 'English title (optional)',
+      englishDescription: 'English description (optional)',
+      englishHint: 'Will be shown to users with English interface.',
     },
     checkins: {
       title: 'Been here', note: 'Note (optional)',
@@ -1080,7 +1100,7 @@ const TRANSLATIONS = {
       title: 'Hashtag', noPosts: 'No posts with', trending: 'Trending',
     },
     onboarding: {
-      welcomeTitle: 'Welcome to Náš kraj!',
+      welcomeTitle: 'Welcome to VANDRO!',
       welcomeLead: 'We\'ll help you set up your profile and find great places you\'ll love.',
       continueBtn: 'Continue', skip: 'Skip',
       pickTitle: 'Pick places',
@@ -1191,6 +1211,7 @@ const TRANSLATIONS = {
       generic: 'Something went wrong. Try again.',
       loadPostsFailed: 'Failed to load posts.',
       loadFailed: 'Failed to load.',
+      mapLoadFailed: 'Failed to load map',
       requiredFields: 'Fill in the required fields.',
       commentsFailed: 'Failed to load comments.',
       openConversationFailed: 'Failed to open conversation.',
@@ -1220,12 +1241,12 @@ function detectBrowserLanguage() {
 
 function initI18n() {
   let stored = null;
-  try { stored = localStorage.getItem('naskraj_lang'); } catch {}
+  try { stored = localStorage.getItem('vandro_lang'); } catch {}
   if (stored && SUPPORTED_LANGS.includes(stored)) {
     _currentLang = stored;
   } else {
     _currentLang = detectBrowserLanguage();
-    try { localStorage.setItem('naskraj_lang', _currentLang); } catch {}
+    try { localStorage.setItem('vandro_lang', _currentLang); } catch {}
   }
   try { document.documentElement.lang = _currentLang; } catch {}
 }
@@ -1233,7 +1254,7 @@ function initI18n() {
 function setLanguage(lang) {
   if (!SUPPORTED_LANGS.includes(lang)) return;
   _currentLang = lang;
-  try { localStorage.setItem('naskraj_lang', lang); } catch {}
+  try { localStorage.setItem('vandro_lang', lang); } catch {}
   try { document.documentElement.lang = lang; } catch {}
   if (typeof renderApp === 'function') renderApp();
 }
@@ -1274,7 +1295,8 @@ const TYPE_LABELS_I18N = {
     apartman: 'Apartmán', glamping: 'Glamping', hostel: 'Hostel', ubytovna: 'Ubytovna',
     restaurace: 'Restaurace', kavarna: 'Kavárna', hospoda: 'Hospoda', pivovar: 'Pivovar',
     bistro: 'Bistro', cukrarna: 'Cukrárna', vinarna: 'Vinárna', food_truck: 'Food truck',
-    ceska: 'Česká', italska: 'Italská', asijska: 'Asijská', vegan: 'Veganská', jina: 'Jiná',
+    ceska: 'Česká', slovenska: 'Slovenská', italska: 'Italská', asijska: 'Asijská',
+    vegan: 'Veganská', jina: 'Jiná',
   },
   sk: {
     hrad: 'Hrad', zamek: 'Zámok', muzeum: 'Múzeum', lyzarske_stredisko: 'Lyžiarske stredisko',
@@ -1285,7 +1307,8 @@ const TYPE_LABELS_I18N = {
     apartman: 'Apartmán', glamping: 'Glamping', hostel: 'Hostel', ubytovna: 'Ubytovňa',
     restaurace: 'Reštaurácia', kavarna: 'Kaviareň', hospoda: 'Hospoda', pivovar: 'Pivovar',
     bistro: 'Bistro', cukrarna: 'Cukrárňa', vinarna: 'Vináreň', food_truck: 'Food truck',
-    ceska: 'Česká', italska: 'Talianska', asijska: 'Ázijská', vegan: 'Vegánska', jina: 'Iná',
+    ceska: 'Česká', slovenska: 'Slovenská', italska: 'Talianska', asijska: 'Ázijská',
+    vegan: 'Vegánska', jina: 'Iná',
   },
   en: {
     hrad: 'Castle', zamek: 'Chateau', muzeum: 'Museum', lyzarske_stredisko: 'Ski resort',
@@ -1296,7 +1319,8 @@ const TYPE_LABELS_I18N = {
     apartman: 'Apartment', glamping: 'Glamping', hostel: 'Hostel', ubytovna: 'Dormitory',
     restaurace: 'Restaurant', kavarna: 'Café', hospoda: 'Pub', pivovar: 'Brewery',
     bistro: 'Bistro', cukrarna: 'Patisserie', vinarna: 'Wine bar', food_truck: 'Food truck',
-    ceska: 'Czech', italska: 'Italian', asijska: 'Asian', vegan: 'Vegan', jina: 'Other',
+    ceska: 'Czech', slovenska: 'Slovak', italska: 'Italian', asijska: 'Asian',
+    vegan: 'Vegan', jina: 'Other',
   },
 };
 
