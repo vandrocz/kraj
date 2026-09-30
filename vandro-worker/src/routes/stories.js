@@ -10,7 +10,7 @@ export const storiesRoutes = new Hono();
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
-function normalizeStory(s) {
+function normalizeStory(s, likesMap) {
   let mediaUrls = null;
   if (s.media_urls_json) {
     try {
@@ -27,7 +27,24 @@ function normalizeStory(s) {
     media_type: s.media_type || 'photo',
     media_urls: mediaUrls,
     created_at: s.created_at,
+    likes: (likesMap && likesMap[s.id]) || 0,
   };
+}
+
+// Batch fetch story likes
+async function fetchStoryLikes(env, storyIds) {
+  const map = {};
+  if (!storyIds || storyIds.length === 0) return map;
+  const ph = storyIds.map(() => '?').join(',');
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT story_id, COUNT(*) AS n FROM story_likes WHERE story_id IN (${ph}) GROUP BY story_id`,
+    ).bind(...storyIds).all();
+    for (const r of results) map[r.story_id] = r.n;
+  } catch (err) {
+    console.warn('[stories] likes fetch failed:', err.message);
+  }
+  return map;
 }
 
 storiesRoutes.get('/feed', async (c) => {
@@ -140,6 +157,17 @@ storiesRoutes.get('/feed', async (c) => {
      LIMIT 10`,
   ).bind(...(myCity ? [user.sub, myCity] : [user.sub])).all();
 
+  // Batch fetch likes pro všechny stories
+  const allStoryIds = [
+    ...myPersonal.results.map((s) => s.id),
+    ...myBiz.map((s) => s.id),
+    ...followedUser.map((s) => s.id),
+    ...followedBiz.map((s) => s.id),
+    ...suggestedUser.map((s) => s.id),
+    ...suggestedBiz.map((s) => s.id),
+  ];
+  const likesMap = await fetchStoryLikes(c.env, allStoryIds);
+
   const groups = [];
 
   if (myPersonal.results.length > 0) {
@@ -150,7 +178,7 @@ storiesRoutes.get('/feed', async (c) => {
       author_kind: 'user',
       author_name: meRow?.display_name || 'Já',
       author_avatar: meRow?.avatar_url || null,
-      stories: myPersonal.results.map(normalizeStory),
+      stories: myPersonal.results.map((s) => normalizeStory(s, likesMap)),
     });
   }
 
@@ -169,7 +197,7 @@ storiesRoutes.get('/feed', async (c) => {
         stories: [],
       });
     }
-    myBizMap.get(s.business_id).stories.push(normalizeStory(s));
+    myBizMap.get(s.business_id).stories.push(normalizeStory(s, likesMap));
   }
   groups.push(...myBizMap.values());
 
@@ -185,7 +213,7 @@ storiesRoutes.get('/feed', async (c) => {
         stories: [],
       });
     }
-    userMap.get(s.user_id).stories.push(normalizeStory(s));
+    userMap.get(s.user_id).stories.push(normalizeStory(s, likesMap));
   }
   groups.push(...userMap.values());
 
@@ -203,7 +231,7 @@ storiesRoutes.get('/feed', async (c) => {
         stories: [],
       });
     }
-    fBizMap.get(s.business_id).stories.push(normalizeStory(s));
+    fBizMap.get(s.business_id).stories.push(normalizeStory(s, likesMap));
   }
   groups.push(...fBizMap.values());
 
@@ -220,7 +248,7 @@ storiesRoutes.get('/feed', async (c) => {
         stories: [],
       });
     }
-    sugUserMap.get(s.user_id).stories.push(normalizeStory(s));
+    sugUserMap.get(s.user_id).stories.push(normalizeStory(s, likesMap));
   }
   groups.push(...sugUserMap.values());
 
@@ -239,7 +267,7 @@ storiesRoutes.get('/feed', async (c) => {
         stories: [],
       });
     }
-    sugBizMap.get(s.business_id).stories.push(normalizeStory(s));
+    sugBizMap.get(s.business_id).stories.push(normalizeStory(s, likesMap));
   }
   groups.push(...sugBizMap.values());
 
@@ -330,29 +358,39 @@ storiesRoutes.post('/:id/view', async (c) => {
   return c.json({ ok: true });
 });
 
+// ============================================================
+// STORY LIKE — D1 atomicky
+// ============================================================
 storiesRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
   const story = await c.env.DB.prepare(`SELECT id, user_id FROM stories WHERE id = ?`).bind(id).first();
   if (!story) return c.json({ error: 'Story nenalezena.' }, 404);
 
-  const likeKey = `like:story:${id}:${user.sub}`;
-  const existing = await c.env.NASKRAJ_LAJKY.get(likeKey);
-  const curRaw = await c.env.NASKRAJ_LAJKY.get(`likecount:story:${id}`);
-  let cur = curRaw ? parseInt(curRaw, 10) : 0;
+  const existing = await c.env.DB.prepare(
+    `SELECT 1 FROM story_likes WHERE user_id = ? AND story_id = ?`,
+  ).bind(user.sub, id).first();
 
-  if (existing) {
-    await c.env.NASKRAJ_LAJKY.delete(likeKey);
-    cur = Math.max(0, cur - 1);
-    await c.env.NASKRAJ_LAJKY.put(`likecount:story:${id}`, String(cur));
-    return c.json({ liked: false, likes: cur });
+  let willBeLiked;
+  try {
+    if (existing) {
+      await c.env.DB.prepare(`DELETE FROM story_likes WHERE user_id = ? AND story_id = ?`).bind(user.sub, id).run();
+      willBeLiked = false;
+    } else {
+      await c.env.DB.prepare(`INSERT INTO story_likes (user_id, story_id) VALUES (?, ?)`).bind(user.sub, id).run();
+      willBeLiked = true;
+    }
+  } catch (err) {
+    console.error('[story-like] DB error:', err.message);
+    return c.json({ error: 'Nepodařilo se uložit lajk.' }, 500);
   }
 
-  await c.env.NASKRAJ_LAJKY.put(likeKey, '1');
-  cur = cur + 1;
-  await c.env.NASKRAJ_LAJKY.put(`likecount:story:${id}`, String(cur));
+  const countRow = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM story_likes WHERE story_id = ?`,
+  ).bind(id).first();
+  const likes = countRow?.n || 0;
 
-  if (story.user_id && story.user_id !== user.sub) {
+  if (willBeLiked && story.user_id && story.user_id !== user.sub) {
     try {
       const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
       await c.env.DB.prepare(
@@ -367,7 +405,7 @@ storiesRoutes.post('/:id/like', async (c) => {
     } catch {}
   }
 
-  return c.json({ liked: true, likes: cur }, 201);
+  return c.json({ liked: willBeLiked, likes });
 });
 
 storiesRoutes.post('/:id/reply', async (c) => {
