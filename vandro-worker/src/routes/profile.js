@@ -217,7 +217,6 @@ profileRoutes.patch('/me/user', async (c) => {
   const fields = ['display_name', 'bio', 'location', 'website', 'phone'];
   for (const f of fields) if (f in body) { sets.push(`${f} = ?`); params.push(body[f] ?? null); }
 
-  // Geo pole pro uživatele
   if ('geo_lat' in body) { sets.push('geo_lat = ?'); params.push(body.geo_lat != null && body.geo_lat !== '' ? parseFloat(body.geo_lat) : null); }
   if ('geo_lng' in body) { sets.push('geo_lng = ?'); params.push(body.geo_lng != null && body.geo_lng !== '' ? parseFloat(body.geo_lng) : null); }
   if ('geo_place' in body) { sets.push('geo_city = ?'); params.push(body.geo_place || null); }
@@ -259,6 +258,7 @@ profileRoutes.post('/me/business', async (c) => {
   const district = (body.district || '').toString().trim().slice(0, 100);
   const city = (body.city || '').toString().trim().slice(0, 100) || null;
   const description = (body.description || '').toString().trim().slice(0, 500);
+  const descriptionEn = (body.description_en || '').toString().trim().slice(0, 500) || null;
   const geoLat = body.geo_lat != null && body.geo_lat !== '' ? parseFloat(body.geo_lat) : null;
   const geoLng = body.geo_lng != null && body.geo_lng !== '' ? parseFloat(body.geo_lng) : null;
   const geoPlace = (body.geo_place || '').toString().trim().slice(0, 250) || null;
@@ -274,21 +274,21 @@ profileRoutes.post('/me/business', async (c) => {
   try {
     if (kind === 'organizations') {
       await c.env.DB.prepare(
-        `INSERT INTO organizations (id, user_id, name, type, region, district, city, address, description, geo_lat, geo_lng, geo_place, country_code, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(id, user.sub, name, type, region, district, city, address, description || '', geoLat, geoLng, geoPlace, countryCode).run();
+        `INSERT INTO organizations (id, user_id, name, type, region, district, city, address, description, description_en, geo_lat, geo_lng, geo_place, country_code, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, region, district, city, address, description || '', descriptionEn, geoLat, geoLng, geoPlace, countryCode).run();
     } else if (kind === 'accommodation') {
       const capacity = body.capacity ? parseInt(body.capacity, 10) : null;
       await c.env.DB.prepare(
-        `INSERT INTO accommodation (id, user_id, name, type, region, district, city, address, description, capacity, geo_lat, geo_lng, geo_place, country_code, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(id, user.sub, name, type, region, district, city, address, description || '', capacity, geoLat, geoLng, geoPlace, countryCode).run();
+        `INSERT INTO accommodation (id, user_id, name, type, region, district, city, address, description, description_en, capacity, geo_lat, geo_lng, geo_place, country_code, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, region, district, city, address, description || '', descriptionEn, capacity, geoLat, geoLng, geoPlace, countryCode).run();
     } else {
       const cuisineType = (body.cuisine_type || '').toString().trim() || null;
       await c.env.DB.prepare(
-        `INSERT INTO restaurants (id, user_id, name, type, cuisine_type, region, district, city, address, description, geo_lat, geo_lng, geo_place, country_code, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      ).bind(id, user.sub, name, type, cuisineType, region, district, city, address, description || '', geoLat, geoLng, geoPlace, countryCode).run();
+        `INSERT INTO restaurants (id, user_id, name, type, cuisine_type, region, district, city, address, description, description_en, geo_lat, geo_lng, geo_place, country_code, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ).bind(id, user.sub, name, type, cuisineType, region, district, city, address, description || '', descriptionEn, geoLat, geoLng, geoPlace, countryCode).run();
     }
   } catch (err) {
     console.error('[add business]', err);
@@ -308,7 +308,7 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
   if (!owned) return c.json({ error: 'Nenájdené.' }, 404);
   if (owned.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnenie.' }, 403);
 
-  const common = ['name', 'description', 'region', 'district', 'city', 'website', 'phone', 'type', 'opening_hours', 'address'];
+  const common = ['name', 'description', 'description_en', 'region', 'district', 'city', 'website', 'phone', 'type', 'opening_hours', 'address'];
   const allowedFields = table === 'restaurants'
     ? [...common, 'cuisine_type', 'price_level']
     : table === 'accommodation'
@@ -324,7 +324,6 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
   if ('geo_place' in body) { sets.push('geo_place = ?'); params.push(body.geo_place || null); }
   if ('country_code' in body) { sets.push('country_code = ?'); params.push(body.country_code || null); }
 
-  // Auto-detect country from region, pokud region v body ale country_code ne
   if ('region' in body && !('country_code' in body)) {
     const detected = detectCountryFromRegion(body.region);
     if (detected) { sets.push('country_code = ?'); params.push(detected); }
@@ -376,6 +375,7 @@ profileRoutes.delete('/me/business/:type/:id', async (c) => {
         await c.env.DB.prepare(`DELETE FROM post_media WHERE post_id = ?`).bind(p.id).run();
         await c.env.DB.prepare(`DELETE FROM post_hashtags WHERE post_id = ?`).bind(p.id).run();
         await c.env.DB.prepare(`DELETE FROM comments WHERE post_id = ?`).bind(p.id).run();
+        await c.env.DB.prepare(`DELETE FROM post_likes WHERE post_id = ?`).bind(p.id).run();
       }
       await c.env.DB.prepare(`DELETE FROM posts WHERE business_id = ?`).bind(id).run();
     }
@@ -487,7 +487,7 @@ profileRoutes.delete('/me/account', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   if (body.confirm !== 'SMAZAT') return c.json({ error: 'Pro potvrzení napiš "SMAZAT".' }, 400);
   const now = new Date().toISOString();
-  const anonEmail = `deleted+${user.sub}@naskraj.local`;
+  const anonEmail = `deleted+${user.sub}@vandro.local`;
   await c.env.DB.prepare(
     `UPDATE users SET deleted_at = ?, status = 'deleted', email = ?, display_name = 'Smazaný účet',
       bio = NULL, avatar_url = NULL, cover_url = NULL, location = NULL, website = NULL, phone = NULL,
@@ -640,11 +640,24 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
     try { const r = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM follows WHERE target_type = ? AND target_id = ?`).bind(type, id).first(); followers = r?.n || 0; } catch {}
 
     const { results: postRows } = await c.env.DB.prepare(`SELECT id, created_at, view_count FROM posts WHERE business_id = ? AND status = 'published'`).bind(id).all();
-    for (const p of postRows) {
-      try { const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`); likes += raw ? parseInt(raw, 10) : 0; } catch {}
-      try { const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first(); comments += cc?.n || 0; } catch {}
-      views += p.view_count || 0;
+
+    // Likes z D1 batch
+    if (postRows.length > 0) {
+      const ph = postRows.map(() => '?').join(',');
+      try {
+        const { results: likesRows } = await c.env.DB.prepare(
+          `SELECT post_id, COUNT(*) AS n FROM post_likes WHERE post_id IN (${ph}) GROUP BY post_id`,
+        ).bind(...postRows.map((p) => p.id)).all();
+        for (const r of likesRows) likes += r.n;
+      } catch {}
+      try {
+        const { results: cRows } = await c.env.DB.prepare(
+          `SELECT post_id, COUNT(*) AS n FROM comments WHERE post_id IN (${ph}) GROUP BY post_id`,
+        ).bind(...postRows.map((p) => p.id)).all();
+        for (const r of cRows) comments += r.n;
+      } catch {}
     }
+    for (const p of postRows) views += p.view_count || 0;
 
     const days = 30;
     const dayList = [];
@@ -672,9 +685,15 @@ profileRoutes.get('/:type/:id/stats', async (c) => {
     } catch {}
 
     const likesByDay = {};
-    for (const p of postRows) {
-      const day = (p.created_at || '').slice(0, 10); if (!day) continue;
-      try { const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`); const l = raw ? parseInt(raw, 10) : 0; likesByDay[day] = (likesByDay[day] || 0) + l; } catch {}
+    if (postRows.length > 0) {
+      const ph = postRows.map(() => '?').join(',');
+      try {
+        const { results: lRows } = await c.env.DB.prepare(
+          `SELECT DATE(created_at) AS day, COUNT(*) AS n FROM post_likes
+           WHERE post_id IN (${ph}) AND created_at >= datetime('now','-${days} days') GROUP BY day`,
+        ).bind(...postRows.map((p) => p.id)).all();
+        for (const r of lRows) likesByDay[r.day] = r.n;
+      } catch {}
     }
 
     const viewsByDay = {};
@@ -702,7 +721,7 @@ profileRoutes.get('/:type/:id/gallery', async (c) => {
   if (!table || table === 'users') return c.json({ items: [] });
 
   const { results } = await c.env.DB.prepare(
-    `SELECT id, image_url, caption, sort_order, created_at FROM business_gallery
+    `SELECT id, image_url, caption, caption_en, sort_order, created_at FROM business_gallery
      WHERE business_id = ? AND business_kind = ? ORDER BY sort_order ASC, created_at ASC`,
   ).bind(id, table).all();
   return c.json({ items: results || [] });
@@ -724,6 +743,7 @@ profileRoutes.post('/me/gallery/:type/:id', async (c) => {
   const form = await c.req.parseBody();
   const file = form.file;
   const caption = (form.caption || '').toString().slice(0, 120);
+  const captionEn = (form.caption_en || '').toString().slice(0, 120) || null;
 
   if (!file || typeof file === 'string') return c.json({ error: 'Chýba súbor.' }, 400);
   if (!c.env.MEDIA) return c.json({ error: 'Server nemá úložiště.' }, 500);
@@ -745,10 +765,10 @@ profileRoutes.post('/me/gallery/:type/:id', async (c) => {
   const nextOrder = (maxOrderRow?.m ?? -1) + 1;
 
   await c.env.DB.prepare(
-    `INSERT INTO business_gallery (id, business_id, business_kind, image_url, caption, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
-  ).bind(galleryId, id, table, url, caption || null, nextOrder).run();
+    `INSERT INTO business_gallery (id, business_id, business_kind, image_url, caption, caption_en, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(galleryId, id, table, url, caption || null, captionEn, nextOrder).run();
 
-  return c.json({ id: galleryId, image_url: url, caption, sort_order: nextOrder }, 201);
+  return c.json({ id: galleryId, image_url: url, caption, caption_en: captionEn, sort_order: nextOrder }, 201);
 });
 
 profileRoutes.patch('/me/gallery/:galleryId', async (c) => {
@@ -763,12 +783,10 @@ profileRoutes.patch('/me/gallery/:galleryId', async (c) => {
   if (!owned || (owned.user_id !== user.sub && user.role !== 'admin')) return c.json({ error: 'Nemáš oprávnenie.' }, 403);
 
   const body = await c.req.json().catch(() => ({}));
-  const caption = (body.caption ?? '').toString().slice(0, 120);
-  const sortOrder = Number.isFinite(body.sort_order) ? parseInt(body.sort_order, 10) : null;
-
   const sets = [], params = [];
-  if ('caption' in body) { sets.push('caption = ?'); params.push(caption || null); }
-  if (sortOrder !== null) { sets.push('sort_order = ?'); params.push(sortOrder); }
+  if ('caption' in body) { sets.push('caption = ?'); params.push((body.caption ?? '').toString().slice(0, 120) || null); }
+  if ('caption_en' in body) { sets.push('caption_en = ?'); params.push((body.caption_en ?? '').toString().slice(0, 120) || null); }
+  if (Number.isFinite(body.sort_order)) { sets.push('sort_order = ?'); params.push(parseInt(body.sort_order, 10)); }
   if (sets.length === 0) return c.json({ error: 'Žiadne polia.' }, 400);
 
   params.push(galleryId);
@@ -837,7 +855,9 @@ profileRoutes.get('/:type/:id', async (c) => {
   const logoUrl = business.logo_url || business.image_url || null;
 
   const { results: posts } = await c.env.DB.prepare(
-    `SELECT id, text_content, content_html, image_url, geo_place, geo_lat, geo_lng, created_at FROM posts WHERE business_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 60`,
+    `SELECT id, text_content, content_html, text_content_en, content_html_en,
+            image_url, geo_place, geo_lat, geo_lng, created_at
+     FROM posts WHERE business_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 60`,
   ).bind(id).all();
 
   const ids = posts.map((p) => p.id);
@@ -848,28 +868,49 @@ profileRoutes.get('/:type/:id', async (c) => {
     for (const r of mrows) { if (!mediaMap[r.post_id]) mediaMap[r.post_id] = []; mediaMap[r.post_id].push(r.image_url); }
   }
 
-  const postsWithMedia = await Promise.all(posts.map(async (p) => {
-    let likes = 0, commentCount = 0, views = 0;
-    try { const raw = await c.env.NASKRAJ_LAJKY.get(`likecount:post:${p.id}`); likes = raw ? parseInt(raw, 10) : 0; } catch {}
-    try { const cc = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM comments WHERE post_id = ?`).bind(p.id).first(); commentCount = cc?.n || 0; } catch {}
-    try { const vr = await c.env.DB.prepare(`SELECT view_count FROM posts WHERE id = ?`).bind(p.id).first(); views = vr?.view_count || 0; } catch {}
-    return {
-      id: p.id, text: p.text_content, html: p.content_html || escapePlain(p.text_content), image_url: p.image_url,
-      media: mediaMap[p.id] || (p.image_url ? [p.image_url] : []),
-      created_at: p.created_at, likes, comment_count: commentCount, views,
-      geo: p.geo_place ? { place: p.geo_place, lat: p.geo_lat, lng: p.geo_lng } : null,
-      business: {
-        id: business.id, name: business.name, type: business.type, region: business.region, district: business.district, city: business.city,
-        is_verified: !!business.is_verified, logo_url: logoUrl, cuisine_type: business.cuisine_type || null,
-      },
-      __feedKey: feedKey,
-    };
+  // Batch likes + comment counts
+  const likesMap = {};
+  const commentCountMap = {};
+  if (ids.length > 0) {
+    const ph = ids.map(() => '?').join(',');
+    try {
+      const { results: lRows } = await c.env.DB.prepare(
+        `SELECT post_id, COUNT(*) AS n FROM post_likes WHERE post_id IN (${ph}) GROUP BY post_id`,
+      ).bind(...ids).all();
+      for (const r of lRows) likesMap[r.post_id] = r.n;
+    } catch {}
+    try {
+      const { results: cRows } = await c.env.DB.prepare(
+        `SELECT post_id, COUNT(*) AS n FROM comments WHERE post_id IN (${ph}) GROUP BY post_id`,
+      ).bind(...ids).all();
+      for (const r of cRows) commentCountMap[r.post_id] = r.n;
+    } catch {}
+  }
+
+  const postsWithMedia = posts.map((p) => ({
+    id: p.id, text: p.text_content, html: p.content_html || escapePlain(p.text_content),
+    text_en: p.text_content_en || null, html_en: p.content_html_en || null,
+    image_url: p.image_url,
+    media: mediaMap[p.id] || (p.image_url ? [p.image_url] : []),
+    created_at: p.created_at,
+    likes: likesMap[p.id] || 0,
+    comment_count: commentCountMap[p.id] || 0,
+    views: 0,
+    geo: p.geo_place ? { place: p.geo_place, lat: p.geo_lat, lng: p.geo_lng } : null,
+    business: {
+      id: business.id, name: business.name, type: business.type,
+      region: business.region, district: business.district, city: business.city,
+      country_code: business.country_code || null,
+      is_verified: !!business.is_verified, logo_url: logoUrl,
+      cuisine_type: business.cuisine_type || null,
+    },
+    __feedKey: feedKey,
   }));
 
   let gallery = [];
   try {
     const { results: galRows } = await c.env.DB.prepare(
-      `SELECT id, image_url, caption, sort_order FROM business_gallery WHERE business_id = ? AND business_kind = ? ORDER BY sort_order ASC, created_at ASC`,
+      `SELECT id, image_url, caption, caption_en, sort_order FROM business_gallery WHERE business_id = ? AND business_kind = ? ORDER BY sort_order ASC, created_at ASC`,
     ).bind(id, table).all();
     gallery = galRows || [];
   } catch {}
