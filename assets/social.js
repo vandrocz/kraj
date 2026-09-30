@@ -2,7 +2,6 @@
 // SOCIÁLNY FEED
 // ============================================================
 
-// Vyber text podle aktuálního jazyka (CZ/SK/EN)
 function getPostTextLang(post) {
   const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
   if (lang === 'en' && post && post.text_en) return post.text_en;
@@ -136,7 +135,8 @@ function renderSocialPostCard(post, feedKey) {
        </div>`
     : '';
 
-  const likeText = post.likes > 0 ? `${fmt(post.likes)} ${t('feed.likesMe')}` : t('feed.likesMe');
+  const likesCount = Number(post.likes) || 0;
+  const likeText = likesCount > 0 ? `${fmt(likesCount)} ${t('feed.likesMe')}` : t('feed.likesMe');
 
   return `
     <article class="post-card" data-post-id="${post.id}">
@@ -154,7 +154,7 @@ function renderSocialPostCard(post, feedKey) {
       ${renderMediaCarousel(post)}
       <div class="post-actions">
         <button class="post-action ${post.__liked ? 'is-liked' : ''}" data-action="toggle-post-like" data-id="${post.id}" data-feed="${feedKey}">
-          ${icon('clover', { size: 22, filled: !!post.__liked })}
+          ${icon('leaf', { size: 22, filled: !!post.__liked })}
         </button>
         <button class="post-action" data-action="open-lightbox" data-post-id="${post.id}" data-index="0" data-caption="${escapeAttr(captionText)}">
           ${icon('comment', { size: 21 })}
@@ -211,18 +211,23 @@ function updatePostEverywhere(postId, updater) {
   apply(state.lightbox?.post);
 }
 
+// ============================================================
+// TOGGLE LIKE — čeká na server, žádný race
+// ============================================================
 async function togglePostLike(postId, feedKey, btnEl) {
   if (!isLoggedIn()) { showToast(t('post.loginToComment')); switchTab('account'); return; }
 
   const post = findPostAnywhere(postId);
   if (!post) return;
 
+  // Blokuj další klik, dokud předchozí request nedoběhne
   if (post.__likePending) return;
   post.__likePending = true;
 
+  // Optimistic update — jen vizuální, ihned
   const wasLiked = !!post.__liked;
   const optimisticLiked = !wasLiked;
-  const optimisticLikes = Math.max(0, (post.likes || 0) + (wasLiked ? -1 : 1));
+  const optimisticLikes = Math.max(0, (Number(post.likes) || 0) + (wasLiked ? -1 : 1));
 
   updatePostEverywhere(postId, (p) => {
     p.__liked = optimisticLiked;
@@ -232,17 +237,19 @@ async function togglePostLike(postId, feedKey, btnEl) {
 
   try {
     const data = await apiPost(`/api/feed/${postId}/like`, {});
+    // Přepiš optimistický stav skutečnými daty ze serveru
     updatePostEverywhere(postId, (p) => {
       p.__liked = !!data.liked;
-      p.likes = data.likes || 0;
+      p.likes = Number(data.likes) || 0;
     });
-    updateLikeButtonsDOM(postId, !!data.liked, data.likes || 0);
+    updateLikeButtonsDOM(postId, !!data.liked, Number(data.likes) || 0);
   } catch (err) {
+    // Rollback
     updatePostEverywhere(postId, (p) => {
       p.__liked = wasLiked;
-      p.likes = Math.max(0, (p.likes || 0) + (wasLiked ? 1 : -1));
+      p.likes = Math.max(0, (Number(p.likes) || 0) + (wasLiked ? 1 : -1));
     });
-    updateLikeButtonsDOM(postId, wasLiked, post.likes);
+    updateLikeButtonsDOM(postId, wasLiked, Number(post.likes) || 0);
     showToast(err.message);
   } finally {
     updatePostEverywhere(postId, (p) => { p.__likePending = false; });
@@ -252,7 +259,7 @@ async function togglePostLike(postId, feedKey, btnEl) {
 function updateLikeButtonsDOM(postId, liked, likes) {
   document.querySelectorAll(`[data-action="toggle-post-like"][data-id="${postId}"]`).forEach((btn) => {
     btn.classList.toggle('is-liked', !!liked);
-    btn.innerHTML = icon('clover', { size: 22, filled: !!liked });
+    btn.innerHTML = icon('leaf', { size: 22, filled: !!liked });
   });
 
   document.querySelectorAll(`[data-like-count="${postId}"]`).forEach((el) => {
@@ -432,7 +439,6 @@ function openEditPost(postId, feedKey) {
 
 function renderEditPostOverlay() {
   const { postId, feedKey, html, html_en } = state.overlay;
-  const lang = typeof getLanguage === 'function' ? getLanguage() : 'cs';
   return `
     <div class="page-scroll">
       ${renderBackHeader(t('post.writeEdit'))}
