@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { verify } from 'hono/jwt';
 import { authRoutes } from './routes/auth.js';
+import { bannersPublicRoutes, bannersAdminRoutes } from './routes/banners.js';
 import { authGoogleRoutes } from './routes/auth-google.js';
 import { feedRoutes } from './routes/feed.js';
 import { hashtagsRoutes } from './routes/hashtags.js';
