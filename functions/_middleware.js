@@ -1,9 +1,9 @@
 // ============================================================
-// Cloudflare Pages Function — dynamické OG meta tagy pre boty
+// Cloudflare Pages Function — dynamické OG meta tagy pro boty
 // ============================================================
 
-const API_BASE = 'https://naskraj-api.vandrocz-contact.workers.dev';
-const SITE_URL = 'https://naskraj.vandro.cz';
+const API_BASE = 'https://api.vandro.cz';
+const SITE_URL = 'https://vandro.cz';
 const DEFAULT_IMAGE = 'https://cdn.vandro.cz/Untitled15_20260522160351.png';
 const DEFAULT_TITLE = 'VANDRO — regionální platforma';
 const DEFAULT_DESC = 'Objevuj hrady, zámky, ubytování a gastro v Česku a na Slovensku. Podpoř regionální projekty.';
