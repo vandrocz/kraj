@@ -68,7 +68,7 @@ async function fetchLikesForPosts(env, postIds, viewerId) {
     const { results } = await env.DB.prepare(
       `SELECT post_id, COUNT(*) AS n FROM post_likes WHERE post_id IN (${ph}) GROUP BY post_id`,
     ).bind(...postIds).all();
-    for (const r of results) likesMap[r.post_id] = r.n;
+    for (const r of results) likesMap[r.post_id] = Number(r.n) || 0;
   } catch (err) {
     console.warn('[likes] batch count failed:', err.message);
   }
@@ -83,6 +83,8 @@ async function fetchLikesForPosts(env, postIds, viewerId) {
         console.log(`[likes] user ${viewerId} has ${results.length} likes in this batch`);
       }
     } catch (err) {
+      // === FIX ===: pri zlyhaní dotazu radšej zalogujeme ako error (nie warn)
+      // a vrátime prázdny likedSet — frontend si to vyžiada pri ďalšom requeste
       console.error('[likes] batch viewer lookup FAILED:', err.message);
     }
   } else {
@@ -467,7 +469,7 @@ feedRoutes.post('/:id/like', async (c) => {
   const countRow = await c.env.DB.prepare(
     `SELECT COUNT(*) AS n FROM post_likes WHERE post_id = ?`,
   ).bind(postId).first();
-  const likes = countRow?.n || 0;
+  const likes = Number(countRow?.n) || 0;   // === FIX ===: explicit Number() (D1 niekedy vracia string)
 
   if (willBeLiked && post.user_id && post.user_id !== user.sub) {
     try {
