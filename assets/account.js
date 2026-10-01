@@ -293,7 +293,6 @@ async function handleRegisterSubmit(form) {
   const fd = new FormData(form);
   const body = Object.fromEntries(fd.entries());
 
-  // Geo data z formuláře (place search / map picker)
   if (form.dataset.geoLat) body.geo_lat = form.dataset.geoLat;
   if (form.dataset.geoLng) body.geo_lng = form.dataset.geoLng;
   if (form.dataset.geoPlace) body.geo_place = form.dataset.geoPlace;
@@ -572,6 +571,10 @@ function openAddBusinessModal() {
           <option value="">${escapeHtml(t('auth.registerFirstDistrict'))}</option>
         </select></div>
       <div class="form-field"><label class="form-label">${escapeHtml(t('auth.registerDescription'))}</label><textarea class="form-textarea" name="description" maxlength="500"></textarea></div>
+      <details class="add-biz-en-toggle" style="margin-bottom:10px">
+        <summary style="cursor:pointer;font-size:12.5px;color:var(--c-text-muted);font-weight:700;padding:6px 0;">🌐 ${escapeHtml(t('post.englishVersion'))}</summary>
+        <div class="form-field" style="margin-top:6px"><textarea class="form-textarea" name="description_en" maxlength="500" placeholder="English description…"></textarea></div>
+      </details>
     `,
     submitLabel: t('profile.createBusiness'),
     onSubmit: async (data) => {
@@ -601,7 +604,7 @@ function updateAddBusinessTypeOptions(kind) {
 }
 
 // ============================================================
-// POST FORM
+// POST FORM (s EN podporou)
 // ============================================================
 function renderInlineBusinessPostForm(selected, targetFeed) {
   const busy = accountFormState._postUploading || accountFormState._postCropping;
@@ -616,6 +619,14 @@ function renderInlineBusinessPostForm(selected, targetFeed) {
         </div>
         <div id="file-preview-grid" class="file-preview-grid"></div>
         ${renderRichEditor('text_html', t('post.caption'))}
+
+        <details class="post-en-toggle" style="margin-bottom:14px">
+          <summary style="cursor:pointer;font-size:12.5px;color:var(--c-text-muted);font-weight:700;padding:8px 0;display:flex;align-items:center;gap:6px;">
+            <span>🌐</span><span>${escapeHtml(t('post.englishVersion'))}</span>
+          </summary>
+          <p class="form-hint" style="margin:4px 0 8px;font-style:italic;">${escapeHtml(t('post.englishHint'))}</p>
+          ${renderRichEditor('text_html_en', t('post.textPlaceholderEn'))}
+        </details>
 
         <div class="post-link-fields">
           <p class="post-link-fields-title">${icon('globe', { size: 14 })} ${escapeHtml(t('post.linkOptional'))}</p>
@@ -746,6 +757,7 @@ async function handleBusinessPostSubmit(form) {
   fd.set('business_id', businessId);
   fd.set('target_feed', targetFeed);
 
+  // CZ/SK rich editor
   let html = getEditorHtml(form);
   const linkUrl = (form.querySelector('[name="link_url"]')?.value || '').trim();
   const linkText = (form.querySelector('[name="link_text"]')?.value || '').trim();
@@ -756,6 +768,16 @@ async function handleBusinessPostSubmit(form) {
   }
   fd.set('text_html', html);
   fd.set('text', html.replace(/<[^>]*>/g, ' ').trim());
+
+  // EN rich editor (nepovinný)
+  const enEditorWrap = form.querySelector('[data-editor-wrap] [name="text_html_en"]');
+  if (enEditorWrap) {
+    const enHtml = enEditorWrap.value || '';
+    const enClean = enHtml.replace(/<[^>]*>/g, ' ').trim();
+    if (enClean) {
+      fd.set('text_html_en', enHtml);
+    }
+  }
 
   const geoLat = form.dataset.geoLat || '';
   const geoLng = form.dataset.geoLng || '';
