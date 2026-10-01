@@ -3131,3 +3131,55 @@ body.no-scroll { overflow: hidden; }
   box-shadow: 0 3px 8px rgba(0,0,0,0.35);
   margin: 0 auto;
 }
+
+/* ============================================================
+   BANNERY
+   ============================================================ */
+.banner-stack { padding: 0 16px 12px; display: flex; flex-direction: column; gap: 8px; }
+.banner-wrap {
+  position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(16,32,26,0.08);
+}
+.banner {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  padding: 14px 40px 14px 16px;
+  border-radius: var(--radius-md);
+  transition: transform .12s;
+}
+.banner:active { transform: scale(0.99); }
+.banner-content { display: flex; align-items: center; gap: 12px; }
+.banner-image {
+  width: 56px; height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.15);
+}
+.banner-text { flex: 1; min-width: 0; }
+.banner-title { font-weight: 800; font-size: 14px; line-height: 1.25; }
+.banner-desc { font-size: 12.5px; margin-top: 3px; opacity: 0.9; line-height: 1.4; }
+.banner-cta {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 10px;
+  border: 1.5px solid;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.banner-dismiss {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.25);
+  color: white;
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2;
+}
+.banner-dismiss:hover { background: rgba(0,0,0,0.45); }
