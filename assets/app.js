@@ -10,7 +10,8 @@ const state = {
   token: getToken(),
   businesses: getStoredBusinesses(),
   authView: 'login',
-
+  _banners: null,
+  adminBanners: null,
   feedTitles: {},
 
   socialFeeds: {
