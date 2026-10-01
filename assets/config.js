@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://naskraj-api.vandrocz-contact.workers.dev';
+const API_BASE_URL = 'https://api.vandro.cz';
 const MAP_ORIGIN = 'https://maps.vandro.cz';
 const GOOGLE_CLIENT_ID = '769764675952-1nb44qbpc4o7a1l5r14vt8phamom9209.apps.googleusercontent.com';
 const RECAPTCHA_SITE_KEY = '6LeXt8UtAAAAAOOSYTkbrpC4gaotPw9-SUPEuvDo';
@@ -165,7 +165,6 @@ function shortenUrl(url) {
   return domain + '/…';
 }
 
-// Skrátenie linkov priamo v HTML — pre lightbox (kde chceme plný text s linkami)
 function shortenLinksInHtml(html) {
   if (!html) return html;
   return String(html).replace(
@@ -184,14 +183,11 @@ function shortenLinksInHtml(html) {
   );
 }
 
-// Extrakcia liniek z HTML pre karty — vráti { text, links }
-// Linky sa v karte vykreslia ako samostatné tlačidlá POD textom.
 function extractLinks(html) {
   if (!html) return { text: '', links: [] };
   let s = String(html);
   const links = [];
 
-  // Extrahuj všetky <a href="...">...</a>
   s = s.replace(
     /<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
     (match, href, innerText) => {
@@ -208,7 +204,6 @@ function extractLinks(html) {
     },
   );
 
-  // Odstráň ostatné HTML tagy
   s = s.replace(/<br\s*\/?>/gi, ' ');
   s = s.replace(/<\/p>/gi, ' ');
   s = s.replace(/<[^>]+>/g, '');
