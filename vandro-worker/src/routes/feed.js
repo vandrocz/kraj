@@ -11,6 +11,20 @@ export const feedRoutes = new Hono();
 
 const PROTECTION_MS = 30 * 60 * 1000;
 
+// ============================================================
+// KRITICKÉ: cache-control hlavičky pro všechny feed odpovědi
+// Bez tohoto prohlížeč/Cloudflare cachuje odpověď jako anonymní
+// a po reloadu dostaneš cached verzi bez __liked: true
+// ============================================================
+feedRoutes.use('*', async (c, next) => {
+  await next();
+  try {
+    c.res.headers.set('Cache-Control', 'private, no-store, no-cache, max-age=0, must-revalidate');
+    c.res.headers.set('Pragma', 'no-cache');
+    c.res.headers.set('Vary', 'Authorization, Origin');
+  } catch {}
+});
+
 function projectPhase(project) {
   if (project.status === 'waiting') return 'waiting';
   if (project.status === 'completed') return 'completed';
@@ -40,7 +54,10 @@ async function fetchMediaForPosts(env, postIds) {
   return map;
 }
 
-// Batch fetch likes pro sadu postů (efektivní, jeden query)
+// ============================================================
+// Batch fetch likes z D1 — pro celou stránku jeden query
+// Vrací: { likesMap: { postId: count }, likedSet: Set(postId) }
+// ============================================================
 async function fetchLikesForPosts(env, postIds, viewerId) {
   const likesMap = {};
   const likedSet = new Set();
@@ -62,9 +79,14 @@ async function fetchLikesForPosts(env, postIds, viewerId) {
         `SELECT post_id FROM post_likes WHERE user_id = ? AND post_id IN (${ph})`,
       ).bind(viewerId, ...postIds).all();
       for (const r of results) likedSet.add(r.post_id);
+      if (results.length > 0) {
+        console.log(`[likes] user ${viewerId} has ${results.length} likes in this batch`);
+      }
     } catch (err) {
-      console.warn('[likes] batch viewer lookup failed:', err.message);
+      console.error('[likes] batch viewer lookup FAILED:', err.message);
     }
+  } else {
+    console.log('[likes] viewerId is NULL — skipping user likes lookup');
   }
 
   return { likesMap, likedSet };
@@ -85,11 +107,21 @@ async function getBlockedIds(env, viewerId) {
 
 async function getViewerId(c, env) {
   const h = c.req.header('Authorization') || '';
-  if (!h.startsWith('Bearer ')) return null;
+  if (!h.startsWith('Bearer ')) {
+    console.log('[getViewerId] No Authorization header');
+    return null;
+  }
   try {
     const payload = await verify(h.slice(7), env.JWT_SECRET, 'HS256');
+    if (!payload || !payload.sub) {
+      console.warn('[getViewerId] Token verified but no sub');
+      return null;
+    }
     return payload.sub;
-  } catch { return null; }
+  } catch (err) {
+    console.warn('[getViewerId] Verify failed:', err.message);
+    return null;
+  }
 }
 
 function encodeCursor(createdAt, id) { return btoa(`${createdAt}|${id}`); }
@@ -252,7 +284,6 @@ async function loadSocialFeed(c, { targetFeed, table, extraFilterCols }) {
   const { results } = await c.env.DB.prepare(sql).bind(...params).all();
   const mediaMap = await fetchMediaForPosts(c.env, results.map((r) => r.id));
 
-  // Batch likes (nahrazuje N+1 KV lookup)
   const postIds = results.map((r) => r.id);
   const { likesMap, likedSet } = await fetchLikesForPosts(c.env, postIds, viewerId);
 
@@ -409,16 +440,12 @@ feedRoutes.post('/:id/view', async (c) => {
   return c.json({ ok: true });
 });
 
-// ============================================================
-// TOGGLE LIKE — atomicky přes D1 (žádný race condition)
-// ============================================================
 feedRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const postId = c.req.param('id');
   const post = await c.env.DB.prepare(`SELECT id, user_id FROM posts WHERE id = ? AND status = 'published'`).bind(postId).first();
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
 
-  // Zjisti, jestli už lajk existuje
   const existing = await c.env.DB.prepare(
     `SELECT 1 FROM post_likes WHERE user_id = ? AND post_id = ?`,
   ).bind(user.sub, postId).first();
@@ -434,16 +461,14 @@ feedRoutes.post('/:id/like', async (c) => {
     }
   } catch (err) {
     console.error('[like] DB error:', err.message);
-    return c.json({ error: 'Nepodařilo se uložit lajk.' }, 500);
+    return c.json({ error: 'Nepodařilo se uložit lísteček.' }, 500);
   }
 
-  // Vždy vráť přesné číslo
   const countRow = await c.env.DB.prepare(
     `SELECT COUNT(*) AS n FROM post_likes WHERE post_id = ?`,
   ).bind(postId).first();
   const likes = countRow?.n || 0;
 
-  // Notifikace a push při novém lajku
   if (willBeLiked && post.user_id && post.user_id !== user.sub) {
     try {
       const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
@@ -451,12 +476,12 @@ feedRoutes.post('/:id/like', async (c) => {
 
       await c.env.DB.prepare(
         `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
-         VALUES (?, ?, 'like', ?, 'post', ?, 'dal(a) iskru tvému příspěvku')`,
+         VALUES (?, ?, 'like', ?, 'post', ?, 'poslal(a) lísteček tvému příspěvku')`,
       ).bind(newId('notif'), post.user_id, user.sub, postId).run();
 
       await sendPushToUser(c.env, post.user_id, {
-        title: 'Nová iskra',
-        body: `${actorName} dal(a) iskru tvému příspěvku`,
+        title: 'Nový lísteček',
+        body: `${actorName} poslal(a) lísteček tvému příspěvku`,
         url: `/?post=${postId}`,
         tag: `like-${postId}`,
       });
