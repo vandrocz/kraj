@@ -353,12 +353,30 @@
       case 'admin-tab':
         state._adminTab = el.dataset.tab;
         if (el.dataset.tab === 'users' && state.adminUsers === null) loadAdminUsers();
+        if (el.dataset.tab === 'banners' && state.adminBanners === null) loadAdminBanners();
         renderApp();
         break;
       case 'admin-suspend-user': suspendUser(el.dataset.id); break;
       case 'admin-unsuspend-user': unsuspendUser(el.dataset.id); break;
       case 'admin-change-role': changeUserRole(el.dataset.id); break;
       case 'admin-user-detail': openUserDetail(el.dataset.id); break;
+
+      // NOVÉ / CHÝBAJÚCE:
+      case 'delete-admin-post': deleteAdminPost(el.dataset.id); break;
+      case 'verify-business': verifyBusiness(el.dataset.kind, el.dataset.id); break;
+      case 'reject-business':
+        (async () => {
+          if (!confirm('Zmazať tento podnik z fronty?')) return;
+          try {
+            await apiDelete(`/api/admin/reject/${el.dataset.kind}/${el.dataset.id}`);
+            state.adminPending = null;
+            state.adminPendingLoading = false;
+            showToast(t('admin.rejected'));
+            renderApp();
+          } catch (err) { showToast(err.message); }
+        })();
+        break;
+
       case 'admin-force-verify-email':
         (async () => {
           try { await apiPost(`/api/admin/users/${el.dataset.id}/force-verify-email`, {}); showToast(t('admin.forceVerify')); } catch (err) { showToast(err.message); }
@@ -373,6 +391,12 @@
       case 'admin-backfill-handles': adminBackfillHandles(); break;
       case 'admin-seed-test': adminSeedTest(); break;
       case 'admin-cleanup-test': adminCleanupTest(); break;
+
+      // BANNERY
+      case 'open-create-banner': openBannerModal(null); break;
+      case 'edit-banner': openBannerModal(el.dataset.id); break;
+      case 'delete-banner': deleteBanner(el.dataset.id); break;
+      case 'dismiss-banner': dismissBanner(el.dataset.id); break;
 
       // PUSH
       case 'push-test': testPush(); break;
