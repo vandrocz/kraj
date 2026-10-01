@@ -19,6 +19,21 @@ storiesRoutes.use('*', async (c, next) => {
   } catch {}
 });
 
+async function fetchUserStoryLikes(env, userId, storyIds) {
+  const set = new Set();
+  if (!userId || !storyIds || storyIds.length === 0) return set;
+  const ph = storyIds.map(() => '?').join(',');
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT story_id FROM story_likes WHERE user_id = ? AND story_id IN (${ph})`,
+    ).bind(userId, ...storyIds).all();
+    for (const r of results) set.add(r.story_id);
+  } catch (err) {
+    console.warn('[stories] user likes fetch failed:', err.message);
+  }
+  return set;
+}
+
 function normalizeStory(s, likesMap) {
   let mediaUrls = null;
   if (s.media_urls_json) {
