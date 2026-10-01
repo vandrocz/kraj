@@ -1014,11 +1014,21 @@ async function loadAdminVerifications() { try { const d = await apiGet('/api/adm
 async function loadAdminPosts() { try { const d = await apiGet('/api/admin/posts'); state.adminPosts = d.posts || []; } catch { state.adminPosts = []; } finally { if (state.tab === 'account') renderApp(); } }
 
 function renderAdminPanel() {
-  // ... pôvodné loady
+  if (state.adminPending === null && !state.adminPendingLoading) { state.adminPendingLoading = true; loadAdminPending(); }
+  if (state.adminReports === null && !state.adminReportsLoading) { state.adminReportsLoading = true; loadAdminReports(); }
+  if (state.adminVerifications === null) loadAdminVerifications();
+  if (state.adminPosts === null) loadAdminPosts();
+  if (state.adminUserReports === null) loadAdminUserReports();
+  if (state.adminStats === null) loadAdminStats();
   if (state.adminBanners === null) loadAdminBanners();
 
   const tab = state._adminTab || 'overview';
+  const errBanner = state._adminError
+    ? `<div class="form-error" style="margin:0 16px 12px">⚠ API chyba: ${escapeHtml(state._adminError)}</div>`
+    : '';
+
   return `
+    ${errBanner}
     <div class="admin-tabs">
       <button class="admin-tab ${tab === 'overview' ? 'is-active' : ''}" data-action="admin-tab" data-tab="overview">${escapeHtml(t('admin.overview'))}</button>
       <button class="admin-tab ${tab === 'users' ? 'is-active' : ''}" data-action="admin-tab" data-tab="users">${escapeHtml(t('admin.users'))}</button>
