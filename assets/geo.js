@@ -37,7 +37,7 @@ async function reverseGeocode(lat, lng) {
 }
 
 // ------------------------------------------------------------
-// Leaflet loader — robustný cez 3 CDN s fallbackom
+// Leaflet loader — 4 CDN fallback, BEZ crossOrigin (to byl hlavní problém)
 // ------------------------------------------------------------
 let _leafletLoadPromise = null;
 
@@ -46,63 +46,80 @@ function loadLeaflet() {
   if (window.L && window.L.map) return Promise.resolve(window.L);
 
   _leafletLoadPromise = (async () => {
-    const cdns = [
+    const CDNS = [
+      { name: 'jsdelivr', css: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css', js: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js' },
       { name: 'unpkg', css: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', js: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js' },
-      { name: 'jsdelivr', css: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css', js: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js' },
       { name: 'cdnjs', css: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js' },
+      { name: 'jsdelivr-gh', css: 'https://cdn.jsdelivr.net/gh/Leaflet/Leaflet@1.9.4/dist/leaflet.min.css', js: 'https://cdn.jsdelivr.net/gh/Leaflet/Leaflet@1.9.4/dist/leaflet.min.js' },
     ];
 
-    const loadStyle = (href) => new Promise((resolve) => {
-      if (document.querySelector(`link[href="${href}"]`)) return resolve();
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = href;
-      link.crossOrigin = '';
-      link.onload = () => resolve();
-      link.onerror = () => resolve(); // CSS failure není kritický
-      document.head.appendChild(link);
-      setTimeout(() => resolve(), 3000);
-    });
+    function injectCss(href) {
+      return new Promise((resolve) => {
+        if (document.querySelector(`link[href="${href}"]`)) return resolve();
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = href;
+        // ŽÁDNÉ crossOrigin!
+        link.onload = () => resolve();
+        link.onerror = () => resolve();
+        document.head.appendChild(link);
+        setTimeout(resolve, 2500);
+      });
+    }
 
-    const loadScript = (src) => new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = src;
-      s.crossOrigin = '';
-      s.async = true;
-      let done = false;
-      s.onload = () => { if (!done) { done = true; resolve(); } };
-      s.onerror = () => { if (!done) { done = true; reject(new Error('script_load_error')); } };
-      setTimeout(() => { if (!done) { done = true; reject(new Error('timeout')); } }, 8000);
-      document.head.appendChild(s);
-    });
+    function injectJs(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = true;
+        // ŽÁDNÉ crossOrigin!
+        let done = false;
+        const timer = setTimeout(() => {
+          if (!done) { done = true; reject(new Error('timeout')); }
+        }, 8000);
+        s.onload = () => {
+          if (done) return;
+          done = true; clearTimeout(timer);
+          resolve();
+        };
+        s.onerror = () => {
+          if (done) return;
+          done = true; clearTimeout(timer);
+          reject(new Error('script_error'));
+        };
+        document.head.appendChild(s);
+      });
+    }
 
-    for (let i = 0; i < cdns.length; i++) {
-      const cdn = cdns[i];
+    const errors = [];
+    for (const cdn of CDNS) {
       try {
-        await loadStyle(cdn.css);
-        await loadScript(cdn.js);
-        // Počkej, než se L skutečně objeví
-        for (let j = 0; j < 30; j++) {
+        console.log(`[geo] Zkouším Leaflet z ${cdn.name}…`);
+        await injectCss(cdn.css);
+        await injectJs(cdn.js);
+        for (let i = 0; i < 40; i++) {
           if (window.L && window.L.map) {
-            console.log(`[geo] Leaflet načten z ${cdn.name}`);
+            console.log(`[geo] ✓ Leaflet načten z ${cdn.name}`);
             return window.L;
           }
           await new Promise((r) => setTimeout(r, 100));
         }
+        errors.push(`${cdn.name}: L nenalezeno`);
       } catch (err) {
-        console.warn(`[geo] Leaflet CDN "${cdn.name}" selhal:`, err.message);
+        console.warn(`[geo] ✗ ${cdn.name}:`, err.message);
+        errors.push(`${cdn.name}: ${err.message}`);
       }
     }
 
     _leafletLoadPromise = null;
-    throw new Error('Mapu se nepodařilo načíst. Zkontroluj internet nebo vypni blokátor reklam.');
+    throw new Error(errors.join(' | '));
   })();
 
   return _leafletLoadPromise;
 }
 
 // ------------------------------------------------------------
-// Place search — Nominatim cez náš backend
+// Place search
 // ------------------------------------------------------------
 let _placeSearchTimers = {};
 
@@ -182,7 +199,7 @@ function attachPlaceSearch(inputEl, opts = {}) {
 }
 
 // ------------------------------------------------------------
-// Map picker — Leaflet modal
+// Map picker — Leaflet + fallback na ruční zadání souřadnic
 // ------------------------------------------------------------
 function openMapPicker(opts = {}) {
   return new Promise((resolve) => {
@@ -235,12 +252,8 @@ function openMapPicker(opts = {}) {
     let marker = null;
     let currentLat = initialLat;
     let currentLng = initialLng;
-    let currentDetails = {
-      place: '', city: '', district: '', region: '',
-      country_code: '', display_name: '',
-    };
+    let currentDetails = { place: '', city: '', district: '', region: '', country_code: '', display_name: '' };
 
-    // Vlastný marker (divIcon) — vyhne sa 404 na Leaflet default ikonách
     function makeMarkerIcon(L) {
       return L.divIcon({
         className: 'vandro-map-marker',
@@ -268,20 +281,46 @@ function openMapPicker(opts = {}) {
       if (addressEl) addressEl.textContent = rev.display_name || rev.place || '—';
     }
 
-    function showError(msg) {
+    // Fallback UI: ruční zadání souřadnic
+    function showFallback(msg) {
       if (loadingEl) loadingEl.remove();
       canvasEl.innerHTML = `
         <div class="map-picker-error">
           <p style="font-weight:700;margin-bottom:8px;">⚠️ ${escapeHtml(t('errors.mapLoadFailed') || 'Mapu se nepodařilo načíst')}</p>
-          <p style="font-size:12.5px;color:var(--c-text-muted);margin-bottom:14px;">${escapeHtml(msg)}</p>
-          <p style="font-size:12px;color:var(--c-text-muted);">Můžeš pokračovat bez mapy — souřadnice zadej ručně nebo zvol adresu přes vyhledávání výše.</p>
+          <p style="font-size:12px;color:var(--c-text-muted);margin-bottom:12px;line-height:1.5;">${escapeHtml(msg)}</p>
+          <p style="font-size:12.5px;font-weight:600;color:var(--c-text);margin-bottom:6px;">Zadej souřadnice ručně:</p>
+          <div style="display:flex;flex-direction:column;gap:8px;max-width:280px;width:100%;">
+            <input class="form-input" data-map-manual-lat placeholder="Latitude (např. 49.8175)" type="number" step="any" value="${currentLat.toFixed(5)}" />
+            <input class="form-input" data-map-manual-lng placeholder="Longitude (např. 15.4730)" type="number" step="any" value="${currentLng.toFixed(5)}" />
+            <button type="button" class="form-submit-btn" data-map-manual-apply style="margin-top:4px;">${escapeHtml(t('geo.pickLocation'))}</button>
+          </div>
+          <p style="font-size:11px;color:var(--c-text-muted);margin-top:14px;text-align:center;line-height:1.5;">
+            Mapa se nepodařila načíst (blokátor reklam, firewall nebo výpadek CDN).<br>
+            Můžeš pokračovat bez mapy — souřadnice zadej ručně, nebo vyhledej místo v poli výše.
+          </p>
         </div>`;
+
+      const applyBtn = canvasEl.querySelector('[data-map-manual-apply]');
+      if (applyBtn) {
+        applyBtn.addEventListener('click', async () => {
+          const lat = parseFloat(canvasEl.querySelector('[data-map-manual-lat]').value);
+          const lng = parseFloat(canvasEl.querySelector('[data-map-manual-lng]').value);
+          if (isNaN(lat) || isNaN(lng)) return;
+          currentLat = lat;
+          currentLng = lng;
+          if (latlngEl) latlngEl.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+          if (addressEl) addressEl.textContent = t('common.loading');
+          const rev = await reverseGeocode(lat, lng);
+          currentDetails = rev;
+          if (addressEl) addressEl.textContent = rev.display_name || rev.place || '—';
+        });
+      }
     }
 
-    // Načti Leaflet a inicializuj mapu
+    // Načti Leaflet
     loadLeaflet()
       .then((L) => {
-        if (!modal.parentNode) return; // modal byl mezitím zavřen
+        if (!modal.parentNode) return;
         if (loadingEl) loadingEl.remove();
 
         map = L.map(canvasEl, {
@@ -292,7 +331,6 @@ function openMapPicker(opts = {}) {
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19,
-          crossOrigin: true,
           attribution: '© OpenStreetMap',
         }).addTo(map);
 
@@ -302,19 +340,15 @@ function openMapPicker(opts = {}) {
           setMarker(e.latlng.lat, e.latlng.lng);
         });
 
-        setTimeout(() => {
-          if (map) map.invalidateSize();
-        }, 150);
-        setTimeout(() => {
-          if (map) map.invalidateSize();
-        }, 500);
+        setTimeout(() => { if (map) map.invalidateSize(); }, 150);
+        setTimeout(() => { if (map) map.invalidateSize(); }, 500);
       })
       .catch((err) => {
         console.error('[geo] map init failed:', err);
-        showError(err.message || 'Neznámá chyba');
+        showFallback(err.message || 'Neznámá chyba');
       });
 
-    // Search v pickeru
+    // Search v pickeru (funguje i bez Leafletu)
     let searchTimer = null;
     searchInput.addEventListener('input', () => {
       clearTimeout(searchTimer);
@@ -343,8 +377,26 @@ function openMapPicker(opts = {}) {
           btn.addEventListener('click', () => {
             const item = items[parseInt(btn.dataset.mapSuggestIdx, 10)];
             if (!item) return;
-            setMarker(item.lat, item.lng);
-            if (map) map.setView([item.lat, item.lng], 15);
+            // Pokud nemáme mapu, jen nastav souřadnice + adresu
+            if (map) {
+              setMarker(item.lat, item.lng);
+              map.setView([item.lat, item.lng], 15);
+            } else {
+              currentLat = item.lat;
+              currentLng = item.lng;
+              if (latlngEl) latlngEl.textContent = `${item.lat.toFixed(5)}, ${item.lng.toFixed(5)}`;
+              if (addressEl) addressEl.textContent = item.display_name || item.name || '';
+              currentDetails = {
+                place: item.name || item.display_name,
+                display_name: item.display_name || item.name,
+                city: item.address?.city || '',
+                district: item.address?.district || '',
+                region: item.address?.region || '',
+                country_code: item.address?.country || '',
+                lat: item.lat,
+                lng: item.lng,
+              };
+            }
             suggestList.style.display = 'none';
             searchInput.value = item.name || item.display_name;
           });
