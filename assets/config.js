@@ -153,7 +153,7 @@ async function handleGoogleCredential(credential) {
 // reCAPTCHA v3
 // ============================================================
 async function getRecaptchaToken(action) {
-  if (!RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === 'SEM_VLOZ_SVOJ_RECAPTCHA_SITE_KEY') return '';
+  if (!RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === '6LeXt8UtAAAAAOOSYTkbrpC4gaotPw9-SUPEuvDo') return '';
   if (!window.grecaptcha) return '';
   return new Promise((resolve) => {
     try {
