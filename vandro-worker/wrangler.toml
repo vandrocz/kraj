@@ -26,7 +26,7 @@ crons = ["*/1 * * * *", "0 8 * * *", "0 4 * * *", "30 */6 * * *"]
 # ---- Verejné premenné (nie sú tajné, môžu byť v repe) ----
 [vars]
 ALLOWED_ORIGIN = "https://vandro.cz,https://www.vandro.cz"
-APP_URL = "https://api.vandro.cz"
+APP_URL = "https://vandro.cz"
 R2_PUBLIC_BASE = "https://cdn.vandro.cz"
 ONESIGNAL_APP_ID = ""
 
