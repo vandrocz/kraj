@@ -1,5 +1,5 @@
 // ============================================================
-// i18n — Podpora CZ / SK / EN (kompletní verze)
+// i18n — Podpora CZ / SK / EN
 // ============================================================
 
 const TRANSLATIONS = {
@@ -27,7 +27,8 @@ const TRANSLATIONS = {
       forgotLead: 'Zadej e-mail, kterým ses registroval.', forgotBtn: 'Poslat odkaz',
       resetTitle: 'Nové heslo', resetBtn: 'Uložit heslo', registerPublicNote: 'Účet můžeš vytvořit i později.',
       twofaTitle: 'Dvoufázové ověření', twofaCode: 'Kód', twofaVerify: 'Ověřit a přihlásit',
-      registerRole: 'Typ účtu', roleUser: 'Turista', roleOrg: 'Organizace', roleHotelier: 'Podnik',
+      registerRole: 'Typ účtu', roleUser: 'Turista', roleOrg: 'Organizace', roleHotel: 'Podnik',
+      roleHotelier: 'Podnik',
       displayName: 'Zobrazované jméno', displayNameBusiness: 'Zobrazované jméno (název podniku)',
       displayNameBusinessHint: 'Toto jméno se zobrazí v aplikaci. U podniků/organizací zadejte název podniku.',
       passwordHint: 'Alespoň 8 znaků.', termsText: 'Souhlasím s', termsLink: 'obchodními podmínkami',
@@ -131,7 +132,7 @@ const TRANSLATIONS = {
     },
     stats: {
       title: 'Statistiky', posts: 'Příspěvků', events: 'Akce', followers: 'Sledujících',
-      likes: 'Isker', comments: 'Komentářů', views: 'Zobrazení',
+      likes: 'Lístečků', comments: 'Komentářů', views: 'Zobrazení',
       chart: 'Graf vývoje', metric: 'Ukazatel', period: 'Období',
       week: 'Týden', month: 'Měsíc', last7days: 'Posledních 7 dní', last30days: 'Posledních 30 dní',
       noData: 'Žádná data', total: 'Celkem',
@@ -143,11 +144,11 @@ const TRANSLATIONS = {
       sortRecent: 'Nejnovější', sortTrending: 'Trendy',
       noPosts: 'Žádné příspěvky neodpovídají zvoleným filtrům.',
       loadingPosts: 'Načítám příspěvky…', noPhoto: 'Bez fotky',
-      likesMe: 'Isker', views: 'zobrazení',
+      likesMe: 'Lístečků', views: 'zobrazení',
     },
     post: {
       writeComment: 'Napiš komentář…', comments: 'Komentáře',
-      noComments: 'Zatím žádné komentáře.', like: 'Iskra', share: 'Sdílet',
+      noComments: 'Zatím žádné komentáře.', like: 'Lísteček', share: 'Sdílet',
       report: 'Nahlásit', reportTitle: 'Nahlásit příspěvek',
       reportReason: 'Důvod (nepovinné)', reportReasonPlaceholder: 'Proč tento příspěvek nahlašuješ?',
       reportSend: 'Odeslat nahlášení', deleteTitle: 'Smazat příspěvek?',
@@ -175,8 +176,8 @@ const TRANSLATIONS = {
     notifications: {
       title: 'Notifikace', empty: 'Žádné notifikace.',
       markAllRead: 'Označit vše jako přečtené',
-      storyLike: 'dal(a) iskru tvé story',
-      like: 'dal(a) iskru tvému příspěvku',
+      storyLike: 'poslal(a) lísteček tvé story',
+      like: 'poslal(a) lísteček tvému příspěvku',
       comment: 'okomentoval(a) tvůj příspěvek',
       reply: 'odpověděl(a) na tvůj komentář',
       follow: 'tě začal(a) sledovat',
@@ -199,7 +200,7 @@ const TRANSLATIONS = {
       hint: 'Story zmizí po 24 hodinách. Max 10 sekund.',
       published: 'Story zveřejněna.', me: 'Já', reply: 'Odpověz…',
       replySend: 'Odeslat', replySent: 'Odpověď odeslána.',
-      like: 'Iskra', noFeed: 'Zatím žádné stories.',
+      like: 'Lísteček', noFeed: 'Zatím žádné stories.',
       title: 'Přidat story',
       verticalHint: 'Formát 9:16 (na výšku)',
       cropping: 'Ořezávám…',
@@ -538,7 +539,7 @@ const TRANSLATIONS = {
     },
     stats: {
       title: 'Štatistiky', posts: 'Príspevkov', events: 'Podujatí', followers: 'Sledujúcich',
-      likes: 'Iskier', comments: 'Komentárov', views: 'Zobrazení',
+      likes: 'Lístkov', comments: 'Komentárov', views: 'Zobrazení',
       chart: 'Graf vývoja', metric: 'Ukazovateľ', period: 'Obdobie',
       week: 'Týždeň', month: 'Mesiac', last7days: 'Posledných 7 dní', last30days: 'Posledných 30 dní',
       noData: 'Žiadne dáta', total: 'Spolu',
@@ -550,11 +551,11 @@ const TRANSLATIONS = {
       sortRecent: 'Najnovšie', sortTrending: 'Trendy',
       noPosts: 'Žiadne príspevky nezodpovedajú filtrom.',
       loadingPosts: 'Načítavam príspevky…', noPhoto: 'Bez fotky',
-      likesMe: 'Iskier', views: 'zobrazení',
+      likesMe: 'Lístkov', views: 'zobrazení',
     },
     post: {
       writeComment: 'Napíš komentár…', comments: 'Komentáre',
-      noComments: 'Zatiaľ žiadne komentáre.', like: 'Iskra', share: 'Zdieľať',
+      noComments: 'Zatiaľ žiadne komentáre.', like: 'Lístok', share: 'Zdieľať',
       report: 'Nahlásiť', reportTitle: 'Nahlásiť príspevok',
       reportReason: 'Dôvod (nepovinné)', reportReasonPlaceholder: 'Prečo tento príspevok nahlášaš?',
       reportSend: 'Odoslať nahlásenie', deleteTitle: 'Zmazať príspevok?',
@@ -582,8 +583,8 @@ const TRANSLATIONS = {
     notifications: {
       title: 'Notifikácie', empty: 'Žiadne notifikácie.',
       markAllRead: 'Označiť všetko ako prečítané',
-      storyLike: 'dal(a) iskru tvojej story',
-      like: 'dal(a) iskru tvojmu príspevku',
+      storyLike: 'poslal(a) lístok tvojej story',
+      like: 'poslal(a) lístok tvojmu príspevku',
       comment: 'okomentoval(a) tvoj príspevok',
       reply: 'odpovedal(a) na tvoj komentár',
       follow: 'ťa začal(a) sledovať',
@@ -606,7 +607,7 @@ const TRANSLATIONS = {
       hint: 'Story zmizne po 24 hodinách. Max 10 sekúnd.',
       published: 'Story zverejnená.', me: 'Ja', reply: 'Odpovedz…',
       replySend: 'Odoslať', replySent: 'Odpoveď odoslaná.',
-      like: 'Iskra', noFeed: 'Zatiaľ žiadne stories.',
+      like: 'Lístok', noFeed: 'Zatiaľ žiadne stories.',
       title: 'Pridať story',
       verticalHint: 'Formát 9:16 (na výšku)',
       cropping: 'Orezávam…',
@@ -945,7 +946,7 @@ const TRANSLATIONS = {
     },
     stats: {
       title: 'Statistics', posts: 'Posts', events: 'Events', followers: 'Followers',
-      likes: 'Sparks', comments: 'Comments', views: 'Views',
+      likes: 'Leaves', comments: 'Comments', views: 'Views',
       chart: 'Trend chart', metric: 'Metric', period: 'Period',
       week: 'Week', month: 'Month', last7days: 'Last 7 days', last30days: 'Last 30 days',
       noData: 'No data', total: 'Total',
@@ -957,11 +958,11 @@ const TRANSLATIONS = {
       sortRecent: 'Newest', sortTrending: 'Trending',
       noPosts: 'No posts match the selected filters.',
       loadingPosts: 'Loading posts…', noPhoto: 'No photo',
-      likesMe: 'Sparks', views: 'views',
+      likesMe: 'Leaves', views: 'views',
     },
     post: {
       writeComment: 'Write a comment…', comments: 'Comments',
-      noComments: 'No comments yet.', like: 'Spark', share: 'Share',
+      noComments: 'No comments yet.', like: 'Leaf', share: 'Share',
       report: 'Report', reportTitle: 'Report post',
       reportReason: 'Reason (optional)', reportReasonPlaceholder: 'Why are you reporting this post?',
       reportSend: 'Send report', deleteTitle: 'Delete post?',
@@ -989,8 +990,8 @@ const TRANSLATIONS = {
     notifications: {
       title: 'Notifications', empty: 'No notifications.',
       markAllRead: 'Mark all as read',
-      storyLike: 'gave a spark to your story',
-      like: 'gave a spark to your post',
+      storyLike: 'gave a leaf to your story',
+      like: 'gave a leaf to your post',
       comment: 'commented on your post',
       reply: 'replied to your comment',
       follow: 'started following you',
@@ -1013,7 +1014,7 @@ const TRANSLATIONS = {
       hint: 'Story disappears after 24 hours. Max 10 seconds.',
       published: 'Story published.', me: 'Me', reply: 'Reply…',
       replySend: 'Send', replySent: 'Reply sent.',
-      like: 'Spark', noFeed: 'No stories yet.',
+      like: 'Leaf', noFeed: 'No stories yet.',
       title: 'Add story',
       verticalHint: 'Format 9:16 (portrait)',
       cropping: 'Cropping…',
