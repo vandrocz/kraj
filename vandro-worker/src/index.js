@@ -210,6 +210,13 @@ app.post('/api/admin/r2-cleanup', async (c) => {
 });
 
 // Admin (vyžaduje JWT)
+// Bannery — verejné čítanie
+app.route('/api/banners', bannersPublicRoutes);
+
+// Bannery — admin CRUD
+app.use('/api/admin/banners/*', requireAuth);
+app.use('/api/admin/banners', requireAuth);
+app.route('/api/admin/banners', bannersAdminRoutes);
 app.use('/api/admin/*', requireAuth);
 app.route('/api/admin', adminRoutes);
 
