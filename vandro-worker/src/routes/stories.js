@@ -34,15 +34,13 @@ async function fetchUserStoryLikes(env, userId, storyIds) {
   return set;
 }
 
-function normalizeStory(s, likesMap) {
+function normalizeStory(s, likesMap, likedSet) {
   let mediaUrls = null;
   if (s.media_urls_json) {
     try {
       const parsed = JSON.parse(s.media_urls_json);
       if (Array.isArray(parsed)) mediaUrls = parsed;
-    } catch (err) {
-      console.warn('[stories] invalid media_urls_json for', s.id, err.message);
-    }
+    } catch (err) { /* ... */ }
   }
   return {
     id: s.id,
@@ -52,6 +50,7 @@ function normalizeStory(s, likesMap) {
     media_urls: mediaUrls,
     created_at: s.created_at,
     likes: (likesMap && likesMap[s.id]) || 0,
+    __liked: likedSet ? likedSet.has(s.id) : false,   // ← NOVÉ
   };
 }
 
