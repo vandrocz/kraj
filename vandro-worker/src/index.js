@@ -37,7 +37,7 @@ app.use('*', async (c, next) => {
 });
 
 app.use('*', async (c, next) => {
-  const allowed = (c.env.ALLOWED_ORIGIN || 'https://naskraj.vandro.cz').split(',').map((s) => s.trim());
+  const allowed = (c.env.ALLOWED_ORIGIN || 'https://vandro.cz').split(',').map((s) => s.trim());
   return cors({
     origin: [...allowed, 'http://localhost:5173', 'http://localhost:8934'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
