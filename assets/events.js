@@ -715,6 +715,7 @@
 
     if (isLoggedIn()) {
       loadNotifications();
+      loadBanners();
       loadStoriesFeed();
       if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
       if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(state.user);
