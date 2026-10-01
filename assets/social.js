@@ -304,6 +304,7 @@ function renderFeedPage(feedKey, typeOptions, showCuisine) {
         <button class="header-icon-btn" data-action="open-nearby" aria-label="${escapeAttr(t('nearby.title'))}">${icon('location', { size: 19 })}</button>
         <button class="header-icon-btn" data-action="open-search" aria-label="${escapeAttr(t('search.title'))}">${icon('search', { size: 19 })}</button>
       `)}
+      ${typeof renderBannerSlot === 'function' ? renderBannerSlot() : ''}
       ${renderStoriesBar(feedKey)}
       ${renderFilterBar(feedKey, typeOptions, showCuisine)}
       ${renderSocialFeedBody(feedKey)}
