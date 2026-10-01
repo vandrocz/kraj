@@ -1,11 +1,8 @@
-name = "naskraj-api"
+name = "vandro-api"
 main = "src/index.js"
 compatibility_date = "2024-11-01"
 
 # ZACHOVÁ dashboard premenné pri každom deployi
-# Bez tohto riadku wrangler vymaže všetky Environment Variables (nie Secrets),
-# ktoré nie sú definované v tomto súbore. To je dôvod, prečo VAPID_PUBLIC_KEY
-# a VAPID_SUBJECT miznú po každom Git deployi.
 keep_vars = true
 
 [[d1_databases]]
@@ -28,12 +25,12 @@ crons = ["*/1 * * * *", "0 8 * * *", "0 4 * * *", "30 */6 * * *"]
 
 # ---- Verejné premenné (nie sú tajné, môžu byť v repe) ----
 [vars]
-ALLOWED_ORIGIN = "https://naskraj.vandro.cz,https://app.vandro.cz,https://kraj.vandro.cz"
-R2_PUBLIC_BASE = "https://media.vandro.cz"
+ALLOWED_ORIGIN = "https://vandro.cz,https://www.vandro.cz"
+APP_URL = "https://vandro.cz"
+R2_PUBLIC_BASE = "https://cdn.vandro.cz"
 ONESIGNAL_APP_ID = ""
 
 # VAPID — verejný kľúč a subject sú bezpečné v repe.
-# ⚠️ VAPID_PRIVATE_KEY MUSÍ zostať v Cloudflare ako Secret (nikdy nie v .toml).
 VAPID_PUBLIC_KEY = "BAWjwJ5dwv7C6SZZ-H92vgjLf58F2SgY53rdecpen6kbFgZyEE0wJuN4W27OJXxO54VAgeT8qLDvFB4s6yQJnVg"
 VAPID_SUBJECT = "vandrocz.contact@gmail.com"
 
@@ -41,10 +38,8 @@ VAPID_SUBJECT = "vandrocz.contact@gmail.com"
 #   JWT_SECRET         (Secret)
 #   CRON_SECRET        (Secret)
 #   VAPID_PRIVATE_KEY  (Secret)
-#   GOOGLE_CLIENT_ID   (Plaintext — pozor, tiež môže byť vymazaný!)
+#   GOOGLE_CLIENT_ID   (Plaintext)
 #   RECAPTCHA_SECRET_KEY (Secret)
-#   RESEND_API_KEY     (Secret) — ak používaš Resend
-#   BREVO_API_KEY      (Secret) — ak používaš Brevo
-#   MAIL_FROM          (Plaintext)
-#   APP_URL            (Plaintext)
+#   MAILTRAP_API_TOKEN (Secret)
+#   MAIL_FROM          (Plaintext) — např. "VANDRO <noreply@vandro.cz>"
 #   ONESIGNAL_API_KEY  (Secret)
