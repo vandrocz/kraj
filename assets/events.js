@@ -713,6 +713,8 @@
     else if (state.tab === 'gastro') loadSocialFeed('gastro');
     else if (state.tab === 'events') loadEvents();
 
+      // Bannery sa načítajú VŽDY (aj pre neprihlásených)
+    if (typeof loadBanners === 'function') loadBanners();
     if (isLoggedIn()) {
       loadNotifications();
       loadBanners();
