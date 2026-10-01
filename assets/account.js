@@ -999,7 +999,16 @@ async function handleTwoFALogin(form) {
 // ============================================================
 // ADMIN
 // ============================================================
-async function loadAdminPending() { try { state.adminPending = await apiGet('/api/admin/pending'); } catch { state.adminPending = { organizations: [], accommodation: [], restaurants: [] }; } finally { state.adminPendingLoading = false; if (state.tab === 'account') renderApp(); } }
+async function loadAdminPending() {
+  try {
+    state.adminPending = await apiGet('/api/admin/pending');
+  } catch {
+    state.adminPending = { organizations: [], accommodation: [], restaurants: [] };
+  } finally {
+    state.adminPendingLoading = false;
+    if (state.tab === 'account') renderApp();
+  }
+}
 async function loadAdminReports() { try { const d = await apiGet('/api/admin/reports'); state.adminReports = d.reports; } catch { state.adminReports = []; } finally { state.adminReportsLoading = false; if (state.tab === 'account') renderApp(); } }
 async function loadAdminVerifications() { try { const d = await apiGet('/api/admin/verifications'); state.adminVerifications = d.requests || []; } catch { state.adminVerifications = []; } finally { if (state.tab === 'account') renderApp(); } }
 async function loadAdminPosts() { try { const d = await apiGet('/api/admin/posts'); state.adminPosts = d.posts || []; } catch { state.adminPosts = []; } finally { if (state.tab === 'account') renderApp(); } }
@@ -1098,8 +1107,35 @@ function renderAdminUsers() {
 }
 
 function renderAdminVerifications() {
+  // Fix zacyklenia: vždy skús načítať, keď je null a nie je práve loading
+  if (state.adminPending === null && !state.adminPendingLoading) {
+    state.adminPendingLoading = true;
+    loadAdminPending();
+  }
   const verifs = state.adminVerifications;
+  const pending = state.adminPending || { organizations: [], accommodation: [], restaurants: [] };
+
+  const pendingRows = [
+    ...(pending.organizations || []).map((p) => ({ ...p, kind: 'organizations', label: t('nav.organizations') })),
+    ...(pending.accommodation || []).map((p) => ({ ...p, kind: 'accommodation', label: t('nav.accommodation') })),
+    ...(pending.restaurants || []).map((p) => ({ ...p, kind: 'restaurants', label: t('nav.gastro') })),
+  ];
+
   return `
+    <div class="profile-section">
+      <h3 class="profile-section-title">Nové podniky na overenie (${pendingRows.length})</h3>
+      ${pendingRows.length === 0 ? `<p class="empty-state">Žiadne nové podniky.</p>` : pendingRows.map((p) => `
+        <div class="admin-list-item">
+          <div class="admin-list-info">
+            <p class="admin-list-title">${escapeHtml(p.name || '')}</p>
+            <p class="admin-list-meta">${escapeHtml(p.label)} · ${escapeHtml(p.type || '')} · ${escapeHtml(p.region || '')}${p.district ? ' / ' + escapeHtml(p.district) : ''}</p>
+          </div>
+          <button class="admin-approve-btn" data-action="verify-business" data-kind="${p.kind}" data-id="${p.id}">${escapeHtml(t('admin.approve'))}</button>
+          <button class="admin-delete-btn" data-action="reject-business" data-kind="${p.kind}" data-id="${p.id}">${escapeHtml(t('admin.reject'))}</button>
+        </div>
+      `).join('')}
+    </div>
+
     <div class="profile-section">
       <h3 class="profile-section-title">${escapeHtml(t('admin.verificationRequests'))} (${verifs ? verifs.length : '…'})</h3>
       ${verifs === null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
