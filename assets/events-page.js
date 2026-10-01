@@ -331,7 +331,7 @@ function downloadEventIcs(eventId) {
     `SUMMARY:${(title || '').replace(/\n/g, ' ')}`,
     `DESCRIPTION:${(desc || '').replace(/\n/g, ' ')}`,
     `LOCATION:${([ev.location_name, ev.address, ev.city, ev.region].filter(Boolean).join(', ')).replace(/\n/g, ' ')}`,
-    `URL:https://naskraj.vandro.cz/?event=${encodeURIComponent(ev.id)}`,
+    `URL:https://vandro.cz/?event=${encodeURIComponent(ev.id)}`,
     'END:VEVENT', 'END:VCALENDAR',
   ].join('\r\n');
 
@@ -370,7 +370,7 @@ function addEventToOutlook(eventId) {
 }
 
 async function copyEventLink(eventId) {
-  const url = `${location.origin}${location.pathname}?event=${encodeURIComponent(eventId)}`;
+  const url = `https://vandro.cz/?event=${encodeURIComponent(eventId)}`;
   try { await navigator.clipboard.writeText(url); showToast(t('toasts.copied')); closeModal(); }
   catch { showToast(t('toasts.shareFailed')); }
 }
