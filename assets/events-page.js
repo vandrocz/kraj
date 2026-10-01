@@ -51,6 +51,7 @@ function renderEventsPage() {
         ${isLoggedIn() ? `<button class="header-icon-btn" data-action="open-threads" aria-label="${escapeAttr(t('messages.title'))}">${icon('chat', { size: 19 })}</button>` : ''}
         ${canCreate ? `<button class="header-icon-btn" data-action="open-event-create" aria-label="${escapeAttr(t('events.create'))}">${icon('plus', { size: 20 })}</button>` : ''}
       `)}
+      ${typeof renderBannerSlot === 'function' ? renderBannerSlot() : ''}
       ${renderEventsFilterBar()}
       ${renderEventsList()}
     </div>`;
