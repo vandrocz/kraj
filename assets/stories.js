@@ -193,7 +193,7 @@ function renderStoryViewerOverlay() {
     return `<span class="story-progress-bar ${isDone ? 'is-done' : isActive ? 'is-active' : ''}"></span>`;
   }).join('');
 
-  const liked = state.overlay.likes?.[story.id] || false;
+  const liked = story.__liked || false;
 
   const dotsHtml = storyMediaList.length > 1 ? `
     <div class="story-viewer-dots">
@@ -312,13 +312,16 @@ setupStorySwipe();
 async function storyLike(storyId) {
   try {
     const res = await apiPost(`/api/stories/${storyId}/like`, {});
-    if (!state.overlay.likes) state.overlay.likes = {};
-    state.overlay.likes[storyId] = res.liked;
     for (const g of (state.stories?.groups || [])) {
       const s = g.stories.find((x) => x.id === storyId);
-      if (s) s.likes = res.likes;
+      if (s) { s.__liked = res.liked; s.likes = res.likes; }
     }
-    renderApp();
+    // Update DOM in-place
+    document.querySelectorAll(`[data-action="story-like"][data-id="${storyId}"]`).forEach((btn) => {
+      btn.classList.toggle('is-liked', !!res.liked);
+      btn.innerHTML = icon('clover', { size: 22, filled: !!res.liked })
+                    + `<span class="story-like-count">${res.likes || 0}</span>`;
+    });
   } catch (err) { showToast(err.message); }
 }
 
