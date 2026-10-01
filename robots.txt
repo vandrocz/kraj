@@ -3,4 +3,4 @@ Allow: /
 Disallow: /api/
 Disallow: /assets/editor.js
 
-Sitemap: https://naskraj.vandro.cz/sitemap.xml
+Sitemap: https://vandro.cz/sitemap.xml
