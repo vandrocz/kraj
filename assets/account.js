@@ -1014,12 +1014,9 @@ async function loadAdminVerifications() { try { const d = await apiGet('/api/adm
 async function loadAdminPosts() { try { const d = await apiGet('/api/admin/posts'); state.adminPosts = d.posts || []; } catch { state.adminPosts = []; } finally { if (state.tab === 'account') renderApp(); } }
 
 function renderAdminPanel() {
-  if (state.adminPending === null && !state.adminPendingLoading) { state.adminPendingLoading = true; loadAdminPending(); }
-  if (state.adminReports === null && !state.adminReportsLoading) { state.adminReportsLoading = true; loadAdminReports(); }
-  if (state.adminVerifications === null) loadAdminVerifications();
-  if (state.adminPosts === null) loadAdminPosts();
-  if (state.adminUserReports === null) loadAdminUserReports();
-  if (state.adminStats === null) loadAdminStats();
+  // ... pôvodné loady
+  if (state.adminBanners === null) loadAdminBanners();
+
   const tab = state._adminTab || 'overview';
   return `
     <div class="admin-tabs">
@@ -1028,6 +1025,7 @@ function renderAdminPanel() {
       <button class="admin-tab ${tab === 'verifications' ? 'is-active' : ''}" data-action="admin-tab" data-tab="verifications">${escapeHtml(t('admin.verifications'))}</button>
       <button class="admin-tab ${tab === 'reports' ? 'is-active' : ''}" data-action="admin-tab" data-tab="reports">${escapeHtml(t('admin.reports'))}</button>
       <button class="admin-tab ${tab === 'posts' ? 'is-active' : ''}" data-action="admin-tab" data-tab="posts">${escapeHtml(t('admin.posts'))}</button>
+      <button class="admin-tab ${tab === 'banners' ? 'is-active' : ''}" data-action="admin-tab" data-tab="banners">Bannery</button>
       <button class="admin-tab ${tab === 'tools' ? 'is-active' : ''}" data-action="admin-tab" data-tab="tools">${escapeHtml(t('admin.tools'))}</button>
     </div>
     ${tab === 'overview' ? renderAdminOverview() : ''}
@@ -1035,9 +1033,33 @@ function renderAdminPanel() {
     ${tab === 'verifications' ? renderAdminVerifications() : ''}
     ${tab === 'reports' ? renderAdminReports() : ''}
     ${tab === 'posts' ? renderAdminPosts() : ''}
+    ${tab === 'banners' ? renderAdminBanners() : ''}
     ${tab === 'tools' ? renderAdminTools() : ''}`;
 }
 
+function renderAdminBanners() {
+  const banners = state.adminBanners;
+  return `
+    <div class="profile-section">
+      <h3 class="profile-section-title">Bannery ${banners ? `(${banners.length})` : ''}</h3>
+      <button class="form-submit-btn" data-action="open-create-banner" style="margin-bottom:14px">
+        ${icon('plus', { size: 16 })} Vytvoriť banner
+      </button>
+      ${banners == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
+        : banners.length === 0 ? `<p class="empty-state">Žiadne bannery. Vytvor prvý.</p>`
+        : banners.map((b) => `
+          <div class="admin-list-item">
+            <div style="width:38px;height:38px;border-radius:10px;background:${escapeAttr(b.bg_color || '#2FBF71')};flex-shrink:0"></div>
+            <div class="admin-list-info">
+              <p class="admin-list-title">${escapeHtml(b.title)}</p>
+              <p class="admin-list-meta">${b.active ? '✓ Aktívny' : '✗ Neaktívny'}${b.link_url ? ' · ' + escapeHtml(shortenUrl(b.link_url)) : ''}</p>
+            </div>
+            <button class="admin-approve-btn" data-action="edit-banner" data-id="${b.id}">Upraviť</button>
+            <button class="admin-delete-btn" data-action="delete-banner" data-id="${b.id}">Zmazať</button>
+          </div>
+        `).join('')}
+    </div>`;
+}
 function renderAdminOverview() {
   const s = state.adminStats;
   if (!s) return `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`;
