@@ -194,6 +194,7 @@ app.use('/api/stories/feed', requireAuth);
 app.use('/api/stories/upload', requireAuth);
 app.use('/api/stories/upload-video', requireAuth);
 app.use('/api/stories', requireAuth);
+app.use('/api/stories/*', requireAuth);
 app.route('/api/stories', storiesRoutes);
 
 // Admin cron (bez JWT, chránené X-Cron-Secret)
