@@ -10,6 +10,15 @@ export const storiesRoutes = new Hono();
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
+// Cache-control: no-store — story feed je personalizovaný
+storiesRoutes.use('*', async (c, next) => {
+  await next();
+  try {
+    c.res.headers.set('Cache-Control', 'private, no-store, no-cache, max-age=0, must-revalidate');
+    c.res.headers.set('Vary', 'Authorization, Origin');
+  } catch {}
+});
+
 function normalizeStory(s, likesMap) {
   let mediaUrls = null;
   if (s.media_urls_json) {
@@ -31,7 +40,6 @@ function normalizeStory(s, likesMap) {
   };
 }
 
-// Batch fetch story likes
 async function fetchStoryLikes(env, storyIds) {
   const map = {};
   if (!storyIds || storyIds.length === 0) return map;
@@ -157,7 +165,6 @@ storiesRoutes.get('/feed', async (c) => {
      LIMIT 10`,
   ).bind(...(myCity ? [user.sub, myCity] : [user.sub])).all();
 
-  // Batch fetch likes pro všechny stories
   const allStoryIds = [
     ...myPersonal.results.map((s) => s.id),
     ...myBiz.map((s) => s.id),
@@ -358,9 +365,6 @@ storiesRoutes.post('/:id/view', async (c) => {
   return c.json({ ok: true });
 });
 
-// ============================================================
-// STORY LIKE — D1 atomicky
-// ============================================================
 storiesRoutes.post('/:id/like', async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
@@ -382,7 +386,7 @@ storiesRoutes.post('/:id/like', async (c) => {
     }
   } catch (err) {
     console.error('[story-like] DB error:', err.message);
-    return c.json({ error: 'Nepodařilo se uložit lajk.' }, 500);
+    return c.json({ error: 'Nepodařilo se uložit lísteček.' }, 500);
   }
 
   const countRow = await c.env.DB.prepare(
@@ -395,11 +399,11 @@ storiesRoutes.post('/:id/like', async (c) => {
       const actor = await c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(user.sub).first();
       await c.env.DB.prepare(
         `INSERT INTO notifications (id, user_id, type, actor_id, entity_type, entity_id, text)
-         VALUES (?, ?, 'story_like', ?, 'story', ?, 'dal(a) iskru tvé story')`,
+         VALUES (?, ?, 'story_like', ?, 'story', ?, 'poslal(a) lísteček tvé story')`,
       ).bind(newId('notif'), story.user_id, user.sub, id).run();
       await sendPushToUser(c.env, story.user_id, {
-        title: 'Nová iskra',
-        body: `${actor?.display_name || 'Někdo'} dal(a) iskru tvé story`,
+        title: 'Nový lísteček',
+        body: `${actor?.display_name || 'Někdo'} poslal(a) lísteček tvé story`,
         url: '/',
       });
     } catch {}
