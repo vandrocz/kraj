@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 
 export const seoRoutes = new Hono();
 
-const SITE_URL = 'https://naskraj.vandro.cz';
+const SITE_URL = 'https://vandro.cz';
 const DEFAULT_IMAGE = 'https://cdn.vandro.cz/Untitled15_20260522160351.png';
 
 seoRoutes.get('/og', async (c) => {
