@@ -18,9 +18,34 @@ async function apiFetch(path, options = {}) {
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-  const isJson = (res.headers.get('content-type') || '').includes('application/json');
-  const data = isJson ? await res.json().catch(() => ({})) : null;
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  } catch (err) {
+    const e = new Error('Nepodarilo sa pripojiť k serveru.');
+    e.status = 0;
+    throw e;
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json');
+
+  let data = null;
+  if (isJson) {
+    try { data = await res.json(); } catch { data = null; }
+  } else {
+    // Non-JSON odpoveď — vráť prázdny objekt, NIKDY null
+    const text = await res.text().catch(() => '');
+    if (!res.ok) {
+      const e = new Error(`Chyba API (${res.status})`);
+      e.status = res.status;
+      e.raw = text.slice(0, 200);
+      throw e;
+    }
+    // 200 + non-JSON = podozrivé, ale nechceme null
+    console.warn(`[api] Non-JSON 200 pre ${path}, content-type=${contentType}`);
+    return {};
+  }
 
   if (!res.ok) {
     const err = new Error((data && data.error) || `Chyba API (${res.status})`);
@@ -28,9 +53,8 @@ async function apiFetch(path, options = {}) {
     err.data = data;
     throw err;
   }
-  return data;
+  return data == null ? {} : data;   // ← NIKDY nevracaj null!
 }
-
 function apiGet(path) { return apiFetch(path, { method: 'GET' }); }
 function apiPost(path, body) { return apiFetch(path, { method: 'POST', body: body instanceof FormData ? body : JSON.stringify(body ?? {}) }); }
 function apiPatch(path, body) { return apiFetch(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) }); }
