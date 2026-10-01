@@ -282,13 +282,42 @@ function finishLogin(data) {
   state.businesses = data.businesses || [];
   state._twofaStage = null;
   state._twofaToken = null;
+
+  // === NOVÉ: zneplatni cache, aby sa feedy načítali so správnym __liked ===
+  for (const k of Object.keys(state.socialFeeds)) {
+    state.socialFeeds[k].items = [];
+    state.socialFeeds[k].next_cursor = null;
+  }
+  state.events.items = [];
+  state.events.next_cursor = null;
+  state.profiles = {};
+  state.stories = null;
+  state._bookmarks = null;
+  state._wishlist = null;
+  state.collections = null;
+  state._userBadges = null;
+  state._userCheckins = null;
+  state._userProfileCheckins = null;
+  state._checkinStatus = undefined;
+  state._wishlistStatus = undefined;
+  state._reviews = null;
+  state._reviewsLoading = false;
+  state._myReview = null;
+
   showToast(t('toasts.loginSuccess', { name: data.user.display_name }));
   loadNotifications();
+  loadStoriesFeed();
   if (typeof maybeStartOnboarding === 'function') maybeStartOnboarding(data.user);
   if (typeof maybeSubscribePush === 'function') maybeSubscribePush();
   if (typeof maybeRequestPushPermission === 'function') maybeRequestPushPermission();
-}
 
+  // Ak je user práve na feede, hneď ho obnov
+  if (state.tab === 'organizations') loadSocialFeed('organization');
+  else if (state.tab === 'accommodation') loadSocialFeed('accommodation');
+  else if (state.tab === 'gastro') loadSocialFeed('gastro');
+  else if (state.tab === 'events') loadEvents();
+  else renderApp();
+}
 async function handleRegisterSubmit(form) {
   const fd = new FormData(form);
   const body = Object.fromEntries(fd.entries());
@@ -329,9 +358,28 @@ function handleLogout() {
   state.unreadNotifications = 0;
   state._pushSubscribed = false;
   state._pushPrompted = false;
+
+  // === NOVÉ: vyčisti feed cache ===
+  for (const k of Object.keys(state.socialFeeds)) {
+    state.socialFeeds[k].items = [];
+    state.socialFeeds[k].next_cursor = null;
+  }
+  state.events.items = [];
+  state.events.next_cursor = null;
+  state.profiles = {};
+  state.stories = { groups: [] };
+  state._bookmarks = null;
+  state._wishlist = null;
+
   if (state.lightbox) closeLightbox(true);
   showToast(t('toasts.logoutSuccess'));
   renderApp();
+
+  // Obnov aktuálny feed anonymne
+  if (state.tab === 'organizations') loadSocialFeed('organization');
+  else if (state.tab === 'accommodation') loadSocialFeed('accommodation');
+  else if (state.tab === 'gastro') loadSocialFeed('gastro');
+  else if (state.tab === 'events') loadEvents();
 }
 
 function renderAccountHeaderCard() {
