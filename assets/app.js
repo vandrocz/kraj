@@ -1061,5 +1061,3 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') lightboxNext();
   else if (e.key === 'ArrowLeft') lightboxPrev();
 });
-
-
