@@ -2426,7 +2426,7 @@ function loadGoogleSheetData() {
   if (cachedPlaces && !navigator.onLine) {
     // Offline — nemá zmysel skúšať sieť, rovno použijeme cache.
     allPlaces = cachedPlaces;
-    renderPlacesLayer(_vandroVisiblePlaces());
+    try { renderPlacesLayer(_vandroVisiblePlaces()); } catch (e) {}
     try { if (typeof vmLayersChanged === 'function') vmLayersChanged('data'); } catch (e) {}
     return;
   }
@@ -2449,14 +2449,15 @@ function loadGoogleSheetData() {
         return p;
       });
       try { localStorage.setItem('vandro_places_v1', JSON.stringify(allPlaces)); } catch {}
-      renderPlacesLayer(_vandroVisiblePlaces());
+      // Styl podkladu se ještě nemusel načíst — body se pak vykreslí v doReinit()
+      try { renderPlacesLayer(_vandroVisiblePlaces()); } catch (e) { console.warn('renderPlacesLayer (styl ještě není načten):', e.message); }
       try { if (typeof vmLayersChanged === 'function') vmLayersChanged('data'); } catch (e) {}
       // Otvor bod z URL hash (#place=slug/lat/lng) ak bol zadaný priamo
       _openPlaceFromHash();
     },error(err){
       console.error('Sheet:',err);
       // Sieť zlyhala (napr. offline) — použijeme aspoň predošlú uloženú kópiu.
-      if (cachedPlaces) { allPlaces = cachedPlaces; renderPlacesLayer(_vandroVisiblePlaces()); }
+      if (cachedPlaces) { allPlaces = cachedPlaces; try { renderPlacesLayer(_vandroVisiblePlaces()); } catch (e) {} }
     }
   });
 }
@@ -6932,13 +6933,19 @@ function _initOfflineFeature() {
 // ── ŠTART ─────────────────────────────────────────────────────
 // Spouští assets/map.js poté, co vloží šablonu do #vmap-root a načte knihovny.
 window.vmapInit = function () {
-  initMap();
-  initDesktopButtons();
-  initMobileButtons();
-  _initOfflineFeature();
-  _initCookieConsent();
-  _initVisibilityRecovery();
-  // Načtení sdílené trasy z URL
-  if (location.hash.includes('#route=')) loadRouteFromHash();
-  try { if (typeof vmLayersInit === 'function') vmLayersInit(); } catch (e) { console.warn('vmLayersInit:', e); }
+  // Každý krok běží samostatně — chyba v jednom (např. offline funkce) nesmí zastavit zbytek mapy
+  const steps = [
+    ['initMap', initMap], ['initDesktopButtons', initDesktopButtons], ['initMobileButtons', initMobileButtons],
+    ['_initOfflineFeature', _initOfflineFeature], ['_initCookieConsent', _initCookieConsent],
+    ['_initVisibilityRecovery', _initVisibilityRecovery],
+    ['loadRouteFromHash', () => { if (location.hash.includes('#route=')) loadRouteFromHash(); }],
+    ['vmLayersInit', () => { if (typeof vmLayersInit === 'function') vmLayersInit(); }],
+  ];
+  steps.forEach(([name, fn]) => {
+    try { fn(); }
+    catch (e) {
+      console.error('[vmap] krok "' + name + '" selhal:', e);
+      (window.__vmapErrors = window.__vmapErrors || []).push(name + ': ' + (e && e.message));
+    }
+  });
 };
