@@ -1,5 +1,8 @@
 const API_BASE_URL = 'https://api.vandro.cz';
-const MAP_ORIGIN = 'https://maps.vandro.cz';
+const MAP_ORIGIN = 'https://maps.vandro.cz'; // už se nepoužívá pro iframe; /mista/ SEO stránky zůstávají na subdoméně
+// Sdílený podklad mapy (OpenFreeMap) — používá hlavní mapa i výběr místa (geo.js)
+const MAP_STYLE_URL = location.origin + '/assets/map-style.json';
+const MAP_STYLE_TOPO_URL = location.origin + '/assets/map-style-topo.json';
 const GOOGLE_CLIENT_ID = '769764675952-1nb44qbpc4o7a1l5r14vt8phamom9209.apps.googleusercontent.com';
 const RECAPTCHA_SITE_KEY = '6LeXt8UtAAAAAOOSYTkbrpC4gaotPw9-SUPEuvDo';
 
