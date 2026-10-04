@@ -37,85 +37,39 @@ async function reverseGeocode(lat, lng) {
 }
 
 // ------------------------------------------------------------
-// Leaflet loader — 4 CDN fallback, BEZ crossOrigin (to byl hlavní problém)
+// MapLibre loader — sdílená knihovna s hlavní mapou (assets/map.js)
 // ------------------------------------------------------------
-let _leafletLoadPromise = null;
+let _mlLoadPromise = null;
 
-function loadLeaflet() {
-  if (_leafletLoadPromise) return _leafletLoadPromise;
-  if (window.L && window.L.map) return Promise.resolve(window.L);
-
-  _leafletLoadPromise = (async () => {
-    const CDNS = [
-      { name: 'jsdelivr', css: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css', js: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js' },
-      { name: 'unpkg', css: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', js: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js' },
-      { name: 'cdnjs', css: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js' },
-      { name: 'jsdelivr-gh', css: 'https://cdn.jsdelivr.net/gh/Leaflet/Leaflet@1.9.4/dist/leaflet.min.css', js: 'https://cdn.jsdelivr.net/gh/Leaflet/Leaflet@1.9.4/dist/leaflet.min.js' },
-    ];
-
-    function injectCss(href) {
-      return new Promise((resolve) => {
-        if (document.querySelector(`link[href="${href}"]`)) return resolve();
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = href;
-        // ŽÁDNÉ crossOrigin!
-        link.onload = () => resolve();
-        link.onerror = () => resolve();
-        document.head.appendChild(link);
-        setTimeout(resolve, 2500);
-      });
-    }
-
-    function injectJs(src) {
-      return new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = src;
-        s.async = true;
-        // ŽÁDNÉ crossOrigin!
-        let done = false;
-        const timer = setTimeout(() => {
-          if (!done) { done = true; reject(new Error('timeout')); }
-        }, 8000);
-        s.onload = () => {
-          if (done) return;
-          done = true; clearTimeout(timer);
-          resolve();
-        };
-        s.onerror = () => {
-          if (done) return;
-          done = true; clearTimeout(timer);
-          reject(new Error('script_error'));
-        };
-        document.head.appendChild(s);
-      });
-    }
-
-    const errors = [];
-    for (const cdn of CDNS) {
+function loadMapLibre() {
+  if (window.maplibregl && window.maplibregl.Map) return Promise.resolve(window.maplibregl);
+  if (_mlLoadPromise) return _mlLoadPromise;
+  const sources = [
+    { css: 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css', js: 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js' },
+    { css: 'https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css', js: 'https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js' },
+    { css: 'https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.js' },
+  ];
+  _mlLoadPromise = (async () => {
+    for (const src of sources) {
       try {
-        console.log(`[geo] Zkouším Leaflet z ${cdn.name}…`);
-        await injectCss(cdn.css);
-        await injectJs(cdn.js);
-        for (let i = 0; i < 40; i++) {
-          if (window.L && window.L.map) {
-            console.log(`[geo] ✓ Leaflet načten z ${cdn.name}`);
-            return window.L;
-          }
-          await new Promise((r) => setTimeout(r, 100));
+        if (!document.querySelector('link[data-ml-css]')) {
+          const l = document.createElement('link');
+          l.rel = 'stylesheet'; l.href = src.css; l.dataset.mlCss = '1';
+          document.head.appendChild(l);
         }
-        errors.push(`${cdn.name}: L nenalezeno`);
-      } catch (err) {
-        console.warn(`[geo] ✗ ${cdn.name}:`, err.message);
-        errors.push(`${cdn.name}: ${err.message}`);
-      }
+        await new Promise((resolve, reject) => {
+          const sc = document.createElement('script');
+          sc.src = src.js; sc.onload = resolve; sc.onerror = () => reject(new Error('CDN nedostupné'));
+          document.head.appendChild(sc);
+          setTimeout(() => reject(new Error('Timeout')), 12000);
+        });
+        if (window.maplibregl && window.maplibregl.Map) return window.maplibregl;
+      } catch (err) { console.warn('[geo] MapLibre CDN selhalo:', err.message); }
     }
-
-    _leafletLoadPromise = null;
-    throw new Error(errors.join(' | '));
+    _mlLoadPromise = null;
+    throw new Error('Knihovnu mapy se nepodařilo načíst z žádného CDN.');
   })();
-
-  return _leafletLoadPromise;
+  return _mlLoadPromise;
 }
 
 // ------------------------------------------------------------
@@ -199,7 +153,7 @@ function attachPlaceSearch(inputEl, opts = {}) {
 }
 
 // ------------------------------------------------------------
-// Map picker — Leaflet + fallback na ruční zadání souřadnic
+// Map picker — MapLibre (stejný podklad jako hlavní mapa) + fallback na ruční zadání souřadnic
 // ------------------------------------------------------------
 function openMapPicker(opts = {}) {
   return new Promise((resolve) => {
@@ -254,24 +208,23 @@ function openMapPicker(opts = {}) {
     let currentLng = initialLng;
     let currentDetails = { place: '', city: '', district: '', region: '', country_code: '', display_name: '' };
 
-    function makeMarkerIcon(L) {
-      return L.divIcon({
-        className: 'vandro-map-marker',
-        html: '<div class="vandro-map-marker-pin"></div>',
-        iconSize: [30, 30],
-        iconAnchor: [15, 30],
-      });
+    function makeMarkerEl() {
+      const el = document.createElement('div');
+      el.className = 'vandro-map-marker';
+      el.innerHTML = '<div class="vandro-map-marker-pin"></div>';
+      return el;
     }
 
     async function setMarker(lat, lng) {
       currentLat = lat;
       currentLng = lng;
       if (latlngEl) latlngEl.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-      if (marker && map) marker.setLatLng([lat, lng]);
-      else if (map && window.L) {
-        marker = window.L.marker([lat, lng], { draggable: true, icon: makeMarkerIcon(window.L) }).addTo(map);
+      if (marker && map) marker.setLngLat([lng, lat]);
+      else if (map && window.maplibregl) {
+        marker = new window.maplibregl.Marker({ element: makeMarkerEl(), anchor: 'bottom', draggable: true })
+          .setLngLat([lng, lat]).addTo(map);
         marker.on('dragend', async () => {
-          const pos = marker.getLatLng();
+          const pos = marker.getLngLat();
           await setMarker(pos.lat, pos.lng);
         });
       }
@@ -317,38 +270,37 @@ function openMapPicker(opts = {}) {
       }
     }
 
-    // Načti Leaflet
-    loadLeaflet()
-      .then((L) => {
+    // Načti MapLibre
+    loadMapLibre()
+      .then((ml) => {
         if (!modal.parentNode) return;
         if (loadingEl) loadingEl.remove();
 
-        map = L.map(canvasEl, {
-          zoomControl: true,
+        map = new ml.Map({
+          container: canvasEl,
+          style: MAP_STYLE_URL,
+          center: [initialLng, initialLat],
+          zoom: Math.max(1, initialZoom - 1),
           attributionControl: false,
-          preferCanvas: true,
-        }).setView([initialLat, initialLng], initialZoom);
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '© OpenStreetMap',
-        }).addTo(map);
+        });
+        map.addControl(new ml.NavigationControl({ showCompass: false }), 'top-right');
+        map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-right');
 
         setMarker(initialLat, initialLng);
 
         map.on('click', (e) => {
-          setMarker(e.latlng.lat, e.latlng.lng);
+          setMarker(e.lngLat.lat, e.lngLat.lng);
         });
 
-        setTimeout(() => { if (map) map.invalidateSize(); }, 150);
-        setTimeout(() => { if (map) map.invalidateSize(); }, 500);
+        setTimeout(() => { if (map) map.resize(); }, 150);
+        setTimeout(() => { if (map) map.resize(); }, 500);
       })
       .catch((err) => {
         console.error('[geo] map init failed:', err);
         showFallback(err.message || 'Neznámá chyba');
       });
 
-    // Search v pickeru (funguje i bez Leafletu)
+    // Search v pickeru (funguje i bez mapy)
     let searchTimer = null;
     searchInput.addEventListener('input', () => {
       clearTimeout(searchTimer);
@@ -380,7 +332,7 @@ function openMapPicker(opts = {}) {
             // Pokud nemáme mapu, jen nastav souřadnice + adresu
             if (map) {
               setMarker(item.lat, item.lng);
-              map.setView([item.lat, item.lng], 15);
+              map.flyTo({ center: [item.lng, item.lat], zoom: 14 });
             } else {
               currentLat = item.lat;
               currentLng = item.lng;
@@ -621,3 +573,5 @@ async function saveMyLocation() {
     showToast(t('toasts.locationSaved'));
   } catch (err) { showToast(err.message); }
 }
+
+
