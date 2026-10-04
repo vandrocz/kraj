@@ -87,7 +87,6 @@ const state = {
   collections: null,
 };
 
-let _mapIframeCache = null;
 
 function pushHistoryState(type) {
   try {
@@ -372,12 +371,6 @@ function renderApp() {
   const root = document.getElementById('root');
   if (!root) return;
 
-  const liveMapIframe = document.getElementById('vandro-map-iframe');
-  if (liveMapIframe) {
-    liveMapIframe.remove();
-    _mapIframeCache = liveMapIframe;
-  }
-
   let pageHtml = '';
 
   if (state.overlay?.type === 'profile') pageHtml = renderProfileOverlay();
@@ -432,16 +425,11 @@ function renderApp() {
     </div>
     ${renderModal()}`;
 
+  // Mapa je trvalý prvek #vmap-root v <body> (viz assets/map.js) — jen ji zobrazíme / skryjeme
   if (state.tab === 'map' && !state.overlay && !hideAll) {
-    const wrap = document.querySelector('[data-map-wrap]');
-    if (wrap) {
-      let iframe = _mapIframeCache;
-      if (!iframe) {
-        iframe = createMapIframe();
-        _mapIframeCache = iframe;
-      }
-      wrap.appendChild(iframe);
-    }
+    if (typeof vmapShow === 'function') vmapShow();
+  } else if (typeof vmapHide === 'function') {
+    vmapHide();
   }
 
   applySeo();
@@ -571,6 +559,11 @@ function openWishlist() { state.overlay = { type: 'wishlist' }; state._wishlist 
 
 function persistTab(tab) { try { localStorage.setItem('naskraj_tab', tab); } catch {} }
 function restoreTab() {
+  // Odkazy na mapu / trasu / konkrétní místo otevírají záložku Mapa
+  try {
+    const h = location.hash || '';
+    if (/^#(map=|route=|place=)/.test(h) || /^#[a-z0-9-]+\/-?\d+\.\d+\/-?\d+\.\d+/i.test(h)) return 'map';
+  } catch {}
   try {
     const t2 = localStorage.getItem('naskraj_tab');
     if (t2 && VALID_TABS.includes(t2)) return t2;
@@ -1068,3 +1061,5 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') lightboxNext();
   else if (e.key === 'ArrowLeft') lightboxPrev();
 });
+
+
