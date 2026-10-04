@@ -2,12 +2,17 @@
 // SERVICE WORKER — PWA + Push notifikácie
 // ============================================================
 
-const CACHE_NAME = 'vandro-v1';
+const CACHE_NAME = 'vandro-v2';
+// Offline mapa: dlaždice stažených oblastí ukládá aplikace do 'vandro-tiles-v1' — tuto cache nikdy nemažeme
+const TILE_CACHE = 'vandro-tiles-v1';
+const TILE_HOSTS = ['tiles.openfreemap.org', 'tiles.opensnowmap.org', 'server.arcgisonline.com'];
 const PRECACHE = [
   '/',
   '/index.html',
   '/assets/styles.css',
   '/manifest.json',
+  '/assets/map-style.json',
+  '/assets/map-style-topo.json',
 ];
 
 self.addEventListener('install', (event) => {
@@ -21,7 +26,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)));
+      await Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== TILE_CACHE).map((k) => caches.delete(k)));
       await self.clients.claim();
     })(),
   );
@@ -31,9 +36,22 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
+  if (req.method !== 'GET') return;
+
+  // Mapové dlaždice / fonty / sprite — cache-first z cache stažených oblastí, jinak síť
+  if (TILE_HOSTS.includes(url.hostname)) {
+    event.respondWith(
+      caches.open(TILE_CACHE).then(async (cache) => {
+        const cached = await cache.match(req);
+        if (cached) return cached;
+        try { return await fetch(req); } catch (e) { return Response.error(); }
+      }),
+    );
+    return;
+  }
+
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
-  if (req.method !== 'GET') return;
 
   const isHtml = req.headers.get('accept')?.includes('text/html') ||
                  url.pathname === '/' ||
@@ -96,3 +114,5 @@ self.addEventListener('notificationclick', (event) => {
     }),
   );
 });
+
+
