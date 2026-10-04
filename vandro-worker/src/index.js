@@ -18,6 +18,7 @@ import { checkinsRoutes } from './routes/checkins.js';
 import { reviewsRoutes } from './routes/reviews.js';
 import { wishlistRoutes } from './routes/wishlist.js';
 import { nearbyRoutes } from './routes/nearby.js';
+import { mapRoutes } from './routes/map.js';
 import { pushRoutes } from './routes/push.js';
 import { groupsRoutes } from './routes/groups.js';
 import { messagesRoutes } from './routes/messages.js';
@@ -155,6 +156,7 @@ app.route('/api/wishlist', wishlistRoutes);
 
 // Nearby
 app.route('/api/nearby', nearbyRoutes);
+app.route('/api/map', mapRoutes);
 
 // Push
 app.route('/api/push/vapid-public-key', pushRoutes);
