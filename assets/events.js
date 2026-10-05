@@ -391,6 +391,12 @@
       case 'admin-backfill-handles': adminBackfillHandles(); break;
       case 'admin-seed-test': adminSeedTest(); break;
       case 'admin-cleanup-test': adminCleanupTest(); break;
+      case 'admin-delete-user':
+        deleteUser(el.dataset.id, el.dataset.name);
+        break;
+      case 'reject-verification':
+        rejectVerification(el.dataset.id);
+        break;
 
       // BANNERY
       case 'open-create-banner': openBannerModal(null); break;
