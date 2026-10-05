@@ -9,7 +9,7 @@
 // Knihovny (MapLibre, PapaParse, …) a skripty mapy se stahují líně až při
 // prvním otevření záložky Mapa, takže ostatní části webu nezpomalují.
 
-const VMAP_BUILD = '3';
+const VMAP_BUILD = '4';
 console.info('[vmap] build ' + VMAP_BUILD);
 const VMAP_LIBS = {
   css: [
@@ -146,6 +146,8 @@ function vmapShow() {
     }
     _vmapObserveSheet();
     _vmapUpdateSheetClass();
+    // Seznamy míst patří k účtu: při každém zobrazení mapy zkontrolovat přihlášení a synchronizovat
+    try { if (typeof window.vmBmSync === 'function') window.vmBmSync(); } catch (e) {}
   }
 }
 
