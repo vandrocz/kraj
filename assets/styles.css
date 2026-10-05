@@ -1471,7 +1471,7 @@ body.no-scroll { overflow: hidden; }
   background: rgba(255,255,255,0.35);
   overflow: hidden;
 }
-.story-progress-bar.is-done { background: rgba(255,255,255,0.85); }
+.story-progress-bar.is-done { background: #C5E063; }
 .story-progress-bar.is-active {
   background: rgba(255,255,255,0.35);
   position: relative;
@@ -1480,7 +1480,7 @@ body.no-scroll { overflow: hidden; }
   content: '';
   position: absolute;
   inset: 0;
-  background: white;
+  background: linear-gradient(90deg, #C5E063, #7CB342);
   border-radius: 2px;
   transform-origin: left;
   animation: storyProgressFill 5s linear forwards;
