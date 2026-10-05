@@ -1448,27 +1448,168 @@ window._openPlaceWeather = async (lat, lng) => {
 // ZÁLOŽKY — osobní seznamy míst
 // ══════════════════════════════════════════════════════════════
 const BM_KEY = 'vandro_bookmarks_v1'; // { lists: [{id, name, items:[{lat,lng,nazov,kategoria,podkategoria,foto_main}]}] }
+const BM_META_KEY = 'vandro_bookmarks_meta_v1';          // + ':' + userId → { rev, dirty }
+const BM_GUEST_IMPORTED_KEY = 'vandro_bookmarks_guest_imported';
 
-function _bmLoad() {
+// ── Seznamy míst jsou svázané s účtem ─────────────────────────────
+// Nepřihlášený uživatel: seznamy v localStorage pod klíčem BM_KEY (jako dřív).
+// Přihlášený uživatel: vlastní klíč BM_KEY:<userId> (účty na jednom zařízení se
+// nemíchají) a kopie na serveru (GET/PUT /api/map-lists/me), takže seznamy
+// přežijí smazání dat prohlížeče a fungují na všech zařízeních.
+function _bmUserId() {
   try {
-    const raw = localStorage.getItem(BM_KEY);
-    if (raw) {
-      const d = JSON.parse(raw);
-      if (d?.lists) {
-        // Migrácia starších uložených dát bez visibleOnMap príznaku
-        d.lists.forEach(l => { if (l.visibleOnMap === undefined) l.visibleOnMap = true; });
-        return d;
-      }
+    if (typeof getToken !== 'function' || !getToken()) return null;
+    const u = (typeof getStoredUser === 'function') ? getStoredUser() : null;
+    return (u && u.id) ? String(u.id) : null;
+  } catch { return null; }
+}
+function _bmKey(uid) { return uid ? BM_KEY + ':' + uid : BM_KEY; }
+function _bmDefault() { return { lists: [{ id: 'default', name: 'Uložená místa', items: [], visibleOnMap: true }] }; }
+function _bmReadRaw(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (d && Array.isArray(d.lists)) {
+      // Migrace starších uložených dat bez visibleOnMap příznaku
+      d.lists.forEach(l => {
+        if (l.visibleOnMap === undefined) l.visibleOnMap = true;
+        if (!Array.isArray(l.items)) l.items = [];
+      });
+      return d;
     }
   } catch {}
-  return { lists: [{ id: 'default', name: 'Uložená místa', items: [], visibleOnMap: true }] };
+  return null;
 }
-function _bmSave(data) { try { localStorage.setItem(BM_KEY, JSON.stringify(data)); } catch {} }
+function _bmLoad() { return _bmReadRaw(_bmKey(_bmUserId())) || _bmDefault(); }
+
+function _bmMeta(uid) {
+  try { return Object.assign({ rev: 0, dirty: false }, JSON.parse(localStorage.getItem(BM_META_KEY + ':' + uid)) || {}); }
+  catch { return { rev: 0, dirty: false }; }
+}
+function _bmSetMeta(uid, m) { try { localStorage.setItem(BM_META_KEY + ':' + uid, JSON.stringify(m)); } catch {} }
+
+let _bmChangeSeq = 0;
+function _bmSave(data) {
+  const uid = _bmUserId();
+  try { localStorage.setItem(_bmKey(uid), JSON.stringify(data)); } catch {}
+  if (uid) {
+    _bmChangeSeq++;
+    const m = _bmMeta(uid); m.dirty = true; _bmSetMeta(uid, m);
+    _bmScheduleSync(1500);
+  }
+}
+
+function _bmSamePoint(a, b) { return Math.abs(a.lat - b.lat) < 0.0001 && Math.abs(a.lng - b.lng) < 0.0001; }
+// Sloučení dvou dokumentů (sjednocení seznamů podle id/názvu a bodů podle souřadnic)
+function _bmMerge(a, b) {
+  const out = JSON.parse(JSON.stringify(a && Array.isArray(a.lists) ? a : _bmDefault()));
+  ((b && b.lists) || []).forEach(bl => {
+    let target = out.lists.find(l => l.id === bl.id) || out.lists.find(l => l.name === bl.name);
+    if (!target) { target = { ...bl, items: [] }; out.lists.push(target); }
+    (bl.items || []).forEach(it => { if (!target.items.some(x => _bmSamePoint(x, it))) target.items.push(it); });
+  });
+  return out;
+}
+function _bmHasContent(d) { return !!(d && d.lists && d.lists.some(l => l.items && l.items.length)); }
+
+let _bmSyncTimer = null, _bmSyncBusy = false, _bmSyncAgain = false;
+let _bmLastUid, _bmLastSyncAt = 0;
+function _bmScheduleSync(delay) {
+  clearTimeout(_bmSyncTimer);
+  _bmSyncTimer = setTimeout(() => { window.vmBmSync && window.vmBmSync(true); }, delay);
+}
+function _bmAfterRemoteChange() {
+  try { _refreshPlacesLayer(); } catch {}
+  // Je-li panel Moje seznamy právě otevřený, překreslit ho
+  try {
+    const el = document.querySelector('#vmap-root .bm-list-items, #vmap-root .bm-empty');
+    if (el && !el.closest('.panel-hidden, .sheet-hidden, .hidden') && typeof openBookmarksPanel === 'function') openBookmarksPanel();
+  } catch {}
+}
+
+// Synchronizace seznamů s účtem. Volá se při zobrazení mapy, po každé změně
+// (s odstupem) a po přihlášení/odhlášení (změna userId se pozná sama).
+window.vmBmSync = async function (force) {
+  const uid = _bmUserId();
+  const uidChanged = uid !== _bmLastUid;
+  _bmLastUid = uid;
+  if (!uid) { if (uidChanged) _bmAfterRemoteChange(); return; }
+  if (!force && !uidChanged && Date.now() - _bmLastSyncAt < 20000) return;
+  if (_bmSyncBusy) { _bmSyncAgain = true; return; }
+  _bmSyncBusy = true;
+  let changed = uidChanged;
+  try {
+    const res = await apiGet('/api/map-lists/me');
+    const serverDoc = (res && res.data && Array.isArray(res.data.lists)) ? res.data : null;
+    const serverRev = Number(res && res.updated_at) || 0;
+    const meta = _bmMeta(uid);
+    let local = _bmReadRaw(_bmKey(uid));
+    let dirty = !!meta.dirty;
+
+    if (!local) {
+      // První synchronizace tohoto účtu na tomto zařízení
+      local = serverDoc ? JSON.parse(JSON.stringify(serverDoc)) : _bmDefault();
+      if (serverDoc) meta.rev = serverRev;
+      // Seznamy, které si host uložil před přihlášením, se jednou převezmou do prvního účtu
+      if (!localStorage.getItem(BM_GUEST_IMPORTED_KEY)) {
+        const guest = _bmReadRaw(BM_KEY);
+        if (_bmHasContent(guest)) { local = _bmMerge(local, guest); dirty = true; }
+        try { localStorage.setItem(BM_GUEST_IMPORTED_KEY, uid); } catch {}
+      }
+      try { localStorage.setItem(_bmKey(uid), JSON.stringify(local)); } catch {}
+      changed = true;
+    } else if (!dirty && serverDoc && serverRev !== meta.rev) {
+      // Na jiném zařízení se seznamy změnily a tady nejsou neodeslané úpravy
+      local = JSON.parse(JSON.stringify(serverDoc));
+      meta.rev = serverRev;
+      try { localStorage.setItem(_bmKey(uid), JSON.stringify(local)); } catch {}
+      changed = true;
+    }
+
+    if (dirty || (!serverDoc && _bmHasContent(local))) {
+      // Základ = revize, ze které lokální data vycházejí (ne čerstvě stažená), jinak by konflikt zůstal nepovšimnutý
+      let base = Number(meta.rev) || 0;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const seq = _bmChangeSeq;
+        try {
+          const r = await apiFetch('/api/map-lists/me', { method: 'PUT', body: JSON.stringify({ data: local, base_updated_at: base }) });
+          meta.rev = Number(r.updated_at) || meta.rev;
+          dirty = (seq !== _bmChangeSeq); // mezitím přibyla další změna → pošle se příště
+          break;
+        } catch (err) {
+          if (err && err.status === 409 && err.data && err.data.data) {
+            // Mezitím někdo zapsal novější verzi → sloučit a odeslat znovu
+            local = _bmMerge(err.data.data, local);
+            base = Number(err.data.updated_at) || 0;
+            try { localStorage.setItem(_bmKey(uid), JSON.stringify(local)); } catch {}
+            changed = true;
+            continue;
+          }
+          throw err;
+        }
+      }
+    }
+    meta.dirty = dirty;
+    _bmSetMeta(uid, meta);
+    _bmLastSyncAt = Date.now();
+    if (dirty) _bmScheduleSync(1500);
+  } catch (err) {
+    // Offline nebo vypršelé přihlášení — změny zůstanou lokálně a odešlou se při příští synchronizaci
+    console.warn('[vmap] synchronizace seznamů selhala:', err && err.message);
+  } finally {
+    _bmSyncBusy = false;
+    if (changed) _bmAfterRemoteChange();
+    if (_bmSyncAgain) { _bmSyncAgain = false; _bmScheduleSync(500); }
+  }
+};
+
+window._bmGoLogin = () => { try { if (typeof switchTab === 'function') switchTab('account'); } catch {} };
 
 // ── Přenos uložených míst mezi zařízeními ────────────────────────
-// Appka nemá účet ani cloud synchronizaci — všechno je jen v prohlížeči
-// daného zařízení. Toto je jednoduchá náhrada: stáhni JSON zálohu na
-// jednom zařízení, nahraj ji na druhém.
+// Seznamy přihlášeného uživatele se synchronizují s účtem (viz vmBmSync).
+// JSON záloha zůstává užitečná pro převod seznamů ze starší mapy na
+// maps.vandro.cz (jiná doména = jiné úložiště prohlížeče) a jako ruční kopie.
 window._bmExportData = () => {
   const payload = {
     type: 'vandro-backup',
@@ -1707,7 +1848,9 @@ function openBookmarksPanel() {
     if (!d.lists.some(l => l.items.length)) {
       return `<div class="bm-empty"><i class="fa-regular fa-bookmark"></i><p>Zatím žádná uložená místa.</p><p style="font-size:11px;color:#aaa">Místa ukládejte tlačítkem „Uložit" v detailu místa.</p></div>`;
     }
-    const localStorageNote = `<div class="bm-storage-note"><i class="fa-solid fa-circle-info"></i> Místa jsou uložena v tomto prohlížeči. Při smazání dat prohlížeče o ně přijdete.</div>`;
+    const localStorageNote = _bmUserId()
+      ? `<div class="bm-storage-note"><i class="fa-solid fa-cloud"></i> Seznamy jsou uložené u vašeho účtu a synchronizují se mezi zařízeními.</div>`
+      : `<div class="bm-storage-note"><i class="fa-solid fa-circle-info"></i> Místa jsou uložena jen v tomto prohlížeči. <a href="#" onclick="event.preventDefault();window._bmGoLogin()" style="color:var(--primary);font-weight:600">Přihlaste se</a>, aby se uložila k vašemu účtu.</div>`;
     const listsHtml = d.lists.map((list) => {
       const visible = list.visibleOnMap !== false;
       // Přepínač viditelnosti — zobrazí/skryje celý seznam na mapě (jemný
@@ -6940,6 +7083,7 @@ window.vmapInit = function () {
     ['_initVisibilityRecovery', _initVisibilityRecovery],
     ['loadRouteFromHash', () => { if (location.hash.includes('#route=')) loadRouteFromHash(); }],
     ['vmLayersInit', () => { if (typeof vmLayersInit === 'function') vmLayersInit(); }],
+    ['vmBmSync', () => { if (typeof window.vmBmSync === 'function') window.vmBmSync(true); }],
   ];
   steps.forEach(([name, fn]) => {
     try { fn(); }
