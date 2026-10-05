@@ -1387,7 +1387,7 @@ function openUserDetail(id) {
             : `<button class="profile-action-btn" style="color:#B3273C" data-action="admin-suspend-user" data-id="${id}">${escapeHtml(t('admin.suspend'))}</button>`}
           <button class="profile-action-btn" data-action="admin-change-role" data-id="${id}">${escapeHtml(t('admin.changeRole'))}</button>
           <button class="profile-action-btn" style="color:#B3273C;border-color:#B3273C" data-action="admin-delete-user" data-id="${id}" data-name="${escapeAttr(d.user.display_name || d.user.email || '')}">${icon('trash', { size: 15 })} ${escapeHtml(t('common.delete'))}</button>
-        </div>
+        </div>`;
     } catch (err) {
       el.innerHTML = `<p style="color:#B3273C">${escapeHtml(t('common.error'))}: ${escapeHtml(err.message)}</p>`;
     }
