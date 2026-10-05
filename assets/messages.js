@@ -1,5 +1,15 @@
 // ============================================================
 // DM — priame správy
+//
+// PRAVIDLÁ:
+//  - Bežný používateľ (role='user') NEMÔŽE písať inému bežnému používateľovi.
+//  - Bežný používateľ MÔŽE kontaktovať organizáciu (role='organization'/'hotelier'/'admin').
+//  - Organizácia MÔŽE odpovedať komukoľvek, kto ju kontaktoval (thread už existuje).
+//  - Admin môže písať komukoľvek.
+//
+// Server musí tieto pravidlá vynucovať (endpoint /api/messages/start
+// vráti 403, ak ide o user→user). Klient ich kontroluje preventívne,
+// aby používateľ dostal zrozumiteľnú hlášku ešte pred requestom.
 // ============================================================
 
 let _threadPollInterval = null;
@@ -15,11 +25,75 @@ async function loadThreads() {
   if (state.overlay?.type === 'threads') renderApp();
 }
 
+/**
+ * Skontroluje, či má zmysel začať konverzáciu s daným používateľom.
+ * Vráti { ok: true } alebo { ok: false, reason: '...' }.
+ */
+function _canMessageUser(targetRole) {
+  const me = state.user?.role;
+  if (!me) return { ok: false, reason: 'notLoggedIn' };
+  // Admin môže vždy
+  if (me === 'admin') return { ok: true };
+  // Organizácia / hotelier môže vždy (odpovedá na existujúce thready alebo iniciuje)
+  if (me === 'organization' || me === 'hotelier') return { ok: true };
+  // Bežný používateľ → bežný používateľ = ZAKÁZANÉ
+  if (targetRole === 'user') return { ok: false, reason: 'userToUserBlocked' };
+  // Bežný používateľ → organizácia/hotelier/admin = POVOLENÉ
+  return { ok: true };
+}
+
 async function openThreadWith(otherUserId) {
   try {
+    // Zistí rolu cieľového používateľa (z cache alebo z API)
+    let targetRole = null;
+    const cached = state.profiles[`user:${otherUserId}`]?.profile;
+    if (cached?.role) {
+      targetRole = cached.role;
+    } else {
+      try {
+        const d = await apiGet(`/api/profile/user/${otherUserId}`);
+        targetRole = d?.profile?.role || null;
+        if (d?.profile) state.profiles[`user:${otherUserId}`] = d;
+      } catch (e) { /* necháme na serveri */ }
+    }
+
+    const check = _canMessageUser(targetRole);
+    if (!check.ok) {
+      if (check.reason === 'userToUserBlocked') {
+        showToast(t('messages.userToUserBlocked') || 'Běžní uživatelé si mezi sebou nemohou psát soukromé zprávy. Kontaktovat lze pouze organizace.');
+      } else if (check.reason === 'notLoggedIn') {
+        showToast(t('auth.loginRequired') || 'Pro psaní zpráv se musíte přihlásit.');
+      }
+      return;
+    }
+
     const data = await apiPost('/api/messages/start', { user_id: otherUserId });
     openThreadById(data.thread_id);
   } catch (err) { showToast(err.message); }
+}
+
+/**
+ * Začne konverzáciu s organizáciou (atrakcia, ubytovanie, gastro…).
+ * businessKind: 'organizations' | 'accommodation' | 'restaurants'
+ * businessId: ID záznamu v DB (rovnaké, aké sa používa na mape)
+ */
+async function openThreadWithBusiness(businessKind, businessId, businessName) {
+  if (!isLoggedIn()) {
+    showToast(t('auth.loginRequired') || 'Pro kontaktování organizace se musíte přihlásit.');
+    if (typeof switchTab === 'function') switchTab('account');
+    return;
+  }
+  try {
+    const data = await apiPost('/api/messages/start-business', {
+      business_kind: businessKind,
+      business_id: businessId,
+      // Voliteľne pošleme aj názov, aby server mohol thread pomenovať
+      business_name: businessName || '',
+    });
+    openThreadById(data.thread_id);
+  } catch (err) {
+    showToast(err.message || 'Organizaci se nepodařilo kontaktovat.');
+  }
 }
 
 function openThreads() {
@@ -45,12 +119,10 @@ function openThreadById(id) {
 function startThreadPolling(id) {
   stopThreadPolling();
   _threadPollInterval = setInterval(() => {
-    // Preskoč, ak je tab skrytý — šetrí baterku aj server
     if (document.hidden) return;
     if (state.overlay?.type === 'thread' && state.overlay.id === id) {
       loadThread(id, true);
     } else {
-      // Overlay sa zmenil — zastav polling
       stopThreadPolling();
     }
   }, 5000);
@@ -63,7 +135,6 @@ function stopThreadPolling() {
   }
 }
 
-// Pri prepnutí viditeľnosti tabu obnov thread hneď, keď sa vráti
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   if (state.overlay?.type === 'thread' && state.overlay.id) {
@@ -75,7 +146,6 @@ async function loadThread(id, silent = false) {
   try {
     const data = await apiGet(`/api/messages/thread/${id}`);
 
-    // Guard: overlay sa medzitým mohol zmeniť
     if (state.overlay?.type !== 'thread' || state.overlay.id !== id) return;
 
     state.threadCurrent = { thread: data.thread, other: data.other };
@@ -107,18 +177,26 @@ function renderThreadsOverlay() {
       <div class="profile-section">
         ${list == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
           : list.length === 0 ? `<p class="empty-state">${escapeHtml(t('messages.noThreads'))}</p>`
-          : list.map((t) => `
+          : list.map((t) => {
+            const isBusiness = t.other?.is_business || t.thread?.business_id;
+            const avatar = t.other?.avatar_url || t.other?.logo_url;
+            const initial = (t.other?.display_name || t.other?.business_name || '?').charAt(0).toUpperCase();
+            return `
             <button class="user-list-item" data-action="open-thread" data-id="${t.id}">
-              ${t.other?.avatar_url
-                ? `<img src="${t.other.avatar_url}" class="user-list-avatar" alt="" />`
-                : `<span class="user-list-avatar user-list-avatar-init">${(t.other?.display_name || '?').charAt(0).toUpperCase()}</span>`}
+              ${avatar
+                ? `<img src="${avatar}" class="user-list-avatar" alt="" />`
+                : `<span class="user-list-avatar user-list-avatar-init">${initial}</span>`}
               <div style="flex:1;min-width:0">
-                <p class="user-list-name">${escapeHtml(t.other?.display_name || t('common.unknown'))}</p>
+                <p class="user-list-name">
+                  ${escapeHtml(t.other?.display_name || t.other?.business_name || t('common.unknown'))}
+                  ${isBusiness ? `<span class="thread-biz-badge">${icon('check', { size: 10 })} ${escapeHtml(t('messages.businessBadge') || 'Organizace')}</span>` : ''}
+                </p>
                 <p class="user-list-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;">${escapeHtml(t.last_message_preview || '—')}</p>
               </div>
               ${t.unread > 0 ? `<span class="nav-badge">${t.unread}</span>` : ''}
               <p class="user-list-meta" style="flex-shrink:0">${t.last_message_at ? timeAgo(t.last_message_at) : ''}</p>
-            </button>`).join('')}
+            </button>`;
+          }).join('')}
       </div>
     </div>
   `;
@@ -127,9 +205,12 @@ function renderThreadsOverlay() {
 function renderThreadOverlay() {
   const tc = state.threadCurrent;
   const msgs = state.threadMessages;
+  const isBusiness = tc?.other?.is_business || tc?.thread?.business_id;
+  const otherName = tc?.other?.display_name || tc?.other?.business_name || t('messages.conversation');
   return `
     <div class="page-scroll thread-scroll" id="thread-scroller">
-      ${renderBackHeader(tc?.other?.display_name || t('messages.conversation'))}
+      ${renderBackHeader(otherName)}
+      ${isBusiness ? `<div class="thread-biz-hint">${icon('check', { size: 12 })} ${escapeHtml(t('messages.businessHint') || 'Tato konverzace je s ověřenou organizací na Vandro')}</div>` : ''}
       <div class="thread-messages">
         ${msgs == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
           : msgs.length === 0 ? `<p class="empty-state">${escapeHtml(t('messages.noMessages'))}</p>`
@@ -164,3 +245,7 @@ async function handleSendThreadMessage(form) {
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   } catch (err) { showToast(err.message); input.value = text; }
 }
+
+// Export pre inline handlery v iných súboroch (vmap-layers.js, profile…)
+window.openThreadWith = openThreadWith;
+window.openThreadWithBusiness = openThreadWithBusiness;
