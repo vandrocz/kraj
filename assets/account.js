@@ -1182,7 +1182,10 @@ function renderAdminUsers() {
             <span class="admin-user-role role-${u.role}">${u.role}</span>
             ${u.status === 'suspended' ? `<span class="admin-user-role status-suspended" style="margin-left:4px">${escapeHtml(t('admin.stateSuspended'))}</span>` : ''}
           </div>
-          <div class="admin-user-actions"><button data-action="admin-user-detail" data-id="${u.id}" title="Detail">${icon('more', { size: 16 })}</button></div>
+          <div class="admin-user-actions">
+            <button data-action="admin-user-detail" data-id="${u.id}" title="Detail">${icon('more', { size: 16 })}</button>
+            <button data-action="admin-delete-user" data-id="${u.id}" data-name="${escapeAttr(u.display_name || u.email || '')}" title="Smazat uživatele" style="color:#B3273C">${icon('trash', { size: 16 })}</button>
+          </div>
         </div>`).join('')}`;
 }
 
@@ -1324,6 +1327,44 @@ function changeUserRole(id) {
   });
 }
 
+function deleteUser(id, name) {
+  openModal({
+    title: t('admin.deleteUser') || 'Smazat uživatele',
+    body: `
+      <p style="font-size:14px;line-height:1.6;margin-bottom:12px">
+        ${escapeHtml(t('admin.deleteUserText') || 'Opravdu chcete trvale smazat tohoto uživatele? Smažou se i všechny jeho příspěvky, komentáře, hodnocení a záložky. Tuto akci nelze vrátit zpět.')}
+      </p>
+      <p style="font-size:13px;color:var(--c-text-muted);margin-bottom:10px">
+        <strong>${escapeHtml(name || '')}</strong>
+      </p>
+      <div class="form-field">
+        <label class="form-label">${escapeHtml(t('admin.deleteUserConfirmLabel') || 'Pro potvrzení napište "SMAZAT"')}</label>
+        <input class="form-input" name="confirm" autocomplete="off" required placeholder="SMAZAT" />
+      </div>
+    `,
+    submitLabel: t('common.delete'),
+    danger: true,
+    onSubmit: async (data) => {
+      if ((data.confirm || '').trim().toUpperCase() !== 'SMAZAT') {
+        showToast(t('admin.deleteUserMismatch') || 'Potvrzení nesouhlasí.');
+        return;
+      }
+      state._modalLoading = true; renderApp();
+      try {
+        await apiDelete(`/api/admin/users/${id}`);
+        closeModal();
+        showToast(t('admin.userDeleted') || 'Uživatel byl smazán.');
+        state.adminUsers = null;
+        loadAdminUsers();
+      } catch (err) {
+        showToast(err.message);
+        state._modalLoading = false;
+        renderApp();
+      }
+    },
+  });
+}
+
 function openUserDetail(id) {
   openModal({ title: t('admin.userDetail'), body: `<div id="admin-user-detail-body" style="min-height:120px"><p style="color:var(--c-text-muted)">${escapeHtml(t('common.loading'))}</p></div>`, submitLabel: t('admin.close'), onSubmit: () => { closeModal(); } });
   setTimeout(async () => {
@@ -1345,7 +1386,8 @@ function openUserDetail(id) {
             ? `<button class="profile-action-btn" data-action="admin-unsuspend-user" data-id="${id}">${escapeHtml(t('admin.unsuspend'))}</button>`
             : `<button class="profile-action-btn" style="color:#B3273C" data-action="admin-suspend-user" data-id="${id}">${escapeHtml(t('admin.suspend'))}</button>`}
           <button class="profile-action-btn" data-action="admin-change-role" data-id="${id}">${escapeHtml(t('admin.changeRole'))}</button>
-        </div>`;
+          <button class="profile-action-btn" style="color:#B3273C;border-color:#B3273C" data-action="admin-delete-user" data-id="${id}" data-name="${escapeAttr(d.user.display_name || d.user.email || '')}">${icon('trash', { size: 15 })} ${escapeHtml(t('common.delete'))}</button>
+        </div>
     } catch (err) {
       el.innerHTML = `<p style="color:#B3273C">${escapeHtml(t('common.error'))}: ${escapeHtml(err.message)}</p>`;
     }
@@ -1386,8 +1428,33 @@ function deleteAdminPost(postId) {
   }});
 }
 
-async function approveVerification(id) { const note = prompt(t('admin.approveNote'), '') || ''; try { await apiPost(`/api/admin/verifications/${id}/approve`, { note }); showToast(t('admin.approved')); state.adminVerifications = null; renderApp(); } catch (err) { showToast(err.message); } }
-async function rejectVerification(id) { const note = prompt(t('admin.rejectNote'), '') || ''; try { await apiPost(`/api/admin/verifications/${id}/reject`, { note }); showToast(t('admin.rejected')); state.adminVerifications = null; renderApp(); } catch (err) { showToast(err.message); } }
+async function approveVerification(id) {
+  const result = prompt(t('admin.approveNote'), '');
+  if (result === null) return; // používateľ klikol Zrušiť
+  const note = result || '';
+  try {
+    await apiPost(`/api/admin/verifications/${id}/approve`, { note });
+    showToast(t('admin.approved'));
+    state.adminVerifications = null;
+    state.adminPending = null;
+    state.adminPendingLoading = false;
+    renderApp();
+  } catch (err) { showToast(err.message); }
+}
+
+async function rejectVerification(id) {
+  const result = prompt(t('admin.rejectNote'), '');
+  if (result === null) return; // používateľ klikol Zrušiť — NEODOSIELAŤ
+  const note = result || '';
+  try {
+    await apiPost(`/api/admin/verifications/${id}/reject`, { note });
+    showToast(t('admin.rejected'));
+    state.adminVerifications = null;
+    state.adminPending = null;
+    state.adminPendingLoading = false;
+    renderApp();
+  } catch (err) { showToast(err.message); }
+}
 
 async function adminBackfillHandles() { if (!confirm(t('admin.handlesQuestion'))) return; try { const r = await apiPost('/api/admin/backfill-handles', {}); showToast(t('admin.handlesDone', { updated: r.updated, total: r.total })); } catch (err) { showToast(err.message); } }
 async function adminSeedTest() { if (!confirm(t('admin.seedQuestion'))) return; try { const r = await apiPost('/api/admin/seed-test-content', {}); showToast(t('admin.seedDone', { users: r.users || 0, businesses: r.businesses || 0, posts: r.posts || 0 })); } catch (err) { showToast(err.message); } }
