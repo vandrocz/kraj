@@ -2,7 +2,7 @@
 // SERVICE WORKER — PWA + Push notifikácie
 // ============================================================
 
-const CACHE_NAME = 'vandro-v2';
+const CACHE_NAME = 'vandro-v3';
 // Offline mapa: dlaždice stažených oblastí ukládá aplikace do 'vandro-tiles-v1' — tuto cache nikdy nemažeme
 const TILE_CACHE = 'vandro-tiles-v1';
 const TILE_HOSTS = ['tiles.openfreemap.org', 'tiles.opensnowmap.org', 'server.arcgisonline.com'];
@@ -70,17 +70,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Skripty, styly a JSON: nejdřív síť (nová verze se projeví hned), cache jen jako záloha offline
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const fetchPromise = fetch(req).then((res) => {
-        if (res && res.status === 200 && res.type === 'basic') {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, clone)).catch(() => {});
-        }
-        return res;
-      }).catch(() => cached);
-      return cached || fetchPromise;
-    }),
+    fetch(req).then((res) => {
+      if (res && res.status === 200 && res.type === 'basic') {
+        const clone = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(req, clone)).catch(() => {});
+      }
+      return res;
+    }).catch(() => caches.match(req)),
   );
 });
 
