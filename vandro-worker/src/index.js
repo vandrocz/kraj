@@ -19,6 +19,7 @@ import { reviewsRoutes } from './routes/reviews.js';
 import { wishlistRoutes } from './routes/wishlist.js';
 import { nearbyRoutes } from './routes/nearby.js';
 import { mapRoutes } from './routes/map.js';
+import { mapListsRoutes } from './routes/map-lists.js';
 import { pushRoutes } from './routes/push.js';
 import { groupsRoutes } from './routes/groups.js';
 import { messagesRoutes } from './routes/messages.js';
@@ -157,6 +158,11 @@ app.route('/api/wishlist', wishlistRoutes);
 // Nearby
 app.route('/api/nearby', nearbyRoutes);
 app.route('/api/map', mapRoutes);
+
+// Osobní seznamy míst z mapy (vyžaduje přihlášení)
+app.use('/api/map-lists/*', requireAuth);
+app.use('/api/map-lists', requireAuth);
+app.route('/api/map-lists', mapListsRoutes);
 
 // Push
 app.route('/api/push/vapid-public-key', pushRoutes);
