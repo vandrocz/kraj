@@ -1404,7 +1404,7 @@ body.no-scroll { overflow: hidden; }
 }
 .story-circle:active .story-ring { transform: scale(0.94); }
 .story-ring.has-story {
-  background: linear-gradient(45deg, #F58529, #DD2A7B, #8134AF, #515BD4);
+  background: linear-gradient(135deg, #C5E063 0%, #7CB342 50%, #33691E 100%);
   padding: 2.5px;
   border: none;
 }
