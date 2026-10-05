@@ -264,6 +264,15 @@ CREATE TABLE IF NOT EXISTS wishlist (
 );
 
 -- ============================================================
+-- OSOBNÍ SEZNAMY MÍST Z MAPY (záložky)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS map_lists (
+  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  data TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- ============================================================
 -- CHECK-INS + ODZNAKY
 -- ============================================================
 CREATE TABLE IF NOT EXISTS checkins (
