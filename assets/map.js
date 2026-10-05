@@ -9,13 +9,14 @@
 // Knihovny (MapLibre, PapaParse, …) a skripty mapy se stahují líně až při
 // prvním otevření záložky Mapa, takže ostatní části webu nezpomalují.
 
-const VMAP_BUILD = '1';
+const VMAP_BUILD = '3';
+console.info('[vmap] build ' + VMAP_BUILD);
 const VMAP_LIBS = {
   css: [
     'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css',
     'https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-    'assets/vmap.css?v=' + VMAP_BUILD,
+    '/assets/vmap.css?v=' + VMAP_BUILD,
   ],
   // pořadí = pořadí spuštění
   js: [
@@ -29,9 +30,9 @@ const VMAP_LIBS = {
   // volitelné — když selžou, mapa běží dál
   optional: ['pmtiles.js', 'index.min.js', 'jspdf.umd.min.js', 'glightbox.min.js'],
   own: [
-    'assets/vmap-icons.js?v=' + VMAP_BUILD,
-    'assets/vmap.js?v=' + VMAP_BUILD,
-    'assets/vmap-layers.js?v=' + VMAP_BUILD,
+    '/assets/vmap-icons.js?v=' + VMAP_BUILD,
+    '/assets/vmap.js?v=' + VMAP_BUILD,
+    '/assets/vmap-layers.js?v=' + VMAP_BUILD,
   ],
 };
 
