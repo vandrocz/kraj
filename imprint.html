@@ -1,58 +1,87 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Impressum — VANDRO</title>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #F6FAF7; color: #10201A; margin: 0; padding: 24px; line-height: 1.65; }
-  .wrap { max-width: 720px; margin: 0 auto; background: #fff; border-radius: 20px; padding: 32px 28px; box-shadow: 0 8px 24px rgba(16,32,26,0.08); }
-  h1 { font-size: 24px; margin-top: 0; }
-  h2 { font-size: 16px; margin-top: 24px; color: #1B8F52; }
-  p, li { font-size: 14.5px; }
-  a.back { display: inline-block; margin-bottom: 16px; color: #1B8F52; text-decoration: none; font-weight: 600; font-size: 14px; }
-  a { color: #1B8F52; }
-  dl { margin: 12px 0; }
-  dt { font-weight: 700; font-size: 13px; color: #64766D; margin-top: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
-  dd { margin: 2px 0 0 0; font-size: 15px; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#2FBF71" />
+  <title>VANDRO — regionální platforma</title>
+
+  <meta name="description" id="meta-desc" content="Objevuj hrady, zámky, ubytování a gastro v Česku a na Slovensku." />
+  <meta property="og:title" id="og-title" content="VANDRO — regionální platforma" />
+  <meta property="og:description" id="og-desc" content="Objevuj hrady, zámky, ubytování a gastro v Česku a na Slovensku." />
+  <meta property="og:image" id="og-image" content="https://cdn.vandro.cz/Untitled15_20260522160351.png" />
+  <meta property="og:url" id="og-url" content="https://vandro.cz/" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="canonical" href="https://vandro.cz/" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/png" href="https://cdn.vandro.cz/Untitled15_20260522160351.png" />
+  <link rel="apple-touch-icon" href="https://cdn.vandro.cz/Untitled15_20260522160351.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="VANDRO" />
+
+  <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
+  <link rel="stylesheet" href="assets/styles.css?v=20261006" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
-<div class="wrap">
-  <a class="back" href="/">← Zpět do aplikace</a>
-  <h1>Impressum</h1>
-  <p>Informace o provozovateli platformy VANDRO (dříve Náš kraj).</p>
+  <div id="root"></div>
 
-  <h2>Provozovatel</h2>
-  <dl>
-    <dt>Jméno</dt><dd>Daniel Dziak</dd>
-    <dt>Adresa</dt><dd>Košice-Sídlisko KVP, 040 23, Slovenská republika</dd>
-    <dt>E-mail</dt><dd><a href="mailto:vandrocz.contact@gmail.com">vandrocz.contact@gmail.com</a></dd>
-  </dl>
+  <footer style="text-align:center;padding:24px 16px;font-size:12px;color:#64766D;background:#F6FAF7;border-top:1px solid #E4ECE6;">
+    <p style="margin:0 0 8px 0;">
+      <strong>VANDRO</strong> · © 2026
+    </p>
+    <p style="margin:0;">
+      <a href="/imprint.html" style="color:#1B8F52;text-decoration:none;margin:0 8px;">Impressum</a> ·
+      <a href="/obchodni-podminky.html" style="color:#1B8F52;text-decoration:none;margin:0 8px;">Obchodní podmínky</a> ·
+      <a href="/ochrana-osobnich-udaju.html" style="color:#1B8F52;text-decoration:none;margin:0 8px;">Ochrana údajů</a> ·
+      <a href="/faq.html" style="color:#1B8F52;text-decoration:none;margin:0 8px;">FAQ</a> ·
+      <a href="/kontakt.html" style="color:#1B8F52;text-decoration:none;margin:0 8px;">Kontakt</a>
+    </p>
+  </footer>
 
-  <h2>Odpovědná osoba</h2>
-  <p>Daniel Dziak (provozovatel).</p>
+  <script src="assets/i18n.js?v=20261006"></script>
+  <script src="assets/config.js?v=20261006"></script>
+  <script src="assets/meta.js?v=20261006"></script>
+  <script src="assets/icons.js?v=20261006"></script>
+  <script src="assets/crop.js?v=20261006"></script>
+  <script src="assets/banners.js?v=20261006"></script>
+  <script src="assets/app.js?v=20261006"></script>
+  <script src="assets/editor.js?v=20261006"></script>
+  <script src="assets/emoji.js?v=20261006"></script>
+  <script src="assets/mentions.js?v=20261006"></script>
+  <script src="assets/geo.js?v=20261006"></script>
+  <script src="assets/push.js?v=20261006"></script>
+  <script src="assets/onboarding.js?v=20261006"></script>
+  <script src="assets/hashtags.js?v=20261006"></script>
+  <script src="assets/profile.js?v=20261006"></script>
+  <script src="assets/stories.js?v=20261006"></script>
+  <script src="assets/events-page.js?v=20261006"></script>
+  <script src="assets/checkins.js?v=20261006"></script>
+  <script src="assets/reviews.js?v=20261006"></script>
+  <script src="assets/wishlist.js?v=20261006"></script>
+  <script src="assets/nearby.js?v=20261006"></script>
+  <script src="assets/map.js?v=20261006"></script>
+  <script src="assets/social.js?v=20261006"></script>
+  <script src="assets/account.js?v=20261006"></script>
+  <script src="assets/events.js?v=20261006"></script>
 
-  <h2>Hosting a technické zajištění</h2>
-  <p>Platforma je provozována na infrastruktuře Cloudflare (Cloudflare, Inc., 101 Townsend St., San Francisco, CA 94107, USA) — Workers, Pages, D1, R2.</p>
+  <script>
+    if (typeof initI18n === 'function') initI18n();
 
-  <h2>Ochrana autorských práv</h2>
-  <p>Veškerý obsah (text, grafika, logo, kód) je chráněn autorským právem. Kopírování nebo šíření bez předchozího písemného souhlasu je zakázáno. Obsah vložený uživateli zůstává jejich majetkem, platforma má pouze nevýhradní licenci pro jeho zobrazení.</p>
-
-  <h2>Odpovědnost za obsah</h2>
-  <p>Obsah vložený uživateli (příspěvky, komentáře, recenze, fotografie) je odpovědností příslušného uživatele. Provozovatel nezodpovídá za jeho správnost, ale vyhrazuje si právo jej moderovat v souladu s <a href="/obchodni-podminky.html">obchodními podmínkami</a>.</p>
-
-  <h2>Odkazy na externí stránky</h2>
-  <p>Platforma obsahuje odkazy na stránky třetích stran (webové stránky podniků, mapové služby). Provozovatel neodpovídá za obsah těchto stránek.</p>
-
-  <h2>Rozhodné právo</h2>
-  <p>Právní vztahy se řídí právem Slovenské republiky (místo podnikání provozovatele), s přihlédnutím k právu Evropské unie.</p>
-
-  <h2>Mimosoudní řešení sporů</h2>
-  <p>V případě sporu se můžete obrátit na příslušný orgán dohledu nebo využít platformu <a href="https://ec.europa.eu/consumers/odr" target="_blank" rel="noopener">RSO (Řešení spotřebitelských sporů online)</a>.</p>
-
-  <p style="margin-top:32px;font-size:12.5px;color:#64766D"><em>Poslední aktualizace: 25. září 2026</em></p>
-</div>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('SW:', e));
+        // Nová verze service workeru převzala řízení: jednou stránku načíst znovu, aby se projevily nové soubory
+        let _swReloaded = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (_swReloaded || !sessionStorage.getItem('vandro_sw_seen')) { sessionStorage.setItem('vandro_sw_seen', '1'); return; }
+          _swReloaded = true; location.reload();
+        });
+      });
+    }
+  </script>
 </body>
 </html>
