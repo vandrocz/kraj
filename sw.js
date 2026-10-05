@@ -2,7 +2,7 @@
 // SERVICE WORKER — PWA + Push notifikácie
 // ============================================================
 
-const CACHE_NAME = 'vandro-v3';
+const CACHE_NAME = 'vandro-v4';
 // Offline mapa: dlaždice stažených oblastí ukládá aplikace do 'vandro-tiles-v1' — tuto cache nikdy nemažeme
 const TILE_CACHE = 'vandro-tiles-v1';
 const TILE_HOSTS = ['tiles.openfreemap.org', 'tiles.opensnowmap.org', 'server.arcgisonline.com'];
