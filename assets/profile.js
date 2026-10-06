@@ -371,6 +371,9 @@ function renderBusinessProfile(data, id, kind) {
     <button class="profile-action-btn ${data.is_following ? 'is-following' : ''}" data-action="toggle-follow" data-kind="${kind}" data-id="${id}">
       ${data.is_following ? icon('check', { size: 15 }) + ' ' + escapeHtml(t('profile.following')) : icon('plus', { size: 15 }) + ' ' + escapeHtml(t('profile.follow'))}
     </button>
+    <button class="profile-action-btn" data-action="contact-business" data-kind="${kind}" data-id="${id}" data-name="${escapeAttr(b.name)}">
+      ${icon('send', { size: 15 })} ${escapeHtml(t('messages.contact') || 'Napísať správu')}
+    </button>
     <button class="profile-action-btn ${checkinStatus?.checked_in ? 'is-following' : ''}" data-action="open-create-checkin" data-kind="${kind}" data-id="${id}" data-name="${escapeAttr(b.name)}">
       ${icon('check', { size: 15 })} ${escapeHtml(t('profile.beenHere'))}
     </button>
