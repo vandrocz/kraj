@@ -270,6 +270,13 @@
           } catch { showToast(t('errors.openConversationFailed')); }
         })();
         break;
+      case 'contact-business':
+        if (typeof openThreadWithBusiness === 'function') {
+          openThreadWithBusiness(el.dataset.kind, el.dataset.id, el.dataset.name || '');
+        } else {
+          showToast(t('errors.generic'));
+        }
+        break;
 
       // RICH EDITOR
       case 'rich-cmd': richCmd(el.dataset.cmd); break;
