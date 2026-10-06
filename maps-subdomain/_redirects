@@ -1,0 +1,5 @@
+# Cloudflare Pages — trvalé přesměrování starých URL na hlavní doménu (zachová SEO)
+/mista        https://vandro.cz/mista/        301
+/mista/*      https://vandro.cz/mista/        301
+/misto/*      https://vandro.cz/misto/:splat  301
+/sitemap.xml  https://vandro.cz/sitemap-mista.xml  301

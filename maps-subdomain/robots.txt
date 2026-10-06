@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://vandro.cz/sitemap-mista.xml
