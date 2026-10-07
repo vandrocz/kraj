@@ -1,0 +1,37 @@
+name: Build place pages (SEO)
+
+on:
+  schedule:
+    # Denně ve 03:00 UTC (~05:00 SEČ)
+    - cron: '0 3 * * *'
+  workflow_dispatch: {} # ruční spuštění: GitHub → Actions → "Run workflow"
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/build-place-pages.mjs'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repozitáře
+        uses: actions/checkout@v4
+
+      - name: Nastavit Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Vygenerovat stránky míst
+        run: node scripts/build-place-pages.mjs
+
+      - name: Commitnout změny (pokud nějaké jsou)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add misto/ mista/ sitemap-mista.xml robots.txt
+          git diff --staged --quiet || git commit -m "chore: aktualizace stránek míst (SEO) [automaticky]"
+          git push
