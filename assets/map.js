@@ -173,7 +173,7 @@ const VMAP_TEMPLATE = `
 <div class="top-ui-bar-desktop" id="top-ui-bar">
   <div class="left-controls">
     <button id="btn-about" class="control-btn icon-only" title="Vandro"><i class="fa-solid fa-compass"></i></button>
-    <a href="https://maps.vandro.cz/mista/" target="_blank" rel="noopener" id="btn-places-list-desktop" class="control-btn icon-only" title="Seznam všech míst"><i class="fa-solid fa-list"></i></a>
+    <a href="/mista/" id="btn-places-list-desktop" class="control-btn icon-only" title="Seznam všech míst"><i class="fa-solid fa-list"></i></a>
     <button id="btn-search-desktop" class="control-btn"><i class="fa-solid fa-magnifying-glass"></i><span>Hledat</span></button>
     <button id="btn-route-desktop" class="control-btn"><i class="fa-solid fa-route"></i><span>Trasa</span></button>
     <button id="btn-nearby-desktop" class="control-btn"><i class="fa-solid fa-map-location-dot"></i><span>Místa v okolí</span></button>
@@ -195,7 +195,7 @@ const VMAP_TEMPLATE = `
 </div>
 
 <div class="top-ui-bar-mobile">
-  <a href="https://maps.vandro.cz/mista/" target="_blank" rel="noopener" id="btn-places-list-mobile" class="mobile-search-side-btn" title="Seznam všech míst" aria-label="Seznam všech míst"><i class="fa-solid fa-list"></i></a>
+  <a href="/mista/" id="btn-places-list-mobile" class="mobile-search-side-btn" title="Seznam všech míst" aria-label="Seznam všech míst"><i class="fa-solid fa-list"></i></a>
   <div class="search-container-mobile">
     <i class="fa-solid fa-magnifying-glass search-icon"></i>
     <input type="text" id="search-input" placeholder="Hledat místo...">
