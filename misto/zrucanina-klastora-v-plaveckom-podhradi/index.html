@@ -51,8 +51,21 @@
   }
   .site-header img { width: auto; height: 30px; display: block; object-fit: contain; }
   .site-header a.site-name { font-weight: 800; font-size: 17px; color: #222; text-decoration: none; display: flex; align-items: center; gap: 8px; }
-  .site-header .site-nav { margin-left: auto; display: flex; gap: 18px; font-size: 13px; }
-  .site-header .site-nav a { color: #666; text-decoration: none; }
+  .site-header .site-nav { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .site-header .site-nav a {
+    display: inline-flex; align-items: center; padding: 8px 16px; border-radius: 999px;
+    font-size: 13px; font-weight: 600; line-height: 1; text-decoration: none; white-space: nowrap;
+    color: var(--primary-dark); background: #eef7f0; border: 1px solid #d5ead9;
+    transition: background .15s, color .15s;
+  }
+  .site-header .site-nav a:hover { background: #dff0e3; }
+  .site-header .site-nav a.is-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .site-header .site-nav a.is-primary:hover { background: var(--primary-dark); }
+  @media (max-width: 520px) {
+    .site-header { padding: 10px 14px; gap: 8px; }
+    .site-header img { height: 24px; }
+    .site-header .site-nav a { padding: 7px 12px; font-size: 12px; }
+  }
   .wrap-wide { max-width: 1080px; margin: 0 auto; padding: 24px 24px 50px; }
   .site-footer { border-top: 1px solid #eee; margin-top: 40px; padding: 24px 20px 40px; text-align: center; font-size: 12px; color: #999; }
   .site-footer a { color: #999; margin: 0 8px; }
@@ -119,7 +132,7 @@
     </a>
     <nav class="site-nav">
       <a href="https://vandro.cz/mista/">Všechna místa</a>
-      <a href="https://vandro.cz/">Mapa</a>
+      <a class="is-primary" href="https://vandro.cz/mapa">Mapa</a>
     </nav>
   </div>
 <div class="hero-wrap"><a href="https://cdn.spoznajslovensko.eu/IMG_20250511_234156-scaled.webp" class="glightbox" data-gallery="place-gallery" data-title="Zrúcanina kláštora v Plaveckom Podhradí"><img class="hero" src="https://cdn.spoznajslovensko.eu/IMG_20250511_234156-scaled.webp" alt="Zrúcanina kláštora v Plaveckom Podhradí"></a></div>
@@ -187,7 +200,7 @@
     </div>
     <div class="col-side">
       <div class="blk-cta">
-        <a class="cta-btn" href="https://vandro.cz/#zrucanina-klastora-v-plaveckom-podhradi/48.48633/17.27331"><span>📍</span> Zobrazit na interaktivní mapě</a>
+        <a class="cta-btn" href="https://vandro.cz/mapa#zrucanina-klastora-v-plaveckom-podhradi/48.48633/17.27331"><span>📍</span> Zobrazit na interaktivní mapě</a>
       </div>
       <div class="blk-gallery">
     <h2 class="section-title">Galerie</h2>
