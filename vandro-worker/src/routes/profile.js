@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { eraseUser, deleteBusinessCascade } from '../erase.js';
 import { newId, normalizeHandle, validateHandle } from '../auth.js';
 import { escapeLike, validateUpload } from '../moderation.js';
 import { getUserBadges } from '../badges.js';
@@ -349,40 +350,8 @@ profileRoutes.delete('/me/business/:type/:id', async (c) => {
     return c.json({ error: 'Verifikovaný podnik nemôže byť zmazaný.' }, 403);
   }
 
-  try {
-    const { results: galleryRows } = await c.env.DB.prepare(
-      `SELECT image_url FROM business_gallery WHERE business_id = ? AND business_kind = ?`
-    ).bind(id, table).all();
-    if (c.env.MEDIA && galleryRows?.length) {
-      const publicBase = c.env.R2_PUBLIC_BASE || '';
-      for (const g of galleryRows) {
-        try {
-          let key = g.image_url;
-          if (publicBase && key.startsWith(publicBase + '/')) key = key.slice(publicBase.length + 1);
-          if (key && !key.startsWith('http')) await c.env.MEDIA.delete(key);
-        } catch {}
-      }
-    }
-    await c.env.DB.prepare(`DELETE FROM business_gallery WHERE business_id = ? AND business_kind = ?`).bind(id, table).run();
-  } catch {}
-
-  try { await c.env.DB.prepare(`DELETE FROM verification_requests WHERE business_id = ? AND business_kind = ?`).bind(id, table).run(); } catch {}
-
-  try {
-    const { results: postRows } = await c.env.DB.prepare(`SELECT id FROM posts WHERE business_id = ?`).bind(id).all();
-    if (postRows?.length) {
-      for (const p of postRows) {
-        await c.env.DB.prepare(`DELETE FROM post_media WHERE post_id = ?`).bind(p.id).run();
-        await c.env.DB.prepare(`DELETE FROM post_hashtags WHERE post_id = ?`).bind(p.id).run();
-        await c.env.DB.prepare(`DELETE FROM comments WHERE post_id = ?`).bind(p.id).run();
-        await c.env.DB.prepare(`DELETE FROM post_likes WHERE post_id = ?`).bind(p.id).run();
-      }
-      await c.env.DB.prepare(`DELETE FROM posts WHERE business_id = ?`).bind(id).run();
-    }
-  } catch {}
-
-  try { await c.env.DB.prepare(`DELETE FROM events WHERE business_id = ? AND business_kind = ?`).bind(id, table).run(); } catch {}
-  await c.env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
+  // Smaže podnik včetně příspěvků, galerie, příběhů, akcí, recenzí a souborů v R2
+  await deleteBusinessCascade(c.env, table, id);
   return c.json({ ok: true });
 });
 
@@ -486,16 +455,8 @@ profileRoutes.delete('/me/account', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
   if (body.confirm !== 'SMAZAT') return c.json({ error: 'Pro potvrzení napiš "SMAZAT".' }, 400);
-  const now = new Date().toISOString();
-  const anonEmail = `deleted+${user.sub}@vandro.local`;
-  await c.env.DB.prepare(
-    `UPDATE users SET deleted_at = ?, status = 'deleted', email = ?, display_name = 'Smazaný účet',
-      bio = NULL, avatar_url = NULL, cover_url = NULL, location = NULL, website = NULL, phone = NULL,
-      password_hash = 'deleted', password_salt = 'deleted', totp_secret = NULL, totp_enabled = 0
-     WHERE id = ?`,
-  ).bind(now, anonEmail, user.sub).run();
-  await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE user_id = ?`).bind(user.sub).run();
-  await c.env.DB.prepare(`DELETE FROM follows WHERE follower_id = ? OR (target_type = 'users' AND target_id = ?)`).bind(user.sub, user.sub).run();
+  // Úplné smazání osobních údajů a obsahu (GDPR čl. 17); účet zůstane jen jako anonymní záznam
+  await eraseUser(c.env, user.sub);
   return c.json({ ok: true });
 });
 
@@ -518,6 +479,31 @@ profileRoutes.get('/me/export', async (c) => {
   ]);
 
   const settings = await c.env.DB.prepare(`SELECT settings_json FROM users WHERE id = ?`).bind(user.sub).first();
+
+  // Další údaje, které o uživateli evidujeme (právo na přístup a přenositelnost, GDPR čl. 15 a 20).
+  // Chybějící tabulka nesmí export shodit, proto každý dotaz zvlášť.
+  const extra = {};
+  const grab = async (key, sql, ...binds) => {
+    try { extra[key] = (await c.env.DB.prepare(sql).bind(...binds).all()).results || []; }
+    catch { extra[key] = []; }
+  };
+  await grab('map_lists', `SELECT data, updated_at FROM map_lists WHERE user_id = ?`, user.sub);
+  await grab('bookmarks', `SELECT post_id, created_at FROM bookmarks WHERE user_id = ?`, user.sub);
+  await grab('wishlist', `SELECT * FROM wishlist WHERE user_id = ?`, user.sub);
+  await grab('follows', `SELECT target_type, target_id, created_at FROM follows WHERE follower_id = ?`, user.sub);
+  await grab('blocks', `SELECT blocked_id, created_at FROM blocks WHERE blocker_id = ?`, user.sub);
+  await grab('reviews', `SELECT * FROM reviews WHERE user_id = ?`, user.sub);
+  await grab('checkins', `SELECT * FROM checkins WHERE user_id = ?`, user.sub);
+  await grab('stories', `SELECT id, image_url, caption, created_at FROM stories WHERE user_id = ?`, user.sub);
+  await grab('likes', `SELECT post_id FROM post_likes WHERE user_id = ?`, user.sub);
+  await grab('badges', `SELECT * FROM user_badges WHERE user_id = ?`, user.sub);
+  await grab('notifications', `SELECT type, entity_type, entity_id, text, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 500`, user.sub);
+  await grab('login_history', `SELECT ip, user_agent, created_at FROM login_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 200`, user.sub);
+  await grab('messages', `SELECT m.thread_id, m.sender_id, m.text, m.created_at
+                          FROM dm_messages m JOIN dm_threads t ON t.id = m.thread_id
+                          WHERE t.user_a = ? OR t.user_b = ? ORDER BY m.created_at ASC LIMIT 5000`, user.sub, user.sub);
+  if (extra.map_lists[0]?.data) { try { extra.map_lists[0].data = JSON.parse(extra.map_lists[0].data); } catch {} }
+
   return c.json({
     exported_at: new Date().toISOString(),
     profile,
@@ -526,6 +512,7 @@ profileRoutes.get('/me/export', async (c) => {
     businesses: businesses.results,
     posts: posts.results,
     comments: comments.results,
+    ...extra,
   });
 });
 

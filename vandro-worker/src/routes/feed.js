@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { purgePost, deleteCommentTree } from '../erase.js';
 import { verify } from 'hono/jwt';
 import { newId } from '../auth.js';
 import { ensureActiveProjectRotation } from '../cron.js';
@@ -589,23 +590,10 @@ feedRoutes.delete('/post/:id', async (c) => {
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
   if (post.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
 
-  const { results: mediaRows } = await c.env.DB.prepare(
-    `SELECT image_url FROM post_media WHERE post_id = ?`,
-  ).bind(id).all();
+  // Smaže text, fotky (i soubory v R2), komentáře, lajky, záložky a hlášení
+  const res = await purgePost(c.env, id);
 
-  const allUrls = [
-    post.image_url,
-    ...(mediaRows || []).map((m) => m.image_url),
-  ].filter(Boolean);
-
-  await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE id = ?`).bind(id).run();
-  await c.env.DB.prepare(`DELETE FROM post_media WHERE post_id = ?`).bind(id).run();
-  await c.env.DB.prepare(`DELETE FROM post_hashtags WHERE post_id = ?`).bind(id).run();
-  await c.env.DB.prepare(`DELETE FROM post_likes WHERE post_id = ?`).bind(id).run();
-
-  await deletePostMediaFromR2(c.env, allUrls);
-
-  return c.json({ ok: true, deleted_media: allUrls.length });
+  return c.json({ ok: true, deleted_media: res.media || 0 });
 });
 
 feedRoutes.delete('/comment/:id', async (c) => {
@@ -614,7 +602,7 @@ feedRoutes.delete('/comment/:id', async (c) => {
   const row = await c.env.DB.prepare('SELECT id, user_id FROM comments WHERE id = ?').bind(id).first();
   if (!row) return c.json({ error: 'Nenalezeno.' }, 404);
   if (row.user_id !== user.sub && user.role !== 'admin') return c.json({ error: 'Nemáš oprávnění.' }, 403);
-  await c.env.DB.prepare('DELETE FROM comments WHERE id = ?').bind(id).run();
+  await deleteCommentTree(c.env, id);
   return c.json({ ok: true });
 });
 

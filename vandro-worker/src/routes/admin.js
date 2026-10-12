@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { logAudit } from '../audit.js';
 import { newId, generateUniqueHandle } from '../auth.js';
 import { sendPushToUser } from '../push.js';
+import { eraseUser, purgePost, deleteCommentTree, deleteBusinessCascade } from '../erase.js';
 
 export const adminRoutes = new Hono();
 
@@ -271,15 +272,42 @@ adminRoutes.delete('/users/:id', async (c) => {
   const id = c.req.param('id');
   if (id === admin.sub) return c.json({ error: 'Nemůžeš smazat sám sebe.' }, 400);
 
-  const now = new Date().toISOString();
-  const anonEmail = `deleted+${id}@naskraj.local`;
-  await c.env.DB.prepare(
-    `UPDATE users SET deleted_at = ?, status = 'deleted', email = ?, display_name = 'Smazaný účet',
-      bio = NULL, avatar_url = NULL, cover_url = NULL, location = NULL, website = NULL, phone = NULL,
-      password_hash = 'deleted', password_salt = 'deleted', totp_secret = NULL, totp_enabled = 0
-     WHERE id = ?`,
-  ).bind(now, anonEmail, id).run();
-  await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE user_id = ?`).bind(id).run();
+  const target = await c.env.DB.prepare('SELECT id, role, deleted_at FROM users WHERE id = ?').bind(id).first();
+  if (!target) return c.json({ error: 'Nenalezeno.' }, 404);
+
+  // Smaže účet, příspěvky, komentáře, podniky, zprávy, fotky v R2 i osobní údaje
+  await eraseUser(c.env, id);
+
+  await logAudit(c.env, {
+    adminId: admin.sub, action: 'delete_user', targetType: 'user', targetId: id,
+    reason: 'Smazání účtu administrátorem',
+  });
+  return c.json({ ok: true });
+});
+
+// Zamítnutí / smazání podniku z fronty ověřování (volá tlačítko v admin panelu)
+adminRoutes.delete('/reject/:kind/:id', async (c) => {
+  if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
+  const admin = c.get('user');
+  const kind = c.req.param('kind');
+  const id = c.req.param('id');
+  if (!BUSINESS_TABLES.includes(kind)) return c.json({ error: 'Neznámý typ podniku.' }, 400);
+  const biz = await c.env.DB.prepare(`SELECT id, user_id, name FROM ${kind} WHERE id = ?`).bind(id).first();
+  if (!biz) return c.json({ error: 'Nenalezeno.' }, 404);
+
+  await deleteBusinessCascade(c.env, kind, id);
+
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO notifications (id, user_id, type, entity_type, entity_id, text)
+       VALUES (?, ?, 'moderation_removed', 'business', ?, ?)`,
+    ).bind(newId('notif'), biz.user_id, id, `Podnik „${biz.name}“ byl zamítnut a odstraněn.`).run();
+  } catch (err) { console.warn('reject notif failed:', err.message); }
+
+  await logAudit(c.env, {
+    adminId: admin.sub, action: 'reject_business', targetType: kind, targetId: id,
+    reason: `Zamítnutí podniku ${biz.name}`,
+  });
   return c.json({ ok: true });
 });
 
@@ -369,8 +397,8 @@ adminRoutes.delete('/posts/:id', async (c) => {
   const post = await c.env.DB.prepare('SELECT id, user_id FROM posts WHERE id = ?').bind(id).first();
   if (!post) return c.json({ error: 'Nenalezeno.' }, 404);
 
-  await c.env.DB.prepare(`UPDATE posts SET status = 'removed' WHERE id = ?`).bind(id).run();
-  await c.env.DB.prepare(`UPDATE reports SET resolved = 1 WHERE post_id = ?`).bind(id).run();
+  // Smaže text, fotky (i v R2), komentáře, lajky, záložky a hlášení k příspěvku
+  await purgePost(c.env, id);
 
   try {
     await c.env.DB.prepare(
@@ -399,7 +427,7 @@ adminRoutes.delete('/posts/:id', async (c) => {
 adminRoutes.delete('/comments/:id', async (c) => {
   if (!requireAdmin(c)) return c.json({ error: 'Len pre administrátorov.' }, 403);
   const id = c.req.param('id');
-  await c.env.DB.prepare('DELETE FROM comments WHERE id = ?').bind(id).run();
+  await deleteCommentTree(c.env, id);
   return c.json({ ok: true });
 });
 

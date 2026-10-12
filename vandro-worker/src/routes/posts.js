@@ -7,7 +7,7 @@ import { rateLimit } from '../ratelimit.js';
 export const postsRoutes = new Hono();
 
 const BUSINESS_TABLE_BY_FEED = { organization: 'organizations', accommodation: 'accommodation', gastro: 'restaurants' };
-const MAX_PHOTOS = 4;
+const MAX_PHOTOS = 6;
 
 postsRoutes.post('/', async (c) => {
   const user = c.get('user');
@@ -30,7 +30,7 @@ postsRoutes.post('/', async (c) => {
     .filter((f) => f && typeof f !== 'string' && f.size > 0);
 
   if (fileList.length === 0) return c.json({ error: 'Chýba aspoň jedna fotka.' }, 400);
-  if (fileList.length > MAX_PHOTOS) return c.json({ error: `Maximálne ${MAX_PHOTOS} fotky.` }, 400);
+  if (fileList.length > MAX_PHOTOS) return c.json({ error: `Maximálně ${MAX_PHOTOS} fotek.` }, 400);
 
   for (const file of fileList) {
     const v = await validateUpload(file, 'image');
