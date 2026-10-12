@@ -501,6 +501,9 @@ CREATE TABLE IF NOT EXISTS dm_threads (
   user_b TEXT NOT NULL REFERENCES users(id),
   last_message_at TEXT,
   last_message_preview TEXT,
+  business_kind TEXT,
+  business_id TEXT,
+  business_name TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (user_a, user_b)
 );
