@@ -1,0 +1,7 @@
+# Cloudflare Pages: každá sekce webu má vlastní adresu, všechny ji obslouží aplikace v index.html
+/organizace  /index.html  200
+/ubytovani   /index.html  200
+/gastro      /index.html  200
+/mapa        /index.html  200
+/akce        /index.html  200
+/ucet        /index.html  200
