@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#2FBF71" />
+  <title>VANDRO — regionální platforma</title>
+
+  <meta name="description" id="meta-desc" content="Objevuj hrady, zámky, ubytování a gastro v Česku a na Slovensku." />
+  <meta property="og:title" id="og-title" content="VANDRO — regionální platforma" />
+  <meta property="og:description" id="og-desc" content="Objevuj hrady, zámky, ubytování a gastro v Česku a na Slovensku." />
+  <meta property="og:image" id="og-image" content="https://cdn.vandro.cz/Untitled15_20260522160351.png" />
+  <meta property="og:url" id="og-url" content="https://vandro.cz/" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="canonical" href="https://vandro.cz/" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/png" href="https://cdn.vandro.cz/Untitled15_20260522160351.png" />
+  <link rel="apple-touch-icon" href="https://cdn.vandro.cz/Untitled15_20260522160351.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="VANDRO" />
+
+  <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
+  <link rel="stylesheet" href="/assets/styles.css?v=20261009" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <footer style="text-align:center;padding:24px 16px;font-size:12px;color:#64766D;background:#F6FAF7;border-top:1px solid #E4ECE6;">
+    <p style="margin:0 0 8px 0;">
+      <strong>VANDRO</strong> · © 2026
+    </p>
+    <p style="margin:0;">
+      <a href="/imprint.html" style="color:#1B8F52;text-decoration:none;margin:0 8px;">Impressum</a> ·
+      <a href="/obchodni-podminky.html" style="color:#1B8F52;text-decoration:none;margin:0 8px;">Obchodní podmínky</a> ·
+      <a href="/ochrana-osobnich-udaju.html" style="color:#1B8F52;text-decoration:none;margin:0 8px;">Ochrana údajů</a> ·
+      <a href="/faq.html" style="color:#1B8F52;text-decoration:none;margin:0 8px;">FAQ</a> ·
+      <a href="/kontakt.html" style="color:#1B8F52;text-decoration:none;margin:0 8px;">Kontakt</a>
+    </p>
+  </footer>
+
+  <script src="/assets/i18n.js?v=20261009"></script>
+  <script src="/assets/config.js?v=20261009"></script>
+  <script src="/assets/meta.js?v=20261009"></script>
+  <script src="/assets/icons.js?v=20261009"></script>
+  <script src="/assets/crop.js?v=20261009"></script>
+  <script src="/assets/banners.js?v=20261009"></script>
+  <script src="/assets/app.js?v=20261009"></script>
+  <script src="/assets/editor.js?v=20261009"></script>
+  <script src="/assets/emoji.js?v=20261009"></script>
+  <script src="/assets/mentions.js?v=20261009"></script>
+  <script src="/assets/geo.js?v=20261009"></script>
+  <script src="/assets/push.js?v=20261009"></script>
+  <script src="/assets/onboarding.js?v=20261009"></script>
+  <script src="/assets/hashtags.js?v=20261009"></script>
+  <script src="/assets/profile.js?v=20261009"></script>
+  <script src="/assets/stories.js?v=20261009"></script>
+  <script src="/assets/events-page.js?v=20261009"></script>
+  <script src="/assets/checkins.js?v=20261009"></script>
+  <script src="/assets/reviews.js?v=20261009"></script>
+  <script src="/assets/wishlist.js?v=20261009"></script>
+  <script src="/assets/nearby.js?v=20261009"></script>
+  <script src="/assets/messages.js?v=20261009"></script>
+  <script src="/assets/map.js?v=20261009"></script>
+  <script src="/assets/social.js?v=20261009"></script>
+  <script src="/assets/account.js?v=20261009"></script>
+  <script src="/assets/events.js?v=20261009"></script>
+
+  <script>
+    if (typeof initI18n === 'function') initI18n();
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('SW:', e));
+        // Nová verze service workeru převzala řízení: jednou stránku načíst znovu, aby se projevily nové soubory
+        let _swReloaded = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (_swReloaded || !sessionStorage.getItem('vandro_sw_seen')) { sessionStorage.setItem('vandro_sw_seen', '1'); return; }
+          _swReloaded = true; location.reload();
+        });
+      });
+    }
+  </script>
+</body>
+</html>
