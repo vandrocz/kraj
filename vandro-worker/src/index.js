@@ -54,11 +54,22 @@ async function requireAuth(c, next) {
   if (!token) return c.json({ error: 'Chýba prihlásenie.' }, 401);
   try {
     const payload = await verify(token, c.env.JWT_SECRET, 'HS256');
-    c.set('user', payload);
-    await next();
+    // Token platí 7 dní, proto stav a roli účtu vždy ověříme v databázi:
+    // smazaný nebo pozastavený účet ani odebraná role admina už po vystavení tokenu nefungují.
+    const row = await c.env.DB.prepare(
+      `SELECT role, status, deleted_at FROM users WHERE id = ?`,
+    ).bind(payload.sub).first();
+    if (!row || row.deleted_at || row.status === 'deleted') {
+      return c.json({ error: 'Účet neexistuje.' }, 401);
+    }
+    if (row.status === 'suspended') {
+      return c.json({ error: 'Účet je pozastaven.' }, 403);
+    }
+    c.set('user', { ...payload, role: row.role });
   } catch {
     return c.json({ error: 'Neplatný token.' }, 401);
   }
+  await next();
 }
 
 app.get('/', (c) => c.json({ ok: true, service: 'naskraj-api' }));
