@@ -85,6 +85,27 @@ const SHARED_STYLE = `
     .site-header img { height: 24px; }
     .site-header .site-nav a { padding: 7px 12px; font-size: 12px; }
   }
+  body { padding-bottom: 92px; }
+  /* spodní navigační lišta — stejná jako v hlavní aplikaci */
+  .bottom-nav {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+    display: flex; gap: 2px; padding: 5px;
+    background: rgba(255,255,255,0.92); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border-radius: 999px; box-shadow: 0 12px 30px rgba(16,32,26,0.16);
+    border: 1px solid #d5ead9; z-index: 30;
+    width: min(96vw, 500px); justify-content: space-between;
+  }
+  .bottom-nav a.bottom-nav-btn {
+    position: relative; width: 42px; height: 42px; border-radius: 999px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #5b6b63; text-decoration: none; margin: 0;
+    transition: background .2s, color .2s, transform .15s;
+  }
+  .bottom-nav a.bottom-nav-btn:hover { background: #eef7f0; color: var(--primary-dark); }
+  .bottom-nav a.bottom-nav-btn:active { transform: scale(0.94); }
+  .bottom-nav a.bottom-nav-btn.is-active { background: var(--primary); color: #fff; transform: translateY(-3px); box-shadow: 0 8px 18px rgba(47,191,113,0.4); }
+  .bottom-nav svg { display: block; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .wrap-wide { max-width: 1080px; margin: 0 auto; padding: 24px 24px 50px; }
   .site-footer { border-top: 1px solid #eee; margin-top: 40px; padding: 24px 20px 40px; text-align: center; font-size: 12px; color: #999; }
   .site-footer a { color: #999; margin: 0 8px; }
@@ -102,6 +123,21 @@ function headerHtml() {
     </nav>
   </div>`;
 }
+// Spodní navigační lišta shodná s hlavní aplikací (každá sekce má vlastní adresu)
+const NAV_ITEMS = [
+  { href: '/organizace', label: 'Organizace', paths: ['M3 22h18', 'M5 22V11', 'M9 22V11', 'M15 22V11', 'M19 22V11', 'M12 2l9 6H3l9-6Z'] },
+  { href: '/ubytovani', label: 'Ubytování', paths: ['M3 19v-6a2 2 0 0 1 2-2h2v4', 'M3 19h18', 'M21 19v-6a2 2 0 0 0-2-2h-8v4', 'M3 22v-3', 'M21 22v-3', 'M6 11V8a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3'] },
+  { href: '/gastro', label: 'Gastro', paths: ['M5 8h12v7a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V8Z', 'M17 9h2a2 2 0 0 1 0 4h-2', 'M5 21h12'] },
+  { href: '/mapa', label: 'Mapa', active: true, paths: ['M12 22s-8-8-8-13a8 8 0 0 1 16 0c0 5-8 13-8 13Z', 'M12 11a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z'] },
+  { href: '/akce', label: 'Akce', paths: ['M4 6h16v14H4Z', 'M8 3v4', 'M16 3v4', 'M4 10h16', 'M8 14h2', 'M14 14h2', 'M8 17h2', 'M14 17h2'] },
+  { href: '/ucet', label: 'Účet', paths: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1'] },
+];
+function navHtml() {
+  const btns = NAV_ITEMS.map((n) => `<a class="bottom-nav-btn${n.active ? ' is-active' : ''}" href="${SITE_URL}${n.href}" aria-label="${n.label}"${n.active ? ' aria-current="page"' : ''}>
+      <svg xmlns="http://www.w3.org/2000/svg" width="${n.active ? 20 : 18}" height="${n.active ? 20 : 18}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${n.paths.map((d) => `<path d="${d}"/>`).join('')}</svg>
+      <span class="visually-hidden">${n.label}</span></a>`).join('');
+  return `<nav class="bottom-nav" aria-label="Hlavní navigace">${btns}</nav>`;
+}
 function footerHtml() {
   const year = new Date().getFullYear();
   return `<div class="site-footer">
@@ -110,23 +146,31 @@ function footerHtml() {
       <a href="${PRIVACY_URL}" target="_blank" rel="noopener">Zásady ochrany osobních údajů</a>·
       <a href="${TERMS_URL}" target="_blank" rel="noopener">Podmínky užívání</a>
     </div>
-  </div>`;
+  </div>
+  ${navHtml()}`;
 }
 // Minimapa — namiesto cudzieho OSM embedu použije rovnaký podklad (OpenFreeMap
 // štýl), aký appka sama používa, takže vyzerá konzistentne s hlavnou mapou.
-function minimapScript(lat, lng, title) {
+function minimapScript(lat, lng, title, glyphText) {
   return `
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="${SITE_URL}/assets/vmap-icons.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       try {
         const mm = new maplibregl.Map({
-          container: 'minimap', style: '${SITE_URL}/map-style.json',
+          container: 'minimap', style: '${SITE_URL}/assets/map-style.json',
           center: [${lng}, ${lat}], zoom: 12.5, attributionControl: true,
         });
-        mm.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
-        new maplibregl.Marker({ color: '#e53935' }).setLngLat([${lng}, ${lat}]).addTo(mm);
+        mm.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+        // značka stejná jako na hlavní mapě: zelený kruh, bílý okraj a ikona kategorie
+        const el = document.createElement('div');
+        el.className = 'place-marker';
+        const glyph = (window.vmGlyphFor ? window.vmGlyphFor(${JSON.stringify(glyphText || '')}) : 'pin');
+        el.innerHTML = window.vmIconSvg ? window.vmIconSvg(glyph, { size: '19px', stroke: 2.1 }) : '';
+        el.title = ${JSON.stringify(title || '')};
+        new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([${lng}, ${lat}]).addTo(mm);
       } catch (e) { console.warn('Minimapa se nenačetla:', e); }
     });
   </script>`;
@@ -195,7 +239,7 @@ function buildPageHtml(p, slug, nearby) {
 <meta name="twitter:description" content="${escapeHtml(metaDescription)}">
 <meta name="twitter:image" content="${escapeHtml(image)}">
 <script type="application/ld+json">${JSON.stringify(jsonLd)}</script>
-${minimapScript(lat, lng, title)}
+${minimapScript(lat, lng, title, p.podkategoria || p.kategoria)}
 <link href="https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
 <script>
@@ -251,6 +295,12 @@ ${SHARED_STYLE}
   .gallery-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .gallery-grid img { width: 100%; height: 110px; object-fit: cover; border-radius: 8px; }
   #minimap { height: 280px; border-radius: 10px; overflow: hidden; margin-top: 4px; }
+  .place-marker {
+    width: 36px; height: 36px; border-radius: 50%; box-sizing: border-box;
+    background: #1B8F52; border: 2.5px solid #fff; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  }
   .nearby-list { display: flex; flex-direction: column; gap: 8px; }
   .nearby-item { display: flex; align-items: center; gap: 12px; text-decoration: none; color: #222; padding: 8px; border-radius: 8px; border: 1px solid #f0f0f0; }
   .nearby-item:hover { background: #f7f7f7; }
