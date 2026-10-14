@@ -306,12 +306,12 @@ const TRANSLATIONS = {
     },
     cookie: {
       title: 'Cookies a soukromí.',
-      text: 'Používáme pouze technicky nezbytné cookies a lokální úložiště pro přihlášení.',
-      noTracking: 'Žádné reklamní ani analytické cookies třetích stran.',
+      text: 'Používáme technicky nezbytné cookies a lokální úložiště pro přihlášení.',
+      noTracking: 'Analytické cookies (Google Analytics) zapneme jen s vaším souhlasem. Reklamní nepoužíváme.',
       acceptAll: 'Přijmout vše', reject: 'Odmítnout', settings: 'Nastavení',
       save: 'Uložit nastavení', more: 'Více info',
       necessary: 'Nezbytné (vždy zapnuto)',
-      analytics: 'Analytické (nepoužíváme)',
+      analytics: 'Analytické (Google Analytics)',
       marketing: 'Marketingové (nepoužíváme)',
     },
     verify: {
@@ -718,12 +718,12 @@ const TRANSLATIONS = {
     },
     cookie: {
       title: 'Cookies a súkromie.',
-      text: 'Používame len technicky nevyhnutné cookies a lokálne úložisko pre prihlásenie.',
-      noTracking: 'Žiadne reklamné ani analytické cookies tretích strán.',
+      text: 'Používame technicky nevyhnutné cookies a lokálne úložisko pre prihlásenie.',
+      noTracking: 'Analytické cookies (Google Analytics) zapneme len s vaším súhlasom. Reklamné nepoužívame.',
       acceptAll: 'Prijať všetko', reject: 'Odmietnuť', settings: 'Nastavenia',
       save: 'Uložiť nastavenia', more: 'Viac info',
       necessary: 'Nevyhnutné (vždy zapnuté)',
-      analytics: 'Analytické (nepoužívame)',
+      analytics: 'Analytické (Google Analytics)',
       marketing: 'Marketingové (nepoužívame)',
     },
     verify: {
@@ -1130,12 +1130,12 @@ const TRANSLATIONS = {
     },
     cookie: {
       title: 'Cookies & privacy.',
-      text: 'We only use technically necessary cookies and local storage for sign-in.',
-      noTracking: 'No advertising or analytics third-party cookies.',
+      text: 'We use technically necessary cookies and local storage for sign-in.',
+      noTracking: 'Analytics cookies (Google Analytics) are enabled only with your consent. We do not use advertising cookies.',
       acceptAll: 'Accept all', reject: 'Reject', settings: 'Settings',
       save: 'Save settings', more: 'More info',
       necessary: 'Necessary (always on)',
-      analytics: 'Analytics (not used)',
+      analytics: 'Analytics (Google Analytics)',
       marketing: 'Marketing (not used)',
     },
     verify: {

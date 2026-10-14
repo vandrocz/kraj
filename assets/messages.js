@@ -136,6 +136,7 @@ function openThreads() {
 }
 
 function openThreadById(id) {
+  state.threadDraft = "";
   state.overlayStack.push(state.overlay);
   state.overlay = { type: 'thread', id };
   state.threadCurrent = null;
@@ -172,28 +173,48 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+function threadMessagesHtml(msgs) {
+  if (msgs == null) return `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`;
+  if (msgs.length === 0) return `<p class="empty-state">${escapeHtml(t('messages.noMessages'))}</p>`;
+  const myId = state.user && state.user.id;
+  return msgs.map((m) => {
+    const mine = !!myId && m.sender_id === myId;
+    return `<div class="dm-bubble ${mine ? 'dm-mine' : 'dm-theirs'}${m.__pending ? ' is-pending' : ''}">
+      <p>${escapeHtml(m.text || '')}</p>
+      <span class="dm-time">${m.__pending ? '…' : timeAgo(m.created_at)}</span>
+    </div>`;
+  }).join('');
+}
+
+function scrollThreadToBottom() {
+  const sc = document.getElementById('thread-scroller');
+  if (sc) sc.scrollTop = sc.scrollHeight;
+}
+
+// Překreslí jen seznam zpráv (ne celou aplikaci), takže se neztratí rozepsaný text ani fokus v poli
+function updateThreadMessagesDOM(forceBottom) {
+  const box = document.querySelector('.thread-messages');
+  if (!box) return false;
+  const sc = document.getElementById('thread-scroller');
+  const atBottom = sc ? (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80) : true;
+  box.innerHTML = threadMessagesHtml(state.threadMessages);
+  if (forceBottom || atBottom) scrollThreadToBottom();
+  return true;
+}
+
 async function loadThread(id, silent = false) {
   try {
     const data = await apiGet(`/api/messages/thread/${id}`);
-
     if (state.overlay?.type !== 'thread' || state.overlay.id !== id) return;
 
     state.threadCurrent = { thread: data.thread, other: data.other };
-    state.threadMessages = data.messages || [];
+    const pending = (state.threadMessages || []).filter((m) => m.__pending);
+    state.threadMessages = [...(data.messages || []), ...pending];
 
-    if (!silent) {
-      renderApp();
-    } else {
-      const scroller = document.getElementById('thread-scroller');
-      if (scroller) {
-        const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
-        renderApp();
-        if (atBottom) {
-          const ns = document.getElementById('thread-scroller');
-          if (ns) ns.scrollTop = ns.scrollHeight;
-        }
-      }
-    }
+    // záhlaví (jméno, hint) a seznam zpráv existují už z prvního vykreslení → stačí aktualizovat zprávy
+    if (silent && updateThreadMessagesDOM(false)) return;
+    renderApp();
+    scrollThreadToBottom();
   } catch (err) {
     if (!silent) showToast(err.message);
   }
@@ -244,19 +265,9 @@ function renderThreadOverlay() {
     <div class="page-scroll thread-scroll" id="thread-scroller">
       ${renderBackHeader(otherName)}
       ${isBusiness ? `<div class="thread-biz-hint">${icon('check', { size: 12 })} ${escapeHtml(t('messages.businessHint'))}${bizName && tc?.other?.display_name ? ` · ${escapeHtml(tc.other.display_name)}` : ''}</div>` : ''}
-      <div class="thread-messages">
-        ${msgs == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
-          : msgs.length === 0 ? `<p class="empty-state">${escapeHtml(t('messages.noMessages'))}</p>`
-          : msgs.map((m) => {
-            const mine = !!state.user && m.sender_id === state.user.id;
-            return `<div class="dm-bubble ${mine ? 'dm-mine' : 'dm-theirs'}">
-              <p>${escapeHtml(m.text || '')}</p>
-              <span class="dm-time">${timeAgo(m.created_at)}</span>
-            </div>`;
-          }).join('')}
-      </div>
+      <div class="thread-messages">${threadMessagesHtml(msgs)}</div>
       <form class="thread-input" data-action="submit-thread-message" data-id="${state.overlay.id}">
-        <input type="text" class="thread-input-field" placeholder="${escapeAttr(t('messages.writeMessage'))}" data-thread-input autocomplete="off" />
+        <input type="text" class="thread-input-field" placeholder="${escapeAttr(t('messages.writeMessage'))}" data-thread-input autocomplete="off" value="${escapeAttr(state.threadDraft || '')}" enterkeyhint="send" />
         <button type="submit" class="thread-input-send" aria-label="${escapeAttr(t('messages.send'))}">${icon('send', { size: 20 })}</button>
       </form>
     </div>
@@ -266,19 +277,62 @@ function renderThreadOverlay() {
 async function handleSendThreadMessage(form) {
   const id = form.dataset.id;
   const input = form.querySelector('[data-thread-input]');
+  if (!input) return;
   const text = input.value.trim();
   if (!text) return;
+  if (form.dataset.sending === '1') return;
+  form.dataset.sending = '1';
+
   input.value = '';
+  state.threadDraft = '';
+  const tempId = 'tmp_' + Date.now();
+  const myId = state.user && state.user.id;
+  state.threadMessages = [...(state.threadMessages || []), { id: tempId, sender_id: myId, text, created_at: new Date().toISOString(), __pending: true }];
+  updateThreadMessagesDOM(true);
+  input.focus();
+
   try {
     const msg = await apiPost(`/api/messages/thread/${id}/send`, { text });
-    if (state.overlay?.type !== 'thread' || state.overlay.id !== id) return;
-    state.threadMessages = [...(state.threadMessages || []), { id: msg.id, sender_id: state.user.id, text: msg.text, created_at: msg.created_at }];
-    renderApp();
-    const scroller = document.getElementById('thread-scroller');
-    if (scroller) scroller.scrollTop = scroller.scrollHeight;
-  } catch (err) { showToast(err.message); input.value = text; }
+    if (state.overlay?.type === 'thread' && state.overlay.id === id) {
+      state.threadMessages = (state.threadMessages || []).map((m) =>
+        m.id === tempId ? { id: msg.id, sender_id: myId, text: msg.text || text, created_at: msg.created_at } : m);
+      updateThreadMessagesDOM(true);
+    }
+    loadThreads && state.threads && loadThreads();
+  } catch (err) {
+    state.threadMessages = (state.threadMessages || []).filter((m) => m.id !== tempId);
+    updateThreadMessagesDOM(true);
+    const f = document.querySelector('[data-thread-input]');
+    if (f && !f.value) f.value = text;
+    showToast(err.message || t('errors.generic'));
+  } finally {
+    form.dataset.sending = '0';
+  }
 }
 
 // Export pre inline handlery v iných súboroch (vmap-layers.js, profile…)
 window.openThreadWith = openThreadWith;
 window.openThreadWithBusiness = openThreadWithBusiness;
+
+
+// Rozepsaná zpráva přežije i překreslení celé aplikace (např. při načtení notifikací) včetně fokusu v poli
+document.addEventListener('input', (e) => {
+  if (e.target && e.target.matches && e.target.matches('[data-thread-input]')) state.threadDraft = e.target.value;
+});
+(function keepThreadInputFocus() {
+  const original = window.renderApp;
+  if (typeof original !== 'function' || original.__keepsThreadFocus) return;
+  const wrapped = function () {
+    const el = document.activeElement;
+    const had = !!(el && el.matches && el.matches('[data-thread-input]'));
+    const pos = had ? el.selectionStart : null;
+    const result = original.apply(this, arguments);
+    if (had) {
+      const n = document.querySelector('[data-thread-input]');
+      if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} }
+    }
+    return result;
+  };
+  wrapped.__keepsThreadFocus = true;
+  window.renderApp = wrapped;
+})();

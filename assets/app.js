@@ -416,13 +416,14 @@ function renderApp() {
   else if (state.tab === 'account') pageHtml = renderAccountPage();
 
   const hideAll = state.overlay?.type === 'story-viewer' || state.overlay?.type === 'onboarding';
-  const hideCookieBanner = hideAll;
+  const inThread = state.overlay?.type === 'thread';
+  const hideCookieBanner = hideAll || inThread;
   const hideLightbox = hideAll;
 
   root.innerHTML = `
     <div class="app-shell">
       ${pageHtml}
-      ${hideAll ? '' : renderBottomNav()}
+      ${(hideAll || inThread) ? '' : renderBottomNav()}
       ${hideLightbox ? '' : renderLightbox()}
       ${hideCookieBanner ? '' : renderCookieBanner()}
     </div>
