@@ -32,8 +32,8 @@
       case 'toggle-map-nav': {
         const isMobile = window.innerWidth < 720;
         if (isMobile) {
-          const prev = localStorage.getItem('naskraj_prev_tab') || 'organizations';
-          switchTab(prev);
+          state._mapNavOpen = !state._mapNavOpen;
+          renderApp();
         } else {
           state._mapNavCollapsed = !state._mapNavCollapsed;
           renderApp();
@@ -124,6 +124,10 @@
       }
       case 'close-lightbox': closeLightbox(); break;
       case 'lightbox-prev': lightboxPrev(); break;
+      case 'lightbox-toggle-comments': cycleLightboxPanelState(); break;
+      case 'thread-menu': toggleThreadMenu(); break;
+      case 'thread-block': threadBlockUser(); break;
+      case 'thread-unblock': threadUnblockUser(); break;
       case 'lightbox-next': lightboxNext(); break;
       case 'toggle-lightbox-expand':
       case 'lightbox-cycle-panel':

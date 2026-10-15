@@ -16,6 +16,7 @@ const TRANSLATIONS = {
       of: 'z', items: 'položek', itemsFew: 'položky',
     },
     nav: {
+      menu: 'Menu',
       organizations: 'Organizace', accommodation: 'Ubytování', gastro: 'Gastro',
       map: 'Mapa', events: 'Akce', account: 'Profil',
       collections: 'Sbírky',
@@ -269,6 +270,11 @@ const TRANSLATIONS = {
       km: 'km',
     },
     messages: {
+      menu: 'Možnosti', block: 'Zablokovat uživatele', unblock: 'Odblokovat', report: 'Nahlásit uživatele',
+      blockTitle: 'Zablokovat uživatele?',
+      blockConfirm: 'Tento uživatel ti už nebude moci psát zprávy a neuvidíš jeho obsah. Blokaci můžeš kdykoli zrušit.',
+      blockedByMe: 'Tohoto uživatele jsi zablokoval(a), proto mu nelze psát.',
+      blockedMe: 'Do této konverzace už nelze psát.',
       title: 'Zprávy', noThreads: 'Zatím žádné konverzace. Otevři profil organizace, ubytování nebo podniku a klikni „Napsat zprávu\".',
       send: 'Odeslat', writeMessage: 'Napiš zprávu…',
       noMessages: 'Zatím žádné zprávy. Napiš první.',
@@ -429,6 +435,7 @@ const TRANSLATIONS = {
       of: 'z', items: 'položiek', itemsFew: 'položky',
     },
     nav: {
+      menu: 'Menu',
       organizations: 'Organizácie', accommodation: 'Ubytovanie', gastro: 'Gastro',
       map: 'Mapa', events: 'Podujatia', account: 'Profil',
       collections: 'Zbierky',
@@ -681,6 +688,11 @@ const TRANSLATIONS = {
       km: 'km',
     },
     messages: {
+      menu: 'Možnosti', block: 'Zablokovať používateľa', unblock: 'Odblokovať', report: 'Nahlásiť používateľa',
+      blockTitle: 'Zablokovať používateľa?',
+      blockConfirm: 'Tento používateľ ti už nebude môcť písať správy a neuvidíš jeho obsah. Blokáciu môžeš kedykoľvek zrušiť.',
+      blockedByMe: 'Tohto používateľa si zablokoval(a), preto mu nemožno písať.',
+      blockedMe: 'Do tejto konverzácie už nemožno písať.',
       title: 'Správy', noThreads: 'Zatiaľ žiadne konverzácie. Otvor profil organizácie, ubytovania alebo podniku a klikni „Napísať správu\".',
       send: 'Odoslať', writeMessage: 'Napíš správu…',
       noMessages: 'Zatiaľ žiadne správy. Napíš prvú.',
@@ -841,6 +853,7 @@ const TRANSLATIONS = {
       of: 'of', items: 'items', itemsFew: 'items',
     },
     nav: {
+      menu: 'Menu',
       organizations: 'Places', accommodation: 'Stay', gastro: 'Food',
       map: 'Map', events: 'Events', account: 'Profile',
       collections: 'Collections',
@@ -1093,6 +1106,11 @@ const TRANSLATIONS = {
       km: 'km',
     },
     messages: {
+      menu: 'Options', block: 'Block user', unblock: 'Unblock', report: 'Report user',
+      blockTitle: 'Block this user?',
+      blockConfirm: 'This user will no longer be able to message you and you will not see their content. You can unblock them at any time.',
+      blockedByMe: 'You have blocked this user, so you cannot message them.',
+      blockedMe: 'You can no longer write in this conversation.',
       title: 'Messages', noThreads: 'No conversations yet. Open the profile of an organization, accommodation or business and click \"Send message\".',
       send: 'Send', writeMessage: 'Write a message…',
       noMessages: 'No messages yet. Write the first one.',

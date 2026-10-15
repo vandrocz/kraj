@@ -110,9 +110,9 @@ window.addEventListener('popstate', () => {
   const tp = tabFromPath();
   if (tp && tp !== state.tab) { switchTab(tp, { fromPop: true }); return; }
   state._historyPushed = false;
+  if (state._modal) { closeModal(true); return; }
   if (state.lightbox) { closeLightbox(true); return; }
   if (state.overlay) { closeOverlay(true); return; }
-  if (state._modal) { closeModal(true); return; }
 });
 
 function fmt(n) { return Number(n || 0).toLocaleString('cs-CZ'); }
@@ -246,10 +246,22 @@ function renderBottomNav() {
   const isMobile = window.innerWidth < 720;
 
   if (isMapTab && isMobile) {
+    // Na mapě je navigace skrytá a vysune se přes obsah (mapu tím nezmenšuje ani nezakrývá trvale)
+    const open = !!state._mapNavOpen;
+    const items = !open ? '' : TABS.map((tab) => {
+      const active = state.tab === tab.key;
+      const label = t(tab.labelKey);
+      return `
+        <button class="bottom-nav-btn ${active ? 'is-active' : ''}" data-action="set-tab" data-tab="${tab.key}" aria-label="${escapeAttr(label)}">
+          ${icon(tab.icon, { size: active ? 20 : 18 })}
+          <span class="visually-hidden">${escapeHtml(label)}</span>
+        </button>`;
+    }).join('');
     return `
-      <nav class="bottom-nav bottom-nav--collapsed">
-        <button class="bottom-nav-toggle" data-action="toggle-map-nav" aria-label="${escapeAttr(t('common.back'))}">
-          ${icon('arrowLeft', { size: 20 })}
+      <nav class="bottom-nav bottom-nav--map ${open ? 'is-open' : ''}" aria-label="${escapeAttr(t('nav.menu') || 'Menu')}">
+        ${open ? `<div class="map-nav-pill">${items}</div>` : ''}
+        <button class="bottom-nav-toggle" data-action="toggle-map-nav" aria-expanded="${open}" aria-label="${escapeAttr(t('nav.menu') || 'Menu')}">
+          ${icon(open ? 'close' : 'menu', { size: 20 })}
         </button>
       </nav>`;
   }
@@ -323,7 +335,8 @@ function openModal(opts) {
 function closeModal(fromHistory = false) {
   state._modal = null;
   state._modalLoading = false;
-  if (!fromHistory && state._historyPushed) clearHistoryState();
+  // záznam v historii patří otevřenému overlayi/lightboxu, ten zavřením okna zachováme
+  if (!fromHistory && state._historyPushed && !state.overlay && !state.lightbox) clearHistoryState();
   renderApp();
 }
 function renderModal() {
@@ -584,7 +597,30 @@ function _setCanonical(path) {
   } catch {}
 }
 
+// Odkazy z vnějších stránek (např. ze stránek míst) mají tvar /?tab=ubytovani. Fungují stejně
+// bez ohledu na to, jak server přepisuje adresy sekcí.
+const TAB_QUERY = {
+  organizace: 'organizations', organizations: 'organizations',
+  ubytovani: 'accommodation', accommodation: 'accommodation',
+  gastro: 'gastro', mapa: 'map', map: 'map',
+  akce: 'events', events: 'events', ucet: 'account', account: 'account',
+};
+
 function restoreTab() {
+  // 0) /?tab=… z odkazu na jinou stránku webu
+  try {
+    const q = new URLSearchParams(location.search).get('tab');
+    if (q && TAB_QUERY[q.toLowerCase()]) {
+      const tab = TAB_QUERY[q.toLowerCase()];
+      persistTab(tab);
+      const sp = new URLSearchParams(location.search); sp.delete('tab');
+      const rest = sp.toString();
+      try { history.replaceState(null, '', TAB_PATHS[tab] + (rest ? '?' + rest : '') + location.hash); } catch {}
+      _setCanonical(TAB_PATHS[tab]);
+      return tab;
+    }
+  } catch {}
+
   // 1) adresa sekce (/mapa, /akce, …)
   const fromPath = tabFromPath();
   if (fromPath) { _setCanonical(TAB_PATHS[fromPath]); return fromPath; }
@@ -623,6 +659,7 @@ function switchTab(tab, opts = {}) {
   if (typeof stopStoryAutoAdvance === 'function') stopStoryAutoAdvance();
   if (typeof stopThreadPolling === 'function') stopThreadPolling();
   if (state._historyPushed) { state._historyPushed = false; }
+  state._mapNavOpen = false;
   state.tab = tab;
   persistTab(tab);
   // Adresa v prohlížeči odpovídá sekci (tlačítko Zpět pak funguje mezi sekcemi)
@@ -709,14 +746,14 @@ function lightboxNext() {
 
 function setLightboxPanelState(s) {
   if (!state.lightbox) return;
-  state.lightbox.panelState = Math.max(0, Math.min(2, s));
+  state.lightbox.panelState = Math.max(0, Math.min(1, s));
   applyLightboxPanelState();
 }
 
 function cycleLightboxPanelState() {
   if (!state.lightbox) return;
   const cur = state.lightbox.panelState || 0;
-  setLightboxPanelState((cur + 1) % 3);
+  setLightboxPanelState(cur === 0 ? 1 : 0);
 }
 
 function applyLightboxPanelState() {
@@ -732,52 +769,136 @@ function applyLightboxPanelState() {
 
 let _lbDragHandlers = null;
 
+// Gesta lightboxu na dotykových zařízeních (event delegation na #lightbox, takže přežijí překreslení panelu)
+//  - panel dole: tažení nahoru ho otevře, tažení dolů (nebo při posunu na začátku) ho schová
+//  - fotka: tažení dolů zavře lightbox, tažení do stran přepne fotku, klepnutí při otevřeném panelu ho schová
 function setupLightboxDrag() {
+  const root = document.getElementById('lightbox');
+  if (!root) return;
+  if (_lbDragHandlers && _lbDragHandlers.root === root) return; // už nasazeno na tento prvek
   teardownLightboxDrag();
-  const handle = document.querySelector('.lightbox-drag-handle');
-  if (!handle) return;
 
-  let startY = 0;
-  let startState = 0;
-  let moved = false;
-
-  const onTouchStart = (e) => {
-    startY = e.touches[0].clientY;
-    startState = state.lightbox?.panelState || 0;
-    moved = false;
-    handle.classList.add('is-dragging');
+  const isMobile = () => window.innerWidth < 900;
+  const peekH = () => {
+    const inner = root.querySelector('.lightbox-inner');
+    const v = inner ? parseFloat(getComputedStyle(inner).getPropertyValue('--lb-peek')) : NaN;
+    return isFinite(v) ? v : 196;
   };
-  const onTouchMove = (e) => {
+  const openH = () => Math.round(window.innerHeight * 0.78);
+  let g = null;
+
+  const onStart = (e) => {
+    if (!state.lightbox || e.touches.length !== 1) { g = null; return; }
+    const pane = root.querySelector('.lightbox-info-pane');
+    const target = e.target;
+    // pole pro psaní a tlačítka zavření/šipek řeší vlastní akce; tažení z nich nezačínáme
+    if (target.closest('.lightbox-close, .lightbox-nav, input, textarea')) { g = null; return; }
+    const t0 = e.touches[0];
+    g = {
+      x: t0.clientX, y: t0.clientY, time: Date.now(), mode: null,
+      inPane: !!target.closest('.lightbox-info-pane'),
+      inImg: !!target.closest('.lightbox-image-pane'),
+      inZone: !!target.closest('.lightbox-drag-handle, .lightbox-post-head, .lightbox-post-body, .lightbox-post-actions'),
+      startH: pane ? pane.offsetHeight : 0,
+      scrollTop: pane ? pane.scrollTop : 0,
+      startState: state.lightbox.panelState || 0,
+      pane,
+      mobile: isMobile(),
+    };
+  };
+
+  const onMove = (e) => {
+    if (!g || !state.lightbox) return;
+    const t0 = e.touches[0];
+    const dx = t0.clientX - g.x;
+    const dy = t0.clientY - g.y;
+
+    if (!g.mode) {
+      if (Math.hypot(dx, dy) < 8) return;
+      const vertical = Math.abs(dy) > Math.abs(dx);
+      if (!g.mobile) {
+        // tablet/desktop: jen přepínání fotek tažením do stran
+        g.mode = (g.inImg && !vertical) ? 'swipe' : 'none';
+      } else if (g.inPane) {
+        if (!vertical) { g.mode = 'none'; }
+        else if (g.startState === 0 && dy < 0) g.mode = 'drag';
+        else if (g.startState === 0 && dy > 0) g.mode = 'drag'; // tažení dolů z kompaktního stavu jen pruží zpět
+        else if (g.startState === 1 && dy > 0 && (g.inZone || g.scrollTop <= 0)) g.mode = 'drag';
+        else g.mode = 'scroll';
+      } else if (g.inImg) {
+        if (vertical && dy > 0 && g.startState === 0) g.mode = 'dismiss';
+        else if (!vertical) g.mode = 'swipe';
+        else g.mode = 'none';
+      } else { g.mode = 'none'; }
+      if (g.mode === 'drag' && g.pane) g.pane.classList.add('is-dragging');
+    }
+
+    if (g.mode === 'drag' && g.pane) {
+      e.preventDefault();
+      const h = Math.max(peekH(), Math.min(openH(), g.startH - dy));
+      g.pane.style.height = h + 'px';
+    } else if (g.mode === 'dismiss') {
+      e.preventDefault();
+      const img = document.getElementById('lightbox-img');
+      if (img) { img.style.transition = 'none'; img.style.transform = `translateY(${Math.max(0, dy)}px)`; img.style.opacity = String(Math.max(0.35, 1 - dy / 400)); }
+    }
+  };
+
+  const onEnd = (e) => {
+    if (!g) return;
+    const cur = g; g = null;
     if (!state.lightbox) return;
-    const dy = e.touches[0].clientY - startY;
-    if (Math.abs(dy) > 6) moved = true;
-  };
-  const onTouchEnd = (e) => {
-    handle.classList.remove('is-dragging');
-    if (!state.lightbox) return;
-    const dy = e.changedTouches[0].clientY - startY;
-    if (!moved || Math.abs(dy) < 20) { cycleLightboxPanelState(); return; }
-    if (dy < -40) setLightboxPanelState(Math.min(2, startState + 1));
-    else if (dy > 40) setLightboxPanelState(Math.max(0, startState - 1));
-  };
-  const onClick = (e) => { e.preventDefault(); cycleLightboxPanelState(); };
+    const t0 = e.changedTouches[0];
+    const dx = t0.clientX - cur.x;
+    const dy = t0.clientY - cur.y;
+    const dt = Math.max(1, Date.now() - cur.time);
 
-  _lbDragHandlers = { onTouchStart, onTouchMove, onTouchEnd, onClick };
-  handle.addEventListener('touchstart', onTouchStart, { passive: true });
-  handle.addEventListener('touchmove', onTouchMove, { passive: true });
-  handle.addEventListener('touchend', onTouchEnd, { passive: true });
-  handle.addEventListener('click', onClick);
+    if (cur.mode === 'drag' && cur.pane) {
+      cur.pane.classList.remove('is-dragging');
+      const h = cur.pane.offsetHeight;
+      cur.pane.style.height = '';
+      const v = dy / dt; // px/ms, záporné = nahoru
+      let target;
+      if (v < -0.4) target = 1;
+      else if (v > 0.4) target = 0;
+      else target = h > (peekH() + openH()) / 2 ? 1 : 0;
+      setLightboxPanelState(target);
+      return;
+    }
+    if (cur.mode === 'dismiss') {
+      const img = document.getElementById('lightbox-img');
+      if (img) { img.style.transition = ''; img.style.transform = ''; img.style.opacity = ''; }
+      if (dy > 110 || dy / dt > 0.6) closeLightbox();
+      return;
+    }
+    if (cur.mode === 'swipe') {
+      if (Math.abs(dx) > 50 && state.lightbox.images.length > 1) { if (dx < 0) lightboxNext(); else lightboxPrev(); }
+      return;
+    }
+    // klepnutí
+    if (!cur.mode && Math.hypot(dx, dy) < 8) {
+      if (cur.inImg && cur.startState === 1) setLightboxPanelState(0);
+    }
+  };
+
+  const onClick = (e) => {
+    if (e.target.closest('.lightbox-drag-handle') && isMobile()) { e.preventDefault(); cycleLightboxPanelState(); }
+  };
+
+  root.addEventListener('touchstart', onStart, { passive: true });
+  root.addEventListener('touchmove', onMove, { passive: false });
+  root.addEventListener('touchend', onEnd, { passive: true });
+  root.addEventListener('click', onClick);
+  _lbDragHandlers = { root, onStart, onMove, onEnd, onClick };
 }
 
 function teardownLightboxDrag() {
   if (!_lbDragHandlers) return;
-  const handle = document.querySelector('.lightbox-drag-handle');
-  if (handle) {
-    handle.removeEventListener('touchstart', _lbDragHandlers.onTouchStart);
-    handle.removeEventListener('touchmove', _lbDragHandlers.onTouchMove);
-    handle.removeEventListener('touchend', _lbDragHandlers.onTouchEnd);
-    handle.removeEventListener('click', _lbDragHandlers.onClick);
-  }
+  const { root, onStart, onMove, onEnd, onClick } = _lbDragHandlers;
+  root.removeEventListener('touchstart', onStart);
+  root.removeEventListener('touchmove', onMove);
+  root.removeEventListener('touchend', onEnd);
+  root.removeEventListener('click', onClick);
   _lbDragHandlers = null;
 }
 
@@ -832,6 +953,8 @@ function updateLightboxDOM() {
   if (info) {
     const post = lb.post;
     info.classList.toggle('is-simple', !post);
+    const innerEl = document.querySelector('.lightbox-inner');
+    if (innerEl) innerEl.classList.toggle('lb-simple', !post);
     if (!post) {
       info.innerHTML = `
         <div class="lightbox-drag-handle" role="button" aria-label="${escapeAttr(t('post.comments'))}">
@@ -881,6 +1004,10 @@ function updateLightboxDOM() {
             ${icon('clover', { size: 22, filled: !!post.__liked })}
           </button>
           <span class="lightbox-stat">${fmt(post.likes || 0)} ${escapeHtml(t('post.like'))}</span>
+          <button class="post-action lightbox-comments-btn" data-action="lightbox-toggle-comments" aria-label="${escapeAttr(t('post.comments'))}">
+            ${icon('comment', { size: 21 })}
+            ${(post.comment_count || 0) > 0 ? `<span class="post-action-badge">${post.comment_count > 99 ? '99+' : post.comment_count}</span>` : ''}
+          </button>
           <button class="post-action" data-action="share-post" data-id="${post.id}" data-text="${escapeAttr(getPostText(post))}">${icon('share', { size: 21 })}</button>
         </div>
 
@@ -1083,28 +1210,6 @@ function renderCookieBanner() {
     </div>`;
 }
 
-(function setupLightboxSwipe() {
-  let startX = 0, startY = 0;
-  document.addEventListener('touchstart', (e) => {
-    if (!e.target.closest('.lightbox.is-open')) return;
-    if (e.target.closest('.lightbox-comments-section')) return;
-    if (e.target.closest('.lightbox-drag-handle')) return;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-  }, { passive: true });
-  document.addEventListener('touchend', (e) => {
-    if (!e.target.closest('.lightbox.is-open')) return;
-    if (e.target.closest('.lightbox-comments-section')) return;
-    if (e.target.closest('.lightbox-drag-handle')) return;
-    const dx = e.changedTouches[0].clientX - startX;
-    const dy = e.changedTouches[0].clientY - startY;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
-      if (dx < 0) lightboxNext();
-      else lightboxPrev();
-    }
-  }, { passive: true });
-})();
-
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (state.lightbox) { closeLightbox(); return; }
@@ -1114,3 +1219,12 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') lightboxNext();
   else if (e.key === 'ArrowLeft') lightboxPrev();
 });
+
+
+// Klepnutí mimo vysunutou navigaci na mapě ji zavře
+document.addEventListener('pointerdown', (e) => {
+  if (!state._mapNavOpen) return;
+  if (e.target && e.target.closest && e.target.closest('.bottom-nav')) return;
+  state._mapNavOpen = false;
+  renderApp();
+}, true);

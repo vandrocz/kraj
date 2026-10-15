@@ -187,16 +187,15 @@ function threadMessagesHtml(msgs) {
 }
 
 function scrollThreadToBottom() {
-  const sc = document.getElementById('thread-scroller');
+  const sc = document.getElementById('thread-messages');
   if (sc) sc.scrollTop = sc.scrollHeight;
 }
 
 // Překreslí jen seznam zpráv (ne celou aplikaci), takže se neztratí rozepsaný text ani fokus v poli
 function updateThreadMessagesDOM(forceBottom) {
-  const box = document.querySelector('.thread-messages');
+  const box = document.getElementById('thread-messages');
   if (!box) return false;
-  const sc = document.getElementById('thread-scroller');
-  const atBottom = sc ? (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80) : true;
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   box.innerHTML = threadMessagesHtml(state.threadMessages);
   if (forceBottom || atBottom) scrollThreadToBottom();
   return true;
@@ -207,7 +206,7 @@ async function loadThread(id, silent = false) {
     const data = await apiGet(`/api/messages/thread/${id}`);
     if (state.overlay?.type !== 'thread' || state.overlay.id !== id) return;
 
-    state.threadCurrent = { thread: data.thread, other: data.other };
+    state.threadCurrent = { thread: data.thread, other: data.other, blocked_by_me: !!data.blocked_by_me, blocked_me: !!data.blocked_me };
     const pending = (state.threadMessages || []).filter((m) => m.__pending);
     state.threadMessages = [...(data.messages || []), ...pending];
 
@@ -258,18 +257,41 @@ function renderThreadsOverlay() {
 function renderThreadOverlay() {
   const tc = state.threadCurrent;
   const msgs = state.threadMessages;
-  const isBusiness = !!tc?.other?.is_business;
-  const bizName = tc?.other?.business_name || '';
-  const otherName = bizName || tc?.other?.display_name || t('messages.conversation');
+  const other = tc?.other || {};
+  const isBusiness = !!other.is_business;
+  const bizName = other.business_name || '';
+  const otherName = bizName || other.display_name || t('messages.conversation');
+  const blockedByMe = !!tc?.blocked_by_me;
+  const blockedMe = !!tc?.blocked_me;
+
+  const menuBtn = other.id ? `
+    <div class="thread-menu-wrap">
+      <button class="header-icon-btn" data-action="thread-menu" aria-label="${escapeAttr(t('messages.menu'))}" aria-expanded="${!!state._threadMenu}">${icon('more', { size: 20 })}</button>
+      ${state._threadMenu ? `
+        <div class="thread-menu" role="menu">
+          ${blockedByMe
+            ? `<button role="menuitem" data-action="thread-unblock">${icon('check', { size: 16 })} ${escapeHtml(t('messages.unblock'))}</button>`
+            : `<button role="menuitem" data-action="thread-block" class="is-danger">${icon('ban', { size: 16 })} ${escapeHtml(t('messages.block'))}</button>`}
+          <button role="menuitem" data-action="report-user" data-id="${escapeAttr(other.id)}" class="is-danger">${icon('flag', { size: 16 })} ${escapeHtml(t('messages.report'))}</button>
+        </div>` : ''}
+    </div>` : '';
+
+  const composer = (blockedByMe || blockedMe)
+    ? `<div class="thread-blocked-note">
+         <p>${escapeHtml(blockedByMe ? t('messages.blockedByMe') : t('messages.blockedMe'))}</p>
+         ${blockedByMe ? `<button class="thread-unblock-btn" data-action="thread-unblock">${escapeHtml(t('messages.unblock'))}</button>` : ''}
+       </div>`
+    : `<form class="thread-input" data-action="submit-thread-message" data-id="${escapeAttr(state.overlay.id)}">
+         <input type="text" class="thread-input-field" placeholder="${escapeAttr(t('messages.writeMessage'))}" data-thread-input autocomplete="off" value="${escapeAttr(state.threadDraft || '')}" enterkeyhint="send" />
+         <button type="submit" class="thread-input-send" aria-label="${escapeAttr(t('messages.send'))}">${icon('send', { size: 20 })}</button>
+       </form>`;
+
   return `
-    <div class="page-scroll thread-scroll" id="thread-scroller">
-      ${renderBackHeader(otherName)}
-      ${isBusiness ? `<div class="thread-biz-hint">${icon('check', { size: 12 })} ${escapeHtml(t('messages.businessHint'))}${bizName && tc?.other?.display_name ? ` · ${escapeHtml(tc.other.display_name)}` : ''}</div>` : ''}
-      <div class="thread-messages">${threadMessagesHtml(msgs)}</div>
-      <form class="thread-input" data-action="submit-thread-message" data-id="${state.overlay.id}">
-        <input type="text" class="thread-input-field" placeholder="${escapeAttr(t('messages.writeMessage'))}" data-thread-input autocomplete="off" value="${escapeAttr(state.threadDraft || '')}" enterkeyhint="send" />
-        <button type="submit" class="thread-input-send" aria-label="${escapeAttr(t('messages.send'))}">${icon('send', { size: 20 })}</button>
-      </form>
+    <div class="thread-view" id="thread-view">
+      ${renderBackHeader(escapeHtml(otherName), menuBtn)}
+      ${isBusiness ? `<div class="thread-biz-hint">${icon('check', { size: 12 })} ${escapeHtml(t('messages.businessHint'))}${bizName && other.display_name ? ` · ${escapeHtml(other.display_name)}` : ''}</div>` : ''}
+      <div class="thread-messages" id="thread-messages">${threadMessagesHtml(msgs)}</div>
+      ${composer}
     </div>
   `;
 }
@@ -334,5 +356,78 @@ document.addEventListener('input', (e) => {
     return result;
   };
   wrapped.__keepsThreadFocus = true;
+  window.renderApp = wrapped;
+})();
+
+
+// ---- Menu konverzace: zablokování, odblokování, nahlášení ----
+function toggleThreadMenu() { state._threadMenu = !state._threadMenu; renderApp(); }
+
+function threadBlockUser() {
+  const other = state.threadCurrent && state.threadCurrent.other;
+  if (!other || !other.id) return;
+  state._threadMenu = false;
+  openModal({
+    title: t('messages.blockTitle'),
+    body: `<p style="font-size:14px;line-height:1.6">${escapeHtml(t('messages.blockConfirm'))}</p>`,
+    submitLabel: t('messages.block'),
+    danger: true,
+    onSubmit: async () => {
+      state._modalLoading = true; renderApp();
+      try {
+        await apiPost(`/api/profile/block/${encodeURIComponent(other.id)}`, {});
+        closeModal();
+        if (state.threadCurrent) state.threadCurrent.blocked_by_me = true;
+        showToast(t('toasts.blocked'));
+      } catch (err) { showToast(err.message); }
+      state._modalLoading = false; renderApp();
+    },
+  });
+}
+
+async function threadUnblockUser() {
+  const other = state.threadCurrent && state.threadCurrent.other;
+  if (!other || !other.id) return;
+  state._threadMenu = false;
+  try {
+    await apiDelete(`/api/profile/block/${encodeURIComponent(other.id)}`);
+    if (state.threadCurrent) state.threadCurrent.blocked_by_me = false;
+    showToast(t('toasts.unblocked'));
+  } catch (err) { showToast(err.message); }
+  renderApp();
+}
+
+// Klepnutí mimo menu ho zavře
+document.addEventListener('pointerdown', (e) => {
+  if (!state._threadMenu) return;
+  if (e.target && e.target.closest && e.target.closest('.thread-menu-wrap')) return;
+  state._threadMenu = false;
+  renderApp();
+}, true);
+
+// Okno konverzace sleduje skutečně viditelnou plochu (lišty prohlížeče, klávesnice), takže pole pro psaní nezůstane schované dole
+function fitThreadToViewport() {
+  const el = document.getElementById('thread-view');
+  const vv = window.visualViewport;
+  if (!el) return;
+  if (vv) {
+    el.style.setProperty('--vvh', Math.round(vv.height) + 'px');
+    el.style.setProperty('--vv-top', Math.round(vv.offsetTop) + 'px');
+  }
+}
+if (window.visualViewport) {
+  const onVV = () => {
+    fitThreadToViewport();
+    const box = document.getElementById('thread-messages');
+    if (box && document.activeElement && document.activeElement.hasAttribute('data-thread-input')) scrollThreadToBottom();
+  };
+  window.visualViewport.addEventListener('resize', onVV);
+  window.visualViewport.addEventListener('scroll', onVV);
+}
+(function keepThreadViewportFit() {
+  const original = window.renderApp;
+  if (typeof original !== 'function') return;
+  const wrapped = function () { const r = original.apply(this, arguments); fitThreadToViewport(); return r; };
+  wrapped.__keepsThreadFocus = original.__keepsThreadFocus;
   window.renderApp = wrapped;
 })();
