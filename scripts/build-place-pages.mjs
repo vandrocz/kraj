@@ -119,18 +119,18 @@ function headerHtml() {
     </a>
     <nav class="site-nav">
       <a href="${SITE_URL}/mista/">Všechna místa</a>
-      <a class="is-primary" href="${SITE_URL}/mapa">Mapa</a>
+      <a class="is-primary" href="${SITE_URL}/?tab=mapa">Mapa</a>
     </nav>
   </div>`;
 }
 // Spodní navigační lišta shodná s hlavní aplikací (každá sekce má vlastní adresu)
 const NAV_ITEMS = [
-  { href: '/organizace', label: 'Organizace', paths: ['M3 22h18', 'M5 22V11', 'M9 22V11', 'M15 22V11', 'M19 22V11', 'M12 2l9 6H3l9-6Z'] },
-  { href: '/ubytovani', label: 'Ubytování', paths: ['M3 19v-6a2 2 0 0 1 2-2h2v4', 'M3 19h18', 'M21 19v-6a2 2 0 0 0-2-2h-8v4', 'M3 22v-3', 'M21 22v-3', 'M6 11V8a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3'] },
-  { href: '/gastro', label: 'Gastro', paths: ['M5 8h12v7a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V8Z', 'M17 9h2a2 2 0 0 1 0 4h-2', 'M5 21h12'] },
-  { href: '/mapa', label: 'Mapa', active: true, paths: ['M12 22s-8-8-8-13a8 8 0 0 1 16 0c0 5-8 13-8 13Z', 'M12 11a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z'] },
-  { href: '/akce', label: 'Akce', paths: ['M4 6h16v14H4Z', 'M8 3v4', 'M16 3v4', 'M4 10h16', 'M8 14h2', 'M14 14h2', 'M8 17h2', 'M14 17h2'] },
-  { href: '/ucet', label: 'Účet', paths: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1'] },
+  { href: '/?tab=organizace', label: 'Organizace', paths: ['M3 22h18', 'M5 22V11', 'M9 22V11', 'M15 22V11', 'M19 22V11', 'M12 2l9 6H3l9-6Z'] },
+  { href: '/?tab=ubytovani', label: 'Ubytování', paths: ['M3 19v-6a2 2 0 0 1 2-2h2v4', 'M3 19h18', 'M21 19v-6a2 2 0 0 0-2-2h-8v4', 'M3 22v-3', 'M21 22v-3', 'M6 11V8a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3'] },
+  { href: '/?tab=gastro', label: 'Gastro', paths: ['M5 8h12v7a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V8Z', 'M17 9h2a2 2 0 0 1 0 4h-2', 'M5 21h12'] },
+  { href: '/?tab=mapa', label: 'Mapa', active: true, paths: ['M12 22s-8-8-8-13a8 8 0 0 1 16 0c0 5-8 13-8 13Z', 'M12 11a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z'] },
+  { href: '/?tab=akce', label: 'Akce', paths: ['M4 6h16v14H4Z', 'M8 3v4', 'M16 3v4', 'M4 10h16', 'M8 14h2', 'M14 14h2', 'M8 17h2', 'M14 17h2'] },
+  { href: '/?tab=ucet', label: 'Účet', paths: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1'] },
 ];
 function navHtml() {
   const btns = NAV_ITEMS.map((n) => `<a class="bottom-nav-btn${n.active ? ' is-active' : ''}" href="${SITE_URL}${n.href}" aria-label="${n.label}"${n.active ? ' aria-current="page"' : ''}>
@@ -183,7 +183,7 @@ function buildPageHtml(p, slug, nearby) {
   const metaDescription = (descRaw || `${title}${category ? ' — ' + category : ''} na turistické mapě Vandro.`).slice(0, 300);
   const image = p.foto_main || FALLBACK_IMAGE;
   const pageUrl = `${SITE_URL}/misto/${slug}/`;
-  const mapUrl = `${SITE_URL}/mapa#${slug}/${p.lat}/${p.lng}`;
+  const mapUrl = `${SITE_URL}/?tab=mapa#${slug}/${p.lat}/${p.lng}`;
   const country = p.krajina || '';
   const gallery = parseGallery(p.galeria).filter(u => u !== p.foto_main);
   const lat = +p.lat, lng = +p.lng;
