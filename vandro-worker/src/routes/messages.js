@@ -194,8 +194,13 @@ messagesRoutes.get('/thread/:id', async (c) => {
     `UPDATE dm_messages SET read_at = datetime('now') WHERE thread_id = ? AND sender_id != ? AND read_at IS NULL`,
   ).bind(id, user.sub).run();
 
+  const iBlocked = await c.env.DB.prepare(`SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?`).bind(user.sub, otherId).first();
+  const blockedMe = await c.env.DB.prepare(`SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?`).bind(otherId, user.sub).first();
+
   c.header('Cache-Control', 'no-store');
   return c.json({
+    blocked_by_me: !!iBlocked,
+    blocked_me: !!blockedMe,
     thread,
     other: await describeOther(c.env, thread, other),
     messages: results,
