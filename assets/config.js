@@ -123,7 +123,20 @@ function initGoogleSignIn(onCredential) {
   return true;
 }
 
+// Skript Google se načítá až ve chvíli, kdy se zobrazí přihlášení/registrace
+// (ne při každé návštěvě webu), aby se IP adresa zbytečně nepředávala Googlu.
+let _googleScriptRequested = false;
+function loadGoogleScript() {
+  if (_googleScriptRequested || window.google?.accounts?.id) return;
+  _googleScriptRequested = true;
+  const sc = document.createElement('script');
+  sc.src = 'https://accounts.google.com/gsi/client';
+  sc.async = true; sc.defer = true;
+  document.head.appendChild(sc);
+}
+
 function renderGoogleButton(containerEl, onCredential) {
+  loadGoogleScript();
   if (!initGoogleSignIn(onCredential)) {
     setTimeout(() => renderGoogleButton(containerEl, onCredential), 1000);
     return;
@@ -181,6 +194,12 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 function escapeAttr(s) { return escapeHtml(s); }
+
+// Odkaz z uživatelských dat: povolené jen http(s), tel a mailto (ne javascript: apod.)
+function safeHref(u) {
+  const s = String(u == null ? '' : u).trim();
+  return /^(https?:|tel:|mailto:)/i.test(s) ? s : '';
+}
 
 function shortenUrl(url) {
   let s = String(url).replace(/^https?:\/\//i, '').replace(/^www\./i, '');

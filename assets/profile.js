@@ -159,7 +159,7 @@ function renderUserProfile(data, id) {
           <div class="about-info-card">
             ${infoRows.map((r) => `
               ${r.href
-                ? `<a class="about-info-row" href="${escapeAttr(r.href)}" target="_blank" rel="noopener">
+                ? `<a class="about-info-row" href="${escapeAttr(safeHref(r.href))}" target="_blank" rel="noopener noreferrer">
                      <span class="about-info-icon">${icon(r.icon, { size: 18 })}</span>
                      <span class="about-info-text">
                        <span class="about-info-label">${escapeHtml(r.label)}</span>
@@ -295,7 +295,7 @@ function renderBusinessProfile(data, id, kind) {
           <div class="about-info-card">
             ${infoRows.map((r) => `
               ${r.href
-                ? `<a class="about-info-row" href="${escapeAttr(r.href)}" target="_blank" rel="noopener">
+                ? `<a class="about-info-row" href="${escapeAttr(safeHref(r.href))}" target="_blank" rel="noopener noreferrer">
                      <span class="about-info-icon">${icon(r.icon, { size: 18 })}</span>
                      <span class="about-info-text">
                        <span class="about-info-label">${escapeHtml(r.label)}</span>
@@ -409,7 +409,7 @@ function renderBusinessProfile(data, id, kind) {
 
       <div class="profile-biz-actions">
         ${nonOwnerActions}
-        ${b.website ? `<a class="profile-action-btn" href="${escapeAttr(b.website)}" target="_blank" rel="noopener">${icon('globe', { size: 15 })} ${escapeHtml(t('profile.web'))}</a>` : ''}
+        ${b.website ? `<a class="profile-action-btn" href="${escapeAttr(safeHref(b.website))}" target="_blank" rel="noopener noreferrer">${icon('globe', { size: 15 })} ${escapeHtml(t('profile.web'))}</a>` : ''}
       </div>
 
       <div class="profile-stats-row">
@@ -787,40 +787,7 @@ function renderSettingsOverlay() {
     <div class="page-scroll">
       ${renderBackHeader(t('settings.title'))}
 
-      <div class="profile-section">
-        <h3 class="profile-section-title">${escapeHtml(t('settings.language'))}</h3>
-        <label class="settings-toggle" style="flex-direction:column;align-items:flex-start;gap:8px;">
-          <span style="font-weight:600">${escapeHtml(t('settings.languageLabel'))}</span>
-          <select class="form-select" data-action="lang-select" style="width:100%">
-            <option value="cs" ${currentLang === 'cs' ? 'selected' : ''}>${escapeHtml(t('settings.langCs'))}</option>
-            <option value="sk" ${currentLang === 'sk' ? 'selected' : ''}>${escapeHtml(t('settings.langSk'))}</option>
-            <option value="en" ${currentLang === 'en' ? 'selected' : ''}>${escapeHtml(t('settings.langEn'))}</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="profile-section">
-        <h3 class="profile-section-title">${escapeHtml(t('settings.cookiesPrivacy'))}</h3>
-        <button class="settings-row" data-action="open-cookie-settings">${icon('shield', { size: 17 })} ${escapeHtml(t('settings.cookieSettings'))}</button>
-        <a class="settings-row" href="/ochrana-osobnich-udaju.html" target="_blank" rel="noopener">${icon('help', { size: 17 })} ${escapeHtml(t('settings.privacyPolicy'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
-      </div>
-
       ${logged ? `
-        <div class="profile-section">
-          <h3 class="profile-section-title">${escapeHtml(t('settings.notifications'))}</h3>
-          <label class="settings-toggle">
-            <span>${escapeHtml(t('settings.pushNotifications'))}</span>
-            <input type="checkbox" data-action="push-toggle" ${state._pushSubscribed ? 'checked' : ''} />
-          </label>
-        </div>
-
-        <div class="profile-section">
-          <h3 class="profile-section-title">${escapeHtml(t('settings.privacy'))}</h3>
-          <label class="settings-toggle"><span>${escapeHtml(t('settings.publicProfile'))}</span><input type="checkbox" data-action="setting-toggle" data-key="public_profile" ${s.public_profile ? 'checked' : ''} /></label>
-          <label class="settings-toggle"><span>${escapeHtml(t('settings.showPosts'))}</span><input type="checkbox" data-action="setting-toggle" data-key="show_contributions" ${s.show_contributions ? 'checked' : ''} /></label>
-          <label class="settings-toggle"><span>${escapeHtml(t('settings.showCheckins'))}</span><input type="checkbox" data-action="setting-toggle" data-key="public_checkins" ${s.public_checkins ? 'checked' : ''} /></label>
-        </div>
-
         <div class="profile-section">
           <h3 class="profile-section-title">${escapeHtml(t('settings.account'))}</h3>
           <button class="settings-row" data-action="edit-profile" data-kind="user" data-id="${state.user.id}">${icon('edit', { size: 17 })} ${escapeHtml(t('settings.editProfile'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
@@ -833,16 +800,63 @@ function renderSettingsOverlay() {
         </div>
 
         <div class="profile-section">
+        <h3 class="profile-section-title">${escapeHtml(t('settings.language'))}</h3>
+        <label class="settings-toggle" style="flex-direction:column;align-items:flex-start;gap:8px;">
+          <span style="font-weight:600">${escapeHtml(t('settings.languageLabel'))}</span>
+          <select class="form-select" data-action="lang-select" style="width:100%">
+            <option value="cs" ${currentLang === 'cs' ? 'selected' : ''}>${escapeHtml(t('settings.langCs'))}</option>
+            <option value="sk" ${currentLang === 'sk' ? 'selected' : ''}>${escapeHtml(t('settings.langSk'))}</option>
+            <option value="en" ${currentLang === 'en' ? 'selected' : ''}>${escapeHtml(t('settings.langEn'))}</option>
+          </select>
+        </label>
+      </div>
+
+        <div class="profile-section">
+        <h3 class="profile-section-title">${escapeHtml(t('settings.cookiesPrivacy'))}</h3>
+        <button class="settings-row" data-action="open-cookie-settings">${icon('shield', { size: 17 })} ${escapeHtml(t('settings.cookieSettings'))}</button>
+        <a class="settings-row" href="/ochrana-osobnich-udaju.html" target="_blank" rel="noopener">${icon('help', { size: 17 })} ${escapeHtml(t('settings.privacyPolicy'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
+      </div>
+
+        <div class="profile-section">
+          <h3 class="profile-section-title">${escapeHtml(t('settings.notifications'))}</h3>
+          <label class="settings-toggle">
+            <span>${escapeHtml(t('settings.pushNotifications'))}</span>
+            <input type="checkbox" data-action="push-toggle" ${state._pushSubscribed ? 'checked' : ''} />
+          </label>
+        </div>
+
+        <div class="profile-section">
           <h3 class="profile-section-title">${escapeHtml(t('settings.gdpr'))}</h3>
+          <label class="settings-toggle"><span>${escapeHtml(t('settings.publicProfile'))}</span><input type="checkbox" data-action="setting-toggle" data-key="public_profile" ${s.public_profile ? 'checked' : ''} /></label>
+          <label class="settings-toggle"><span>${escapeHtml(t('settings.showPosts'))}</span><input type="checkbox" data-action="setting-toggle" data-key="show_contributions" ${s.show_contributions ? 'checked' : ''} /></label>
+          <label class="settings-toggle"><span>${escapeHtml(t('settings.showCheckins'))}</span><input type="checkbox" data-action="setting-toggle" data-key="public_checkins" ${s.public_checkins ? 'checked' : ''} /></label>
           <button class="settings-row" data-action="export-data">${icon('download', { size: 17 })} ${escapeHtml(t('settings.downloadData'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
           <a class="settings-row" href="/obchodni-podminky.html" target="_blank" rel="noopener">${icon('help', { size: 17 })} ${escapeHtml(t('settings.terms'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
           <button class="settings-row" data-action="delete-account" style="color:#B3273C">${icon('trash', { size: 17 })} ${escapeHtml(t('settings.deleteAccount'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</button>
-        </div>
+</div>
 
         <div class="profile-section">
           <button class="settings-row" data-action="logout" style="color:#B3273C">${icon('logout', { size: 17 })} ${escapeHtml(t('settings.logout'))}</button>
         </div>
       ` : `
+        <div class="profile-section">
+        <h3 class="profile-section-title">${escapeHtml(t('settings.language'))}</h3>
+        <label class="settings-toggle" style="flex-direction:column;align-items:flex-start;gap:8px;">
+          <span style="font-weight:600">${escapeHtml(t('settings.languageLabel'))}</span>
+          <select class="form-select" data-action="lang-select" style="width:100%">
+            <option value="cs" ${currentLang === 'cs' ? 'selected' : ''}>${escapeHtml(t('settings.langCs'))}</option>
+            <option value="sk" ${currentLang === 'sk' ? 'selected' : ''}>${escapeHtml(t('settings.langSk'))}</option>
+            <option value="en" ${currentLang === 'en' ? 'selected' : ''}>${escapeHtml(t('settings.langEn'))}</option>
+          </select>
+        </label>
+      </div>
+
+        <div class="profile-section">
+        <h3 class="profile-section-title">${escapeHtml(t('settings.cookiesPrivacy'))}</h3>
+        <button class="settings-row" data-action="open-cookie-settings">${icon('shield', { size: 17 })} ${escapeHtml(t('settings.cookieSettings'))}</button>
+        <a class="settings-row" href="/ochrana-osobnich-udaju.html" target="_blank" rel="noopener">${icon('help', { size: 17 })} ${escapeHtml(t('settings.privacyPolicy'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
+      </div>
+
         <div class="profile-section">
           <p class="form-hint" style="text-align:center;padding:12px;">${escapeHtml(t('settings.publicSettingsNote'))}</p>
           <button class="settings-row" data-action="set-tab" data-tab="account" style="justify-content:center">${icon('user', { size: 17 })} ${escapeHtml(t('auth.loginTab'))}</button>

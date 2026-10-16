@@ -130,28 +130,10 @@ function renderRegisterForm() {
   const role = accountFormState.registerRole;
   const kind = accountFormState.registerBusinessKind;
 
-  const orgTypeOptions = [
-    { value: 'hrad', label: tType('hrad') }, { value: 'zamek', label: tType('zamek') },
-    { value: 'muzeum', label: tType('muzeum') }, { value: 'lyzarske_stredisko', label: tType('lyzarske_stredisko') },
-    { value: 'galerie', label: tType('galerie') }, { value: 'zoo', label: tType('zoo') },
-    { value: 'prirodni_pamatka', label: tType('prirodni_pamatka') }, { value: 'rozhledna', label: tType('rozhledna') },
-    { value: 'zricenina', label: tType('zricenina') }, { value: 'kostel', label: tType('kostel') },
-    { value: 'technicka_pamatka', label: tType('technicka_pamatka') }, { value: 'jine', label: tType('jine') },
-  ];
-  const accTypeOptions = [
-    { value: 'hotel', label: tType('hotel') }, { value: 'penzion', label: tType('penzion') },
-    { value: 'chata', label: tType('chata') }, { value: 'chalupa', label: tType('chalupa') },
-    { value: 'kemp', label: tType('kemp') }, { value: 'apartman', label: tType('apartman') },
-    { value: 'glamping', label: tType('glamping') }, { value: 'hostel', label: tType('hostel') },
-    { value: 'ubytovna', label: tType('ubytovna') }, { value: 'jine', label: tType('jine') },
-  ];
-  const restTypeOptions = [
-    { value: 'restaurace', label: tType('restaurace') }, { value: 'kavarna', label: tType('kavarna') },
-    { value: 'hospoda', label: tType('hospoda') }, { value: 'pivovar', label: tType('pivovar') },
-    { value: 'bistro', label: tType('bistro') }, { value: 'cukrarna', label: tType('cukrarna') },
-    { value: 'vinarna', label: tType('vinarna') }, { value: 'food_truck', label: tType('food_truck') },
-    { value: 'jine', label: tType('jine') },
-  ];
+  // Kategorie jsou ve společném seznamu TYPES (z API, jinak záložní data v meta.js)
+  const orgTypeOptions = sortedTypeOptions(TYPES.organization);
+  const accTypeOptions = sortedTypeOptions(TYPES.accommodation);
+  const restTypeOptions = sortedTypeOptions(TYPES.restaurant);
 
   let roleFields = '';
   if (role === 'organization') {
@@ -205,7 +187,7 @@ function renderRegisterForm() {
 
       <div class="form-field" style="display:flex;align-items:flex-start;gap:10px;">
         <input type="checkbox" name="ageConfirmed" id="age-checkbox" required style="margin-top:3px;width:16px;height:16px;flex-shrink:0;" />
-        <label for="age-checkbox" class="form-hint" style="margin-top:0;font-size:12.5px;line-height:1.5;">Potvrzuji, že mi je alespoň <strong>15 let</strong>.</label>
+        <label for="age-checkbox" class="form-hint" style="margin-top:0;font-size:12.5px;line-height:1.5;">Potvrzuji, že mi je alespoň <strong>16 let</strong>.</label>
       </div>
       <div class="form-field" style="display:flex;align-items:flex-start;gap:10px;">
         <input type="checkbox" name="termsAccepted" id="terms-checkbox" required style="margin-top:3px;width:16px;height:16px;flex-shrink:0;" />
@@ -598,7 +580,7 @@ function openAddBusinessModal() {
       <div class="form-field">
         <label class="form-label">${escapeHtml(t('profile.type'))}</label>
         <select class="form-select" name="type" id="add-business-type-select" required>
-          ${initialTypeOptions.map((o) => `<option value="${o.value}">${escapeHtml(tType(o.value))}</option>`).join('')}
+          ${sortedTypeOptions(initialTypeOptions).map((o) => `<option value="${o.value}">${escapeHtml(tType(o.value))}</option>`).join('')}
         </select>
       </div>
       ${renderAddressWithMapBlock()}
@@ -649,7 +631,7 @@ function updateAddBusinessTypeOptions(kind) {
   const sel = document.getElementById('add-business-type-select');
   if (!sel) return;
   const typeOptions = kind === 'organizations' ? TYPES.organization : kind === 'accommodation' ? TYPES.accommodation : TYPES.restaurant;
-  sel.innerHTML = typeOptions.map((o) => `<option value="${o.value}">${escapeHtml(tType(o.value))}</option>`).join('');
+  sel.innerHTML = sortedTypeOptions(typeOptions).map((o) => `<option value="${o.value}">${escapeHtml(tType(o.value))}</option>`).join('');
 }
 
 // ============================================================

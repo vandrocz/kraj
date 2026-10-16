@@ -453,7 +453,7 @@ function renderCreateStoryOverlay() {
             ${previews.length > 0
               ? `<div class="story-preview-grid story-preview-grid--9-16">${previews.map((p, i) => `
                   <div class="story-preview-item story-preview-item--9-16">
-                    ${p.type === 'video' ? `<video src="${p.url}" muted></video>` : `<img src="${p.url}" />`}
+                    ${p.type === 'video' ? `<video src="${escapeAttr(p.url)}" muted></video>` : `<img src="${escapeAttr(p.url)}" alt="" />`}
                     <button type="button" class="file-preview-remove" data-action="remove-story-file" data-index="${i}" ${isBusy ? 'disabled' : ''}>${icon('close', { size: 12 })}</button>
                   </div>
                 `).join('')}</div>`

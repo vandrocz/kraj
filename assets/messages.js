@@ -288,7 +288,7 @@ function renderThreadOverlay() {
 
   return `
     <div class="thread-view" id="thread-view">
-      ${renderBackHeader(escapeHtml(otherName), menuBtn)}
+      ${renderBackHeader(otherName, menuBtn)}
       ${isBusiness ? `<div class="thread-biz-hint">${icon('check', { size: 12 })} ${escapeHtml(t('messages.businessHint'))}${bizName && other.display_name ? ` · ${escapeHtml(other.display_name)}` : ''}</div>` : ''}
       <div class="thread-messages" id="thread-messages">${threadMessagesHtml(msgs)}</div>
       ${composer}

@@ -192,7 +192,7 @@ function renderBackHeader(title, rightHtml) {
   return `
     <header class="app-header">
       <button class="header-icon-btn" data-action="close-overlay" aria-label="${escapeAttr(t('common.back'))}">${icon('arrowLeft', { size: 20 })}</button>
-      <h1 class="app-header-title" style="margin-left:4px">${title || ''}</h1>
+      <h1 class="app-header-title" style="margin-left:4px">${escapeHtml(title || '')}</h1>
       <div class="app-header-right">${rightHtml || ''}</div>
     </header>`;
 }
@@ -300,7 +300,7 @@ function renderFilterBar(feedKey, typeOptions, showCuisine) {
   const typeSelect = `
     <select class="filter-select ${f.type ? 'is-active' : ''}" data-action="filter-change" data-feed="${feedKey}" data-field="type">
       <option value="">${escapeHtml(t('feed.allTypes'))}</option>
-      ${typeOptions.map((ty) => `<option value="${ty.value}" ${f.type === ty.value ? 'selected' : ''}>${escapeHtml(tType(ty.value))}</option>`).join('')}
+      ${sortedTypeOptions(typeOptions).map((ty) => `<option value="${ty.value}" ${f.type === ty.value ? 'selected' : ''}>${escapeHtml(tType(ty.value))}</option>`).join('')}
     </select>`;
   const cuisineSelect = showCuisine ? `
     <select class="filter-select ${f.cuisine ? 'is-active' : ''}" data-action="filter-change" data-feed="${feedKey}" data-field="cuisine">

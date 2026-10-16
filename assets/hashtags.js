@@ -80,7 +80,7 @@ function renderHashtagOverlay() {
 
   return `
     <div class="page-scroll">
-      ${renderBackHeader(`#${escapeHtml(tag)}`)}
+      ${renderBackHeader(`#${tag}`)}
       ${content}
     </div>`;
 }

@@ -128,7 +128,7 @@ async function loadOnboardingBusinesses() {
         </button>`;
     }).join('');
   } catch (err) {
-    el.innerHTML = `<p class="empty-state">${escapeHtml(t('common.error'))}: ${err.message}</p>`;
+    el.innerHTML = `<p class="empty-state">${escapeHtml(t('common.error'))}: ${escapeHtml(err.message)}</p>`;
   }
 }
 

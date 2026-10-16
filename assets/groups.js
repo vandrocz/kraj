@@ -76,7 +76,7 @@ function openGroupDetail(id) {
 function renderGroupDetailOverlay() {
   const d = state.groupCurrent;
   if (!d) return `<div class="page-scroll">${renderBackHeader(t('groups.title'))}<p class="empty-state">${escapeHtml(t('common.loading'))}</p></div>`;
-  if (d.error) return `<div class="page-scroll">${renderBackHeader(t('groups.title'))}<p class="empty-state">${d.error}</p></div>`;
+  if (d.error) return `<div class="page-scroll">${renderBackHeader(t('groups.title'))}<p class="empty-state">${escapeHtml(d.error)}</p></div>`;
   const isMember = !!d.my_role;
 
   return `
