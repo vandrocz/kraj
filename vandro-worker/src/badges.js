@@ -14,11 +14,26 @@ export const BADGE_DEFS = {
   explorer: { name: 'Objevitel krajů', icon: 'mapPin', tiers: [3, 7, 14], description: 'Navštívené kraje', compute: (s) => s.regions },
 };
 
+// Typ podniku → počítadlo odznaku. Zahrnuje starší hodnoty i nové kategorie.
 const ORG_TYPE_TO_COUNTER = {
   hrad: 'castles', zamek: 'chateaux', muzeum: 'museums', zoo: 'zoos',
   lyzarske_stredisko: 'skiResorts', galerie: 'galleries', prirodni_pamatka: 'naturalSites',
+  hrady_zamky_a_kastiele: 'castles', zamocke_parky_a_historicke_zahrady: 'chateaux',
+  muzea: 'museums', muzea_pod_holym_nebom: 'museums', pamatne_domy_a_rodne_domy_osobnosti: 'museums',
+  zoo_zoologicke_zahrady_a_zvernice: 'zoos',
+  lanovky_a_vleky: 'skiResorts', letoviska_a_rekreacne_oblasti: 'skiResorts',
+  galerie_a_umelecke_siene: 'galleries',
+  prirodne_rezervacie_vodopady_a_rokliny: 'naturalSites', jaskyne_pristupne_verejnosti: 'naturalSites',
+  narodne_parky_a_chranene_krajinne_oblasti: 'naturalSites',
 };
-const REST_TYPE_TO_COUNTER = { restaurace: 'restaurants', kavarna: 'cafes', hospoda: 'pubs', pivovar: 'breweries' };
+const REST_TYPE_TO_COUNTER = {
+  restaurace: 'restaurants', kavarna: 'cafes', hospoda: 'pubs', pivovar: 'breweries',
+  restauracie: 'restaurants', hotelove_restauracie: 'restaurants', etnicke_a_narodne_restauracie: 'restaurants',
+  koliby_salase_a_slovenske_restauracie: 'restaurants', fine_dining_restauracie: 'restaurants', steakhousy: 'restaurants',
+  kaviarne: 'cafes', kafeterie_a_ranajkarne: 'cafes', cajovne: 'cafes',
+  hostince_a_zajazdove_krcmy: 'pubs', pivarne_a_puby: 'pubs',
+  pivovary_s_vlastnou_restauraciou: 'breweries',
+};
 
 export async function computeUserStats(env, userId) {
   const stats = {

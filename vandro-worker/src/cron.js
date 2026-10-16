@@ -1,4 +1,5 @@
 import { newId } from './auth.js';
+import { deleteMediaUrls } from './erase.js';
 
 const PROTECTION_MS = 30 * 60 * 1000;
 const SUCCESS_DISPLAY_MS = 30 * 60 * 1000;
@@ -248,4 +249,41 @@ export async function cleanupOrphanedR2(env) {
   }
 
   return results;
+}
+
+
+// ============================================================
+// UCHOVÁVÁNÍ ÚDAJŮ — maže data po uplynutí lhůt uvedených v zásadách ochrany údajů
+//  - historie přihlášení: 12 měsíců
+//  - ověřovací dokumenty podniků: 90 dní po schválení/zamítnutí (soubor i záznam)
+//  - prošlé ověřovací, resetovací a 2FA tokeny
+// ============================================================
+export async function retentionCleanup(env) {
+  const out = { login_logs: 0, docs: 0, tokens: 0 };
+  const run = async (label, sql) => {
+    try { const r = await env.DB.prepare(sql).run(); return r.meta?.changes || 0; }
+    catch (err) { console.warn('[retention]', label, err.message); return 0; }
+  };
+
+  out.login_logs = await run('login_logs', `DELETE FROM login_logs WHERE created_at < datetime('now', '-12 months')`);
+
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id, doc_url FROM verification_requests
+       WHERE status IN ('approved', 'rejected', 'verified') AND resolved_at IS NOT NULL
+         AND resolved_at < datetime('now', '-90 days') AND doc_url IS NOT NULL`,
+    ).all();
+    for (const r of results || []) {
+      await deleteMediaUrls(env, [r.doc_url]);
+      await env.DB.prepare(`UPDATE verification_requests SET doc_url = NULL, note = NULL WHERE id = ?`).bind(r.id).run();
+      out.docs++;
+    }
+  } catch (err) { console.warn('[retention] docs', err.message); }
+
+  out.tokens += await run('email_verifications', `DELETE FROM email_verifications WHERE expires_at < datetime('now', '-1 day')`);
+  out.tokens += await run('password_resets', `DELETE FROM password_resets WHERE expires_at < datetime('now', '-1 day')`);
+  out.tokens += await run('twofa_sessions', `DELETE FROM twofa_sessions WHERE expires_at < datetime('now', '-1 day')`);
+
+  console.log('[retention]', JSON.stringify(out));
+  return out;
 }

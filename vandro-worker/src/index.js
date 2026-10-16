@@ -23,7 +23,7 @@ import { mapListsRoutes } from './routes/map-lists.js';
 import { pushRoutes } from './routes/push.js';
 import { groupsRoutes } from './routes/groups.js';
 import { messagesRoutes } from './routes/messages.js';
-import { runDailyDistribution, ensureActiveProjectRotation, cleanupOrphanedR2, deleteExpiredStories } from './cron.js';
+import { runDailyDistribution, ensureActiveProjectRotation, cleanupOrphanedR2, deleteExpiredStories, retentionCleanup } from './cron.js';
 import { REGIONS, ORGANIZATION_TYPES, ACCOMMODATION_TYPES, RESTAURANT_TYPES, CUISINE_TYPES } from './regions.js';
 import { rateLimit } from './ratelimit.js';
 
@@ -66,6 +66,18 @@ async function requireAuth(c, next) {
       return c.json({ error: 'Účet je pozastaven.' }, 403);
     }
     c.set('user', { ...payload, role: row.role });
+
+    // Omezení počtu změn u endpointů, které nemají vlastní limit (nahrávání, profil, sledování, seznamy míst, push)
+    if (c.req.method !== 'GET' && c.req.method !== 'HEAD' && c.req.method !== 'OPTIONS') {
+      const path = new URL(c.req.url).pathname;
+      const scope = path.startsWith('/api/profile/') ? 'w-profile'
+        : path.startsWith('/api/map-lists') ? 'w-maplists'
+        : path.startsWith('/api/push') ? 'w-push' : null;
+      if (scope) {
+        const rl = await rateLimit(c.env, scope, payload.sub, scope === 'w-push' ? 20 : 60, 60);
+        if (!rl.ok) return c.json({ error: 'Příliš mnoho požadavků. Zkus to za chvíli.' }, 429);
+      }
+    }
   } catch {
     return c.json({ error: 'Neplatný token.' }, 401);
   }
@@ -255,6 +267,7 @@ export default {
       ctx.waitUntil((async () => {
         await deleteExpiredStories(env);
         await cleanupOrphanedR2(env);
+        await retentionCleanup(env);
       })());
     } else if (event.cron === '30 */6 * * *') {
       ctx.waitUntil(deleteExpiredStories(env));

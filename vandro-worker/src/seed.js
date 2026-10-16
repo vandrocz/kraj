@@ -30,7 +30,7 @@ export async function seedTestContent(env) {
 
   // ====== 2 organizácie ======
   const orgs = [
-    { id: 'test_org_1_biz', user_id: 'test_org_1', name: 'Hrad Testov', type: 'hrad', region: 'Středočeský kraj', district: 'Rakovník', city: 'Křivoklát', description: 'Středověký hrad ze 13. století s bohatou historií. Nabízíme prohlídky, akce pro děti a svatební obřady.', logo: 'https://images.unsplash.com/photo-1533105079780-92b9be482077?w=400&h=400&fit=crop' },
+    { id: 'test_org_1_biz', user_id: 'test_org_1', name: 'Hrad Testov', type: 'hrady_zamky_a_kastiele', region: 'Středočeský kraj', district: 'Rakovník', city: 'Křivoklát', description: 'Středověký hrad ze 13. století s bohatou historií. Nabízíme prohlídky, akce pro děti a svatební obřady.', logo: 'https://images.unsplash.com/photo-1533105079780-92b9be482077?w=400&h=400&fit=crop' },
     { id: 'test_org_2_biz', user_id: 'test_org_2', name: 'Zámek Testovice', type: 'zamek', region: 'Jihočeský kraj', district: 'Český Krumlov', city: 'Český Krumlov', description: 'Barokní zámek obklopený nádhernou zahradou. Pořádáme koncerty, výstavy a historické slavnosti.', logo: 'https://images.unsplash.com/photo-1461360228754-6e81c478b882?w=400&h=400&fit=crop' },
   ];
   for (const o of orgs) {
