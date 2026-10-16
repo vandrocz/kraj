@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { sanitizeWebsite, cleanText, cleanPhone } from '../sanitize.js';
+import { isValidBusinessType } from '../regions.js';
 import { eraseUser, deleteBusinessCascade } from '../erase.js';
 import { newId, normalizeHandle, validateHandle } from '../auth.js';
 import { escapeLike, validateUpload } from '../moderation.js';
@@ -215,8 +217,24 @@ profileRoutes.patch('/me/user', async (c) => {
     params.push(normalized);
   }
 
-  const fields = ['display_name', 'bio', 'location', 'website', 'phone'];
-  for (const f of fields) if (f in body) { sets.push(`${f} = ?`); params.push(body[f] ?? null); }
+  // Texty profilu: omezená délka, bez řídicích znaků; web jen http(s)
+  if ('display_name' in body) {
+    const dn = cleanText(body.display_name, 80);
+    if (!dn) return c.json({ error: 'Jméno nesmí být prázdné.' }, 400);
+    sets.push('display_name = ?'); params.push(dn);
+  }
+  if ('bio' in body) { sets.push('bio = ?'); params.push(cleanText(body.bio, 500)); }
+  if ('location' in body) { sets.push('location = ?'); params.push(cleanText(body.location, 100)); }
+  if ('website' in body) {
+    const w = sanitizeWebsite(body.website);
+    if (body.website && !w) return c.json({ error: 'Web musí být platná adresa http(s).' }, 400);
+    sets.push('website = ?'); params.push(w);
+  }
+  if ('phone' in body) {
+    const ph = cleanPhone(body.phone);
+    if (body.phone && !ph) return c.json({ error: 'Neplatné telefonní číslo.' }, 400);
+    sets.push('phone = ?'); params.push(ph);
+  }
 
   if ('geo_lat' in body) { sets.push('geo_lat = ?'); params.push(body.geo_lat != null && body.geo_lat !== '' ? parseFloat(body.geo_lat) : null); }
   if ('geo_lng' in body) { sets.push('geo_lng = ?'); params.push(body.geo_lng != null && body.geo_lng !== '' ? parseFloat(body.geo_lng) : null); }
@@ -255,6 +273,8 @@ profileRoutes.post('/me/business', async (c) => {
 
   const name = (body.name || '').toString().trim().slice(0, 200);
   const type = (body.type || '').toString().trim().slice(0, 100);
+  const typeKind = kind === 'organizations' ? 'organization' : kind === 'accommodation' ? 'accommodation' : 'restaurant';
+  if (!isValidBusinessType(typeKind, type)) return c.json({ error: 'Neplatná kategorie podniku.' }, 400);
   const region = (body.region || '').toString().trim().slice(0, 100);
   const district = (body.district || '').toString().trim().slice(0, 100);
   const city = (body.city || '').toString().trim().slice(0, 100) || null;
@@ -318,7 +338,28 @@ profileRoutes.patch('/me/:type/:id', async (c) => {
 
   const body = await c.req.json().catch(() => ({}));
   const sets = [], params = [];
-  for (const f of allowedFields) if (f in body) { sets.push(`${f} = ?`); params.push(body[f] ?? null); }
+  const LIMITS = { name: 200, description: 2000, description_en: 2000, region: 100, district: 100, city: 100, opening_hours: 500, address: 250, cuisine_type: 50, admission: 200 };
+  for (const f of allowedFields) {
+    if (!(f in body)) continue;
+    let v = body[f];
+    if (f === 'website') {
+      v = sanitizeWebsite(v);
+      if (body.website && !v) return c.json({ error: 'Web musí být platná adresa http(s).' }, 400);
+    } else if (f === 'phone') {
+      v = cleanPhone(v);
+      if (body.phone && !v) return c.json({ error: 'Neplatné telefonní číslo.' }, 400);
+    } else if (f === 'type') {
+      const tk = table === 'organizations' ? 'organization' : table === 'accommodation' ? 'accommodation' : 'restaurant';
+      if (!isValidBusinessType(tk, v)) return c.json({ error: 'Neplatná kategorie podniku.' }, 400);
+    } else if (f === 'capacity' || f === 'price_level') {
+      const n = parseInt(v, 10);
+      v = Number.isFinite(n) && n >= 0 && n <= 100000 ? n : null;
+    } else if (LIMITS[f]) {
+      v = cleanText(v, LIMITS[f]);
+      if (f === 'name' && !v) return c.json({ error: 'Název nesmí být prázdný.' }, 400);
+    }
+    sets.push(`${f} = ?`); params.push(v ?? null);
+  }
 
   if ('geo_lat' in body) { sets.push('geo_lat = ?'); params.push(body.geo_lat != null && body.geo_lat !== '' ? parseFloat(body.geo_lat) : null); }
   if ('geo_lng' in body) { sets.push('geo_lng = ?'); params.push(body.geo_lng != null && body.geo_lng !== '' ? parseFloat(body.geo_lng) : null); }

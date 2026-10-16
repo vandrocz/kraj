@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { isValidBusinessType } from '../regions.js';
 import { sign } from 'hono/jwt';
 import { hashPassword, verifyPassword, newId, publicUser, generateUniqueHandle } from '../auth.js';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../email.js';
@@ -74,7 +75,7 @@ authRoutes.post('/register', async (c) => {
     return c.json({ error: 'Je nutné souhlasit s obchodními podmínkami.' }, 400);
   }
   if (ageConfirmed !== true && ageConfirmed !== 'true' && ageConfirmed !== 'on') {
-    return c.json({ error: 'Musíš potvrdit, že ti je alespoň 15 let.' }, 400);
+    return c.json({ error: 'Musíš potvrdit, že ti je alespoň 16 let.' }, 400);
   }
 
   const lower = email.toLowerCase();
@@ -113,6 +114,9 @@ authRoutes.post('/register', async (c) => {
 
   if (role === 'organization') {
     const { orgName, orgType, region, district, city, description } = body;
+    if (!isValidBusinessType('organization', orgType)) {
+      return c.json({ error: 'Neplatná kategorie organizace.' }, 400);
+    }
     if (!orgName || !orgType || !region || !district || !city) {
       return c.json({ error: 'Pre organizáciu vyžadujeme názov, typ, kraj, okres a obec.' }, 400);
     }
@@ -132,6 +136,9 @@ authRoutes.post('/register', async (c) => {
 
   if (role === 'hotelier') {
     const { businessName, businessKind, businessType, cuisineType, region, district, city, description, capacity } = body;
+    if (!['accommodation', 'gastro'].includes(businessKind) || !isValidBusinessType(businessKind === 'gastro' ? 'restaurant' : 'accommodation', businessType)) {
+      return c.json({ error: 'Neplatná kategorie podniku.' }, 400);
+    }
     if (!businessName || !businessKind || !businessType || !region || !district || !city) {
       return c.json({ error: 'Pre podnik vyžadujeme názov, druh, typ, kraj, okres a obec.' }, 400);
     }
