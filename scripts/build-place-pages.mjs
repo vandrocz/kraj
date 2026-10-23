@@ -115,7 +115,7 @@ const SHARED_STYLE = `
 function headerHtml() {
   return `<div class="site-header">
     <a class="site-name" href="${SITE_URL}/">
-      <img src="${LOGO_URL}" alt="Vandro" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'🧭 Vandro',style:'font-size:20px;font-weight:800'}))">
+      <img src="${LOGO_URL}" alt="Vandro" data-logo-fallback>
     </a>
     <nav class="site-nav">
       <a href="${SITE_URL}/mista/">Všechna místa</a>
@@ -151,29 +151,12 @@ function footerHtml() {
 }
 // Minimapa — namiesto cudzieho OSM embedu použije rovnaký podklad (OpenFreeMap
 // štýl), aký appka sama používa, takže vyzerá konzistentne s hlavnou mapou.
-function minimapScript(lat, lng, title, glyphText) {
+// Mapka na stránce místa: knihovna + ikony + externí skript (bez inline kódu kvůli CSP)
+function minimapScript() {
   return `
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="${SITE_URL}/assets/vmap-icons.js"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      try {
-        const mm = new maplibregl.Map({
-          container: 'minimap', style: '${SITE_URL}/assets/map-style.json',
-          center: [${lng}, ${lat}], zoom: 12.5, attributionControl: true,
-        });
-        mm.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-        // značka stejná jako na hlavní mapě: zelený kruh, bílý okraj a ikona kategorie
-        const el = document.createElement('div');
-        el.className = 'place-marker';
-        const glyph = (window.vmGlyphFor ? window.vmGlyphFor(${JSON.stringify(glyphText || '')}) : 'pin');
-        el.innerHTML = window.vmIconSvg ? window.vmIconSvg(glyph, { size: '19px', stroke: 2.1 }) : '';
-        el.title = ${JSON.stringify(title || '')};
-        new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([${lng}, ${lat}]).addTo(mm);
-      } catch (e) { console.warn('Minimapa se nenačetla:', e); }
-    });
-  </script>`;
+  <script src="${SITE_URL}/assets/vmap-icons.js"></script>`;
 }
 
 function buildPageHtml(p, slug, nearby) {
@@ -239,14 +222,10 @@ function buildPageHtml(p, slug, nearby) {
 <meta name="twitter:description" content="${escapeHtml(metaDescription)}">
 <meta name="twitter:image" content="${escapeHtml(image)}">
 <script type="application/ld+json">${JSON.stringify(jsonLd)}</script>
-${minimapScript(lat, lng, title, p.podkategoria || p.kategoria)}
+${minimapScript()}
 <link href="https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    if (typeof GLightbox !== 'undefined') GLightbox({ selector: '.glightbox' });
-  });
-</script>
+<script src="${SITE_URL}/assets/place-page.js" defer></script>
 <style>
 ${SHARED_STYLE}
   .hero-wrap { max-width: 1080px; margin: 0 auto; padding: 20px 24px 0; }
@@ -334,7 +313,7 @@ ${headerHtml()}
       <div class="blk-gallery">${gallerySection}</div>
       <div class="blk-poloha">
         <h2 class="section-title">Poloha</h2>
-        <div id="minimap"></div>
+        <div id="minimap" data-lat="${lat}" data-lng="${lng}" data-title="${escapeHtml(title)}" data-glyph="${escapeHtml(p.podkategoria || p.kategoria || '')}"></div>
       </div>
     </div>
   </div>
@@ -471,198 +450,7 @@ ${headerHtml()}
   <div id="scroll-sentinel"></div>
 </div>
 ${footerHtml()}
-<script>
-  const search = document.getElementById('f-search');
-  const fKat = document.getElementById('f-kat');
-  const fCountry = document.getElementById('f-country');
-  const cards = Array.from(document.querySelectorAll('.place-card'));
-  const emptyNote = document.getElementById('empty-note');
-  const loadMoreBtn = document.getElementById('load-more-btn');
-  const maxBatch = Math.max(...cards.map(c => +c.dataset.batch));
-  let revealedBatch = 0;
-  let filterActive = false;
-
-  function revealNextBatch() {
-    cards.forEach(c => { if (+c.dataset.batch === revealedBatch) c.classList.add('is-revealed'); });
-    revealedBatch++;
-    if (revealedBatch > maxBatch) loadMoreBtn.classList.add('is-done');
-  }
-  loadMoreBtn.addEventListener('click', revealNextBatch);
-
-  // Automaticky dogeneruje ďalšiu dávku pri priblížení sa ku koncu zoznamu.
-  const sentinel = document.getElementById('scroll-sentinel');
-  new IntersectionObserver((entries) => {
-    if (entries[0].isIntersecting && !filterActive && revealedBatch < maxBatch) revealNextBatch();
-  }, { rootMargin: '400px' }).observe(sentinel);
-
-  function applyFilters() {
-    const q = search.value.trim().toLowerCase();
-    const kat = fKat.value;
-    const country = fCountry.value;
-    filterActive = !!(q || kat || country);
-    let visible = 0;
-    cards.forEach(card => {
-      const matches = (!q || card.dataset.name.includes(q)) && (!kat || card.dataset.kat === kat) && (!country || card.dataset.country === country);
-      card.classList.toggle('is-hidden', !matches);
-      // Pri aktívnom filtri ukáž všetky zhody bez ohľadu na dávku, inak sa vráť k postupnému odhaľovaniu.
-      if (filterActive && matches) card.classList.add('is-revealed');
-      if (matches) visible++;
-    });
-    loadMoreBtn.style.display = filterActive ? 'none' : '';
-    emptyNote.style.display = visible ? 'none' : 'block';
-  }
-  search.addEventListener('input', applyFilters);
-  fKat.addEventListener('change', applyFilters);
-  fCountry.addEventListener('change', applyFilters);
-
-  revealNextBatch(); // zobraz prvú dávku hneď
-
-  // ── Řazení míst podle polohy (IP → GPS → adresa) ────────────────
-  const PAGE_BATCH_JS = ${PAGE_BATCH};
-  const grid = document.getElementById('grid');
-  const sortNote = document.getElementById('sort-note');
-
-  function haversineKmJs(lat1, lng1, lat2, lng2) {
-    const R = 6371, toRad = d => d * Math.PI / 180;
-    const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  }
-
-  // Preusporiada karty v DOM podľa skóre (nižšie = bližšie/prvé), stabilne
-  // (pri rovnosti skóre sa zachová pôvodné poradie). Prepočíta aj dávky
-  // pre postupné odhaľovanie, aby "Načíst další místa" fungovalo aj po zoradení.
-  function resortCardsByScore(scoreFn) {
-    const withScore = cards.map((c, i) => ({ c, i, s: scoreFn(c) }));
-    withScore.sort((a, b) => (a.s - b.s) || (a.i - b.i));
-    withScore.forEach(({ c }, idx) => {
-      c.dataset.batch = String(Math.floor(idx / PAGE_BATCH_JS));
-      c.classList.remove('is-revealed');
-      grid.appendChild(c);
-    });
-    revealedBatch = 0;
-    loadMoreBtn.classList.remove('is-done');
-    revealNextBatch();
-    applyFilters();
-  }
-
-  function sortByPoint(lat, lng) {
-    resortCardsByScore(c => {
-      const clat = parseFloat(c.dataset.lat), clng = parseFloat(c.dataset.lng);
-      if (!isFinite(clat) || !isFinite(clng)) return Infinity;
-      return haversineKmJs(lat, lng, clat, clng);
-    });
-    cards.forEach(c => {
-      const el = c.querySelector('.place-dist');
-      if (!el) return;
-      const clat = parseFloat(c.dataset.lat), clng = parseFloat(c.dataset.lng);
-      if (!isFinite(clat) || !isFinite(clng)) { el.hidden = true; return; }
-      const km = haversineKmJs(lat, lng, clat, clng);
-      el.textContent = km < 10 ? km.toFixed(1).replace('.', ',') + ' km' : Math.round(km) + ' km';
-      el.hidden = false;
-    });
-  }
-
-  // Řazení jen podle země (když nemáme přesné souřadnice uživatele) — místa
-  // z jeho země půjdou na začátek, pořadí uvnitř zůstane jako v CSV. Bez
-  // přesného bodu vzdálenost neznáme, takže badge schováme.
-  function sortByCountryFirst(countryName) {
-    resortCardsByScore(c => (c.dataset.country === countryName ? 0 : 1));
-    cards.forEach(c => { const el = c.querySelector('.place-dist'); if (el) el.hidden = true; });
-  }
-
-  // Anglický název země z IP geolokace → český název tak, jak je uložen ve
-  // sloupci "krajina" v Google Sheets (uprav/doplň dle skutečných hodnot).
-  const COUNTRY_NAME_MAP = {
-    'czechia': 'Česko', 'czech republic': 'Česko',
-    'slovakia': 'Slovensko',
-    'austria': 'Rakousko',
-    'poland': 'Polsko',
-    'germany': 'Německo',
-    'hungary': 'Maďarsko',
-  };
-
-  async function autoSortByIp() {
-    try {
-      const r = await fetch('https://ipapi.co/json/');
-      if (!r.ok) throw new Error('ip lookup failed');
-      const d = await r.json();
-      if (d && isFinite(d.latitude) && isFinite(d.longitude)) {
-        sortByPoint(d.latitude, d.longitude);
-        sortNote.textContent = '📍 Řazeno podle vaší polohy (dle IP adresy)';
-        return;
-      }
-      const mapped = d && d.country_name ? COUNTRY_NAME_MAP[String(d.country_name).toLowerCase()] : null;
-      if (mapped) {
-        sortByCountryFirst(mapped);
-        sortNote.textContent = '📍 Nejprve místa z vaší země (' + mapped + ')';
-        return;
-      }
-      sortNote.textContent = '';
-    } catch (e) {
-      sortNote.textContent = ''; // IP geolokace není dostupná — ponecháme výchozí pořadí
-    }
-  }
-
-  // Pokud už má stránka udělené GPS oprávnění z dřívějška, použijeme rovnou
-  // přesnou polohu (bez nového vyskakovacího okna); jinak zkusíme IP.
-  if (navigator.permissions && navigator.permissions.query) {
-    navigator.permissions.query({ name: 'geolocation' }).then(status => {
-      if (status.state === 'granted') {
-        navigator.geolocation.getCurrentPosition(
-          pos => { sortByPoint(pos.coords.latitude, pos.coords.longitude); sortNote.textContent = '📍 Řazeno podle vaší GPS polohy'; },
-          () => autoSortByIp()
-        );
-      } else {
-        autoSortByIp();
-      }
-    }).catch(autoSortByIp);
-  } else {
-    autoSortByIp();
-  }
-
-  // ── Modální okno: ručně zadaná adresa / GPS ──────────────────────
-  const sortBackdrop = document.getElementById('sort-modal-backdrop');
-  const sortInput = document.getElementById('sort-address-input');
-  const sortErr = document.getElementById('sort-address-error');
-  document.getElementById('btn-sort-address').addEventListener('click', () => {
-    sortBackdrop.classList.add('open');
-    sortInput.focus();
-  });
-  document.getElementById('sort-modal-close').addEventListener('click', () => sortBackdrop.classList.remove('open'));
-  sortBackdrop.addEventListener('click', e => { if (e.target === sortBackdrop) sortBackdrop.classList.remove('open'); });
-
-  document.getElementById('sort-gps-go').addEventListener('click', () => {
-    sortErr.style.display = 'none';
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        sortByPoint(pos.coords.latitude, pos.coords.longitude);
-        sortNote.textContent = '📍 Řazeno podle vaší GPS polohy';
-        sortBackdrop.classList.remove('open');
-      },
-      () => { sortErr.textContent = 'GPS polohu se nepodařilo získat.'; sortErr.style.display = 'block'; }
-    );
-  });
-
-  async function goAddressSearch() {
-    const q = sortInput.value.trim();
-    sortErr.style.display = 'none';
-    if (!q) return;
-    try {
-      const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
-      const d = await r.json();
-      if (!d || !d.length) { sortErr.textContent = 'Adresu se nepodařilo najít.'; sortErr.style.display = 'block'; return; }
-      sortByPoint(parseFloat(d[0].lat), parseFloat(d[0].lon));
-      sortNote.textContent = '📍 Řazeno od adresy: ' + q;
-      sortBackdrop.classList.remove('open');
-    } catch (e) {
-      sortErr.textContent = 'Vyhledávání adresy selhalo, zkuste to prosím znovu.';
-      sortErr.style.display = 'block';
-    }
-  }
-  document.getElementById('sort-address-go').addEventListener('click', goAddressSearch);
-  sortInput.addEventListener('keydown', e => { if (e.key === 'Enter') goAddressSearch(); });
-</script>
+<script src="${SITE_URL}/assets/places-list.js" data-batch="${PAGE_BATCH}" defer></script>
 </body>
 </html>`;
 }
