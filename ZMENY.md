@@ -1,39 +1,34 @@
-# Zmeny, piate kolo (kontrola pred testovacou prevádzkou)
+# Zmeny, šieste kolo
 
 Súbory majú rovnakú štruktúru ako repozitár. Skopírujte ich na pôvodné miesta a prepíšte.
 
-## Nasadenie
-1. Nahrajte súbory do repozitára a nasaďte worker (zmenené sú `index.js`, `cron.js`, `regions.js`, `badges.js`, `seed.js`, nový `sanitize.js`, `routes/auth.js`, `routes/profile.js`).
-2. Voliteľne spustite v D1 konzole `vandro-worker/sql/migration_categories.sql`. Presunie staré kategórie podnikov do nových. Staré hodnoty zostávajú platné aj bez toho.
-3. Po nasadení raz obnovte stránku cez Ctrl+F5 (service worker v8, súbory v12).
+## Nasadenie (poradie je dôležité)
+1. V Cloudflare D1 konzole spustite `vandro-worker/sql/migration_trips.sql` (nové tabuľky `trip_posts` a `trip_post_media`).
+2. Voliteľne spustite `vandro-worker/sql/migration_categories.sql` (presunie staré kategórie do nových, staré hodnoty fungujú aj bez toho).
+3. Nasaďte worker (nový `routes/trips.js`, zmenené `index.js`, `erase.js`, `regions.js`, `routes/auth.js`, `routes/auth-google.js`, `routes/profile.js`).
+4. Nahrajte zvyšné súbory. Workflow "Build place pages" sa po pushi spustí a znova vygeneruje stránky `misto/...`. Kým nebeží, majú staré stránky miest inline skripty a pri novej CSP sa im nenačíta mapka.
+5. Po nasadení raz obnovte stránku cez Ctrl+F5 (service worker v10, súbory v13).
 
-## Kategórie
-- Zoznamy z vášho zadania sú v registrácii, pri pridaní podniku, vo filtroch a v prekladoch (čeština, slovenčina, angličtina). Organizácie 48, ubytovanie 21, gastro 25 kategórií plus "Iné".
-- Kategórie sú v jednom zdroji (`regions.js`), klient ich načíta z `/api/meta/types`. Server hodnotu pri registrácii a pridaní podniku teraz kontroluje, predtým prijímal čokoľvek.
-- V zozname ste mali "Horská hotely" a "Horská chaty", opravil som na "Horské hotely" a "Horské chaty".
-- Kategórie miest na mape a v stránkach `misto/...` pochádzajú z Google Sheets a tieto zoznamy sa ich netýkajú.
-
-## Nastavenia
-Sekcia Účet je navrchu. Súkromie je spojené s Dáta a súkromie (GDPR) do jednej sekcie.
-
-## Zabezpečenie
-- Opravené uložené XSS. Meno používateľa sa vkladalo do hlavičky profilu bez escapovania. Hlavička teraz vždy escapuje názov.
-- Pole web v profile a podniku prijímalo aj adresy typu `javascript:`. Server teraz povoľuje len http(s), klient odkazy filtruje a pridané sú limity dĺžky a kontrola telefónu.
-- Server pri každom prihlásenom požiadavku overuje stav a rolu účtu (zo 4. kola) a pribudli limity požiadaviek na zápisy do profilu, zoznamov miest a push.
-- Skript Google na prihlásenie sa načíta až pri zobrazení prihlásenia, nie pri každej návšteve webu.
-- Retenčná úloha v cron (04:00) maže históriu prihlásení staršiu ako 12 mesiacov, overovacie dokumenty 90 dní po rozhodnutí a prešlé tokeny. Presne to uvádzajú zásady ochrany údajov.
-
-## Zákonné náležitosti
-- Minimálny vek je 16 rokov v zásadách, podmienkach, registrácii aj na serveri. Prevádzkovateľ je na Slovensku, kde je vek digitálneho súhlasu 16 rokov.
-- Stránka `imprint.html` bola kópiou hlavnej aplikácie bez údajov. Je nahradená skutočnou stránkou s prevádzkovateľom, adresou, e-mailom a kontaktným bodom podľa DSA (údaje sú tie, ktoré už uvádzajú obchodné podmienky).
-- Zo zásad som odstránil poznámku "vzorový text" a upravil text o uchovávaní. Po zmazaní účtu sa údaje teraz odstránia okamžite, v zálohách databázy môžu zostať najviac 30 dní.
-
-## Čo musíte posúdiť alebo doplniť sami
-- Ak platformu prevádzkujete ako podnikateľ (živnosť, s. r. o.), doplňte do tiráže a zásad obchodné meno, IČO a zápis v registri. Teraz je uvedená fyzická osoba bez IČO.
-- Kontaktný bod podľa DSA by mal uvádzať aj jazyky komunikácie. Neviem, v akých jazykoch odpovedáte, preto som ich neuviedol.
-- CSP v `_headers` stále povoľuje `unsafe-inline` a `unsafe-eval` v skriptoch. Je to slabšia ochrana proti XSS a zmena by znamenala prepísať inline skripty.
-- Právnu správnosť zásad a podmienok som neposudzoval ako právnik. Doporučujem krátku kontrolu právnikom pred ostrým spustením.
-- `vandro-worker/sql/schema.sql` nezodpovedá produkčnej databáze (chýba napríklad stĺpec `country_code` v `users`). Neovplyvňuje to beh, ale schému treba pri budúcej obnove databázy doplniť.
+## Čo je nové
+- Kategórie: skrátené názvy bez zátvoriek, vyradená kategória Letecká doprava a charterové lety (staré záznamy sa presunú do "Iné"). Najdlhší názov má 31 znakov.
+- FAQ je v nastaveniach v novej sekcii Pomoc.
+- Uložené miesta na mape sú rozdelené podľa typu (Vandro miesta, Gastro, Ubytovanie, Organizácie) s filtrom. "Chcem navštíviť" je prepojené s mapou, zobrazuje sa tam a na mape sa otvára tlačidlom v zozname.
+- Prihlásenie platí 30 dní a obnovuje sa pri používaní. Vypršané prihlásenie sa teraz oznámi a používateľ sa odhlási, namiesto tichých chýb.
+- Offline feedy: každý feed aj akcie ukladajú posledných 30 príspevkov, ukážu sa hneď po otvorení a fungujú bez pripojenia s upozornením. Obrázky z R2 cachuje service worker. Po odhlásení sa uložené feedy zmažú.
+- Cestovateľský feed na profile ("Výlety"): max. 3 fotky, dátum, krátky popis (300 znakov), poloha cez vyhľadávač alebo výber na mape, zobrazuje sa len na profile autora, nikde inde. Sledujúci dostanú upozornenie a push. Výlety sa vymažú pri zmazaní účtu a sú v exporte údajov.
+- CSP: zo `script-src` je odstránené `unsafe-inline` aj `unsafe-eval`. Inline skripty sú v súboroch `boot.js`, `place-page.js`, `places-list.js`. Inline obsluhu udalostí v kóde mapy (110 miest) preberá `csp-handlers.js`, ktorý nespúšťa ľubovoľný kód, len jednoduché volania funkcií. Aplikácia, mapa so všetkými knižnicami, export PDF aj stránky miest bežali v teste bez jediného porušenia CSP.
+- Zoznam miest už neposiela IP adresu návštevníka službe ipapi.co. Krajina sa odhadne lokálne z časovej zóny a jazyka.
+- Texty (registrácia, onboarding, prázdne stavy, úvodná stránka) sú uvoľnenejšie a menej úradné.
+- Plynulejší scroll bočnej lišty na mape na počítači (preventívne opravy, pozri nižšie).
 
 ## Čo nebolo vyskúšané
-Testy bežali v Chromiu s mockovaným API a proti SQLite databáze. Neoverený je reálny Cloudflare, e-maily, Google prihlásenie, push a skutočné telefóny.
+- Scroll bočnej lišty som v testovacom prostredí bez grafickej karty nedokázal odmerať. Odstránil som typické príčiny (rozostrenie pozadia nad mapou, nekonečné animácie počas scrollu, izolácia vrstiev), ale či to stačí, ukáže až skutočný počítač.
+- Prihlásenie do mapy: v kóde mapy samostatné prihlásenie neexistuje. Pravdepodobná príčina je vypršaný token po 7 dňoch, preto je prihlásenie teraz 30 dní s obnovou a jasnou správou pri vypršaní. Reálne správanie treba overiť u vás.
+- Offline cache obrázkov cez service worker funguje v prehliadači. V natívnej aplikácii (Google Play, App Store) závisí od obalu aplikácie. Uložené príspevky (texty) fungujú všade, lebo sa ukladajú do úložiska aplikácie.
+- Reálne API a Cloudflare, e-maily, push a skutočné telefóny. Testy bežali v Chromiu s mockovaným API a proti SQLite.
+
+## CSP, čo zostáva
+`style-src` stále povoľuje `unsafe-inline`, lebo aplikácia používa inline štýly vo veľkom rozsahu. Skripty (hlavná ochrana proti XSS) sú už striktné. Ak niekedy pribudne nový inline skript alebo `onclick` v stránke mimo mapy, CSP ho zablokuje.
+
+## Poznámky k vývoju
+- V priebehu práce sa prostredie obnovilo a prišiel som o priebežnú kópiu. Všetko som zopakoval a znova otestoval, preto sú testy v tomto zipe čerstvé.

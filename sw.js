@@ -2,10 +2,14 @@
 // SERVICE WORKER — PWA + Push notifikácie
 // ============================================================
 
-const CACHE_NAME = 'vandro-v8';
+const CACHE_NAME = 'vandro-v10';
 // Offline mapa: dlaždice stažených oblastí ukládá aplikace do 'vandro-tiles-v1' — tuto cache nikdy nemažeme
 const TILE_CACHE = 'vandro-tiles-v1';
 const TILE_HOSTS = ['tiles.openfreemap.org', 'tiles.opensnowmap.org', 'server.arcgisonline.com'];
+// Obrázky příspěvků (R2 / CDN): cache-first, aby feedy fungovaly i offline. Cache má omezený počet položek.
+const IMG_CACHE = 'vandro-img-v1';
+const IMG_HOSTS = ['media.vandro.cz', 'cdn.vandro.cz'];
+const IMG_MAX_ENTRIES = 300;
 const PRECACHE = [
   '/',
   '/index.html',
@@ -26,7 +30,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== TILE_CACHE).map((k) => caches.delete(k)));
+      await Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== TILE_CACHE && k !== IMG_CACHE).map((k) => caches.delete(k)));
       await self.clients.claim();
     })(),
   );
@@ -47,6 +51,29 @@ self.addEventListener('fetch', (event) => {
         try { return await fetch(req); } catch (e) { return Response.error(); }
       }),
     );
+    return;
+  }
+
+  // Obrázky z R2/CDN
+  if (IMG_HOSTS.includes(url.hostname) && (req.destination === 'image' || /\.(png|jpe?g|webp|gif|avif)$/i.test(url.pathname))) {
+    event.respondWith((async () => {
+      const cache = await caches.open(IMG_CACHE);
+      const cached = await cache.match(req.url);
+      if (cached) return cached;
+      try {
+        // CORS požadavek → odpověď půjde uložit bez velké "opaque" režie; když server CORS nepovolí, vrátíme obrázek bez ukládání
+        let res;
+        try { res = await fetch(new Request(req.url, { mode: 'cors', credentials: 'omit' })); }
+        catch { return await fetch(req); }
+        if (res && res.ok) {
+          cache.put(req.url, res.clone()).then(async () => {
+            const keys = await cache.keys();
+            if (keys.length > IMG_MAX_ENTRIES) await Promise.all(keys.slice(0, keys.length - IMG_MAX_ENTRIES).map((k) => cache.delete(k)));
+          }).catch(() => {});
+        }
+        return res;
+      } catch { return Response.error(); }
+    })());
     return;
   }
 
