@@ -21,31 +21,9 @@
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://vandro.cz/assets/vmap-icons.js"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      try {
-        const mm = new maplibregl.Map({
-          container: 'minimap', style: 'https://vandro.cz/assets/map-style.json',
-          center: [17.87, 48.82116], zoom: 12.5, attributionControl: true,
-        });
-        mm.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-        // značka stejná jako na hlavní mapě: zelený kruh, bílý okraj a ikona kategorie
-        const el = document.createElement('div');
-        el.className = 'place-marker';
-        const glyph = (window.vmGlyphFor ? window.vmGlyphFor("Sakrální památky") : 'pin');
-        el.innerHTML = window.vmIconSvg ? window.vmIconSvg(glyph, { size: '19px', stroke: 2.1 }) : '';
-        el.title = "Románsky kostolík v Haluziciach";
-        new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([17.87, 48.82116]).addTo(mm);
-      } catch (e) { console.warn('Minimapa se nenačetla:', e); }
-    });
-  </script>
 <link href="https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    if (typeof GLightbox !== 'undefined') GLightbox({ selector: '.glightbox' });
-  });
-</script>
+<script src="https://vandro.cz/assets/place-page.js" defer></script>
 <style>
 
   :root { --primary: #2b8a3e; --primary-dark: #226f31; }
@@ -162,7 +140,7 @@
 <body>
 <div class="site-header">
     <a class="site-name" href="https://vandro.cz/">
-      <img src="https://cdn.vandro.cz/Untitled18_20260523111243.png" alt="Vandro" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'🧭 Vandro',style:'font-size:20px;font-weight:800'}))">
+      <img src="https://cdn.vandro.cz/Untitled18_20260523111243.png" alt="Vandro" data-logo-fallback>
     </a>
     <nav class="site-nav">
       <a href="https://vandro.cz/mista/">Všechna místa</a>
@@ -245,7 +223,7 @@
     </div></div>
       <div class="blk-poloha">
         <h2 class="section-title">Poloha</h2>
-        <div id="minimap"></div>
+        <div id="minimap" data-lat="48.82116" data-lng="17.87" data-title="Románsky kostolík v Haluziciach" data-glyph="Sakrální památky"></div>
       </div>
     </div>
   </div>
