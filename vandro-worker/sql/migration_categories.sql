@@ -40,3 +40,6 @@ UPDATE restaurants SET type = CASE type
     WHEN 'food_truck' THEN 'food_trucky'
   ELSE type END
 WHERE type IN ('restaurace', 'kavarna', 'hospoda', 'pivovar', 'bistro', 'cukrarna', 'vinarna', 'food_truck');
+
+-- Vyřazená kategorie (Letecká doprava a charterové lety) → Jiné
+UPDATE organizations SET type = 'jine' WHERE type = 'letecka_doprava_a_charterove_lety';
