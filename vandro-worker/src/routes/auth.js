@@ -6,6 +6,9 @@ import { sendPasswordResetEmail, sendVerificationEmail } from '../email.js';
 import { verifyTotp, generateSecret, otpauthUri, generateRecoveryCodes } from '../totp.js';
 import { rateLimit, clientIp, userAgent } from '../ratelimit.js';
 
+// Přihlášení platí 30 dní a při používání aplikace se obnovuje (POST /api/auth/refresh)
+export const TOKEN_TTL_SEC = 60 * 60 * 24 * 30;
+
 export const authRoutes = new Hono();
 
 const VALID_ROLES = ['user', 'organization', 'hotelier'];
@@ -283,7 +286,7 @@ authRoutes.post('/login', async (c) => {
   await updateLastLogin(c.env, user.id, ip);
 
   const token = await sign(
-    { sub: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 },
+    { sub: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC },
     c.env.JWT_SECRET, 'HS256',
   );
 
@@ -375,7 +378,7 @@ authRoutes.post('/verify-2fa', async (c) => {
   await updateLastLogin(c.env, user.id, ip);
 
   const token = await sign(
-    { sub: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 },
+    { sub: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC },
     c.env.JWT_SECRET, 'HS256',
   );
 

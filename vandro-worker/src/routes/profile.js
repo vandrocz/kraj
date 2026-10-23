@@ -528,6 +528,7 @@ profileRoutes.get('/me/export', async (c) => {
     try { extra[key] = (await c.env.DB.prepare(sql).bind(...binds).all()).results || []; }
     catch { extra[key] = []; }
   };
+  await grab('trips', `SELECT id, caption, trip_date, place_name, lat, lng, created_at FROM trip_posts WHERE user_id = ?`, user.sub);
   await grab('map_lists', `SELECT data, updated_at FROM map_lists WHERE user_id = ?`, user.sub);
   await grab('bookmarks', `SELECT post_id, created_at FROM bookmarks WHERE user_id = ?`, user.sub);
   await grab('wishlist', `SELECT * FROM wishlist WHERE user_id = ?`, user.sub);

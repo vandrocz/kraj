@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { sign } from 'hono/jwt';
 import { newId, publicUser, generateUniqueHandle } from '../auth.js';
 import { rateLimit, clientIp } from '../ratelimit.js';
+import { TOKEN_TTL_SEC } from './auth.js';
 
 export const authGoogleRoutes = new Hono();
 
@@ -132,7 +133,7 @@ authGoogleRoutes.post('/google', async (c) => {
   ).bind(ip, user.id).run();
 
   const token = await sign(
-    { sub: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 },
+    { sub: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC },
     c.env.JWT_SECRET, 'HS256',
   );
 
