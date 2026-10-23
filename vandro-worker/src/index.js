@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
+import { tripsPublicRoutes, tripsRoutes } from './routes/trips.js';
+import { TOKEN_TTL_SEC } from './routes/auth.js';
 import { cors } from 'hono/cors';
-import { verify } from 'hono/jwt';
+import { verify, sign } from 'hono/jwt';
 import { authRoutes } from './routes/auth.js';
 import { bannersPublicRoutes, bannersAdminRoutes } from './routes/banners.js';
 import { authGoogleRoutes } from './routes/auth-google.js';
@@ -104,6 +106,18 @@ app.use('/api/feed/:id/view', async (c, next) => {
 });
 
 // Wallet
+// Obnovení přihlášení: za platný token vydá nový s plnou platností (klient volá při spuštění aplikace)
+app.post('/api/auth/refresh', requireAuth, async (c) => {
+  const u = c.get('user');
+  const row = await c.env.DB.prepare(`SELECT id, email, role FROM users WHERE id = ?`).bind(u.sub).first();
+  if (!row) return c.json({ error: 'Účet neexistuje.' }, 401);
+  const token = await sign(
+    { sub: row.id, email: row.email, role: row.role, exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC },
+    c.env.JWT_SECRET, 'HS256',
+  );
+  return c.json({ token });
+});
+
 app.get('/api/user/wallet', requireAuth, async (c) => {
   const user = c.get('user');
   const row = await c.env.DB.prepare('SELECT credit_balance, status FROM users WHERE id = ?').bind(user.sub).first();
@@ -181,6 +195,12 @@ app.route('/api/wishlist', wishlistRoutes);
 // Nearby
 app.route('/api/nearby', nearbyRoutes);
 app.route('/api/map', mapRoutes);
+
+// Cestovatelský feed na profilu: čtení je veřejné, zápis vyžaduje přihlášení
+app.route('/api/trips', tripsPublicRoutes);
+app.use('/api/trips', requireAuth);
+app.use('/api/trips/*', requireAuth);
+app.route('/api/trips', tripsRoutes);
 
 // Osobní seznamy míst z mapy (vyžaduje přihlášení)
 app.use('/api/map-lists/*', requireAuth);

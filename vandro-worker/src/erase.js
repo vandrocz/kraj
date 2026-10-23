@@ -92,6 +92,18 @@ export async function purgePost(env, postId, { dropRow = false } = {}) {
 }
 
 // ------------------------------------------------------------
+// Výlet z profilu: řádek, fotky v R2 a upozornění na něj
+// ------------------------------------------------------------
+export async function purgeTrip(env, tripId) {
+  const media = await all(env, `SELECT image_url FROM trip_post_media WHERE trip_id = ?`, tripId);
+  await run(env, `DELETE FROM trip_post_media WHERE trip_id = ?`, tripId);
+  await run(env, `DELETE FROM notifications WHERE entity_type = 'trip' AND entity_id = ?`, tripId);
+  await run(env, `DELETE FROM trip_posts WHERE id = ?`, tripId);
+  await deleteMediaUrls(env, media.map((m) => m.image_url));
+  return { ok: true };
+}
+
+// ------------------------------------------------------------
 // Podnik (organizace / ubytování / gastro) se vším, co k němu patří
 // ------------------------------------------------------------
 export async function deleteBusinessCascade(env, table, id) {
@@ -156,6 +168,9 @@ export async function eraseUser(env, userId) {
   for (const p of await all(env, `SELECT id FROM posts WHERE user_id = ?`, userId)) {
     await purgePost(env, p.id, { dropRow: true });
   }
+
+  // 2b) jeho výlety (cestovatelský feed)
+  for (const tr of await all(env, `SELECT id FROM trip_posts WHERE user_id = ?`, userId)) await purgeTrip(env, tr.id);
 
   // 3) jeho komentáře (odpovědi jiných lidí se odpojí, ne smažou)
   await run(env, `UPDATE comments SET parent_id = NULL WHERE parent_id IN (SELECT id FROM comments WHERE user_id = ?)`, userId);
