@@ -27,14 +27,14 @@ async function toggleWishlist(kind, id, btnEl) {
 
 function renderWishlistOverlay() {
   const list = state._wishlist;
+  // Rozdělení podle typu (stejně jako v uložených místech na mapě): Gastro, Ubytování, Organizace
+  const GROUPS = [
+    ['restaurants', t('search.typeGastro')],
+    ['accommodation', t('search.typeAcc')],
+    ['organizations', t('search.typeOrg')],
+  ];
   const grouped = {};
-  if (list) {
-    for (const w of list) {
-      const region = w.region || t('wishlist.elsewhere');
-      if (!grouped[region]) grouped[region] = [];
-      grouped[region].push(w);
-    }
-  }
+  if (list) for (const w of list) (grouped[w.business_kind] = grouped[w.business_kind] || []).push(w);
 
   return `
     <div class="page-scroll">
@@ -42,19 +42,30 @@ function renderWishlistOverlay() {
       <div class="profile-section">
         ${list == null ? `<p class="empty-state">${escapeHtml(t('common.loading'))}</p>`
           : list.length === 0 ? `<p class="empty-state">${escapeHtml(t('wishlist.empty'))}</p>`
-          : Object.entries(grouped).map(([region, items]) => `
-            <h3 class="profile-section-title" style="margin-top:20px">${escapeHtml(region)}</h3>
-            ${items.map((w) => `
-              <button class="user-list-item" data-action="open-profile" data-kind="${w.business_kind}" data-id="${w.business_id}">
-                ${w.business_image ? `<img src="${w.business_image}" class="user-list-avatar" style="border-radius:12px" alt="" />`
-                  : `<span class="user-list-avatar user-list-avatar-init">${(w.business_name || '?').charAt(0).toUpperCase()}</span>`}
+          : `
+            <button class="settings-row" data-action="wishlist-open-map" style="margin-bottom:6px">
+              ${icon('mapPin', { size: 17 })} ${escapeHtml(t('wishlist.showOnMap'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}
+            </button>
+            ${GROUPS.filter(([k]) => grouped[k]).map(([k, label]) => `
+            <h3 class="profile-section-title" style="margin-top:20px">${escapeHtml(label)}</h3>
+            ${grouped[k].map((w) => `
+              <button class="user-list-item" data-action="open-profile" data-kind="${escapeAttr(w.business_kind)}" data-id="${escapeAttr(w.business_id)}">
+                ${w.business_image ? `<img src="${escapeAttr(w.business_image)}" class="user-list-avatar" style="border-radius:12px" alt="" />`
+                  : `<span class="user-list-avatar user-list-avatar-init">${escapeHtml((w.business_name || '?').charAt(0).toUpperCase())}</span>`}
                 <div style="flex:1;min-width:0">
                   <p class="user-list-name">${escapeHtml(w.business_name || '')}</p>
-                  <p class="user-list-meta">${w.city ? `${escapeHtml(w.city)} · ` : ''}${w.business_kind === 'organizations' ? t('search.typeOrg') : w.business_kind === 'accommodation' ? t('search.typeAcc') : t('search.typeGastro')}</p>
+                  <p class="user-list-meta">${escapeHtml([w.city, w.region].filter(Boolean).join(' · '))}</p>
                 </div>
                 ${icon('chevronRight', { size: 16 })}
               </button>`).join('')}
-          `).join('')}
+          `).join('')}`}
       </div>
     </div>`;
+}
+
+// Otevře záložku Mapa přímo na panelu „Moje seznamy míst“ (kde je „Chci navštívit“ také)
+function wishlistOpenMap() {
+  window._vmapOpenSavedOnShow = true;
+  state.overlay = null; state.overlayStack = [];
+  switchTab('map');
 }

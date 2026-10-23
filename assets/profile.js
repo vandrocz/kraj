@@ -57,6 +57,7 @@ function renderProfileOverlay() {
 }
 
 function renderUserProfile(data, id) {
+  if (!state._trips || state._trips[id] === undefined) { state._trips = state._trips || {}; state._trips[id] = { items: null, next: null, loading: false }; setTimeout(() => loadUserTrips(id), 0); }
   const p = data.profile;
   const isOwn = isLoggedIn() && state.user.id === id;
   const initial = (p.display_name || '?').charAt(0).toUpperCase();
@@ -152,6 +153,8 @@ function renderUserProfile(data, id) {
           ` : '')}
         </div>
       </div>
+
+      ${renderTripsSection(id, isOwn)}
 
       ${infoRows.length > 0 ? `
         <div class="profile-section">
@@ -836,6 +839,11 @@ function renderSettingsOverlay() {
 </div>
 
         <div class="profile-section">
+        <h3 class="profile-section-title">${escapeHtml(t('settings.help'))}</h3>
+        <a class="settings-row" href="/faq.html" target="_blank" rel="noopener">${icon('help', { size: 17 })} ${escapeHtml(t('settings.faq'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
+      </div>
+
+        <div class="profile-section">
           <button class="settings-row" data-action="logout" style="color:#B3273C">${icon('logout', { size: 17 })} ${escapeHtml(t('settings.logout'))}</button>
         </div>
       ` : `
@@ -861,6 +869,11 @@ function renderSettingsOverlay() {
           <p class="form-hint" style="text-align:center;padding:12px;">${escapeHtml(t('settings.publicSettingsNote'))}</p>
           <button class="settings-row" data-action="set-tab" data-tab="account" style="justify-content:center">${icon('user', { size: 17 })} ${escapeHtml(t('auth.loginTab'))}</button>
         </div>
+
+        <div class="profile-section">
+        <h3 class="profile-section-title">${escapeHtml(t('settings.help'))}</h3>
+        <a class="settings-row" href="/faq.html" target="_blank" rel="noopener">${icon('help', { size: 17 })} ${escapeHtml(t('settings.faq'))} ${icon('chevronRight', { size: 16, className: 'settings-chevron' })}</a>
+      </div>
       `}
     </div>`;
 }
@@ -1081,7 +1094,7 @@ function renderNotificationsOverlay() {
     const key = {
       like: 'notifications.like', comment: 'notifications.comment', reply: 'notifications.reply',
       follow: 'notifications.follow', mention: 'notifications.mention', dm: 'notifications.dm',
-      story_reply: 'notifications.storyReply', story_like: 'notifications.storyLike',
+      story_reply: 'notifications.storyReply', story_like: 'notifications.storyLike', trip_post: 'notifications.tripPost',
       verification_approved: 'notifications.verificationApproved', verification_rejected: 'notifications.verificationRejected',
     }[n.type];
     return key ? t(key) : (n.text || '');
@@ -1095,7 +1108,7 @@ function renderNotificationsOverlay() {
           : list.length === 0 ? `<p class="empty-state">${escapeHtml(t('notifications.empty'))}</p>`
           : list.map((n) => `
             <div class="notif-item ${n.read_at ? '' : 'is-unread'}" data-action="open-notification" data-notif-id="${n.id}" role="button" tabindex="0" style="cursor:pointer">
-              ${n.actor_avatar ? `<img class="user-list-avatar" src="${n.actor_avatar}" alt="" />`
+              ${n.actor_avatar ? `<img class="user-list-avatar" src="${escapeAttr(n.actor_avatar)}" alt="" />`
                 : `<span class="user-list-avatar user-list-avatar-init">${(n.actor_name || '?').charAt(0).toUpperCase()}</span>`}
               <div style="flex:1;min-width:0">
                 <p class="notif-text"><strong>${escapeHtml(n.actor_name || t('common.unknown'))}</strong> ${escapeHtml(notifText(n))}</p>

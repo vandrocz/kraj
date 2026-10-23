@@ -16,14 +16,24 @@ async function loadEvents(loadMore = false) {
     if (e.when) params.set('when', e.when);
     if (e.search) params.set('search', e.search);
     if (loadMore && e.next_cursor) params.set('cursor', e.next_cursor);
+    params.set('limit', '30');
+
+    const cacheable = !e.region && !e.kind && !e.search && (!e.when || e.when === 'upcoming');
+    if (!loadMore && cacheable && e.items.length === 0) {
+      const cached = readFeedCache('events');
+      if (cached) { e.items = cached.items; e.next_cursor = cached.next_cursor || null; if (state.tab === 'events') renderApp(); }
+    }
 
     const data = await apiGet(`/api/events?${params.toString()}`);
     if (loadMore) e.items = [...e.items, ...(data.events || [])];
     else e.items = data.events || [];
     e.next_cursor = data.next_cursor || null;
+    e._offline = false;
+    if (!loadMore && cacheable) writeFeedCache('events', e.items, e.next_cursor);
   } catch (err) {
     console.error('Events load failed:', err);
-    showToast(t('errors.loadFailed'));
+    if (e.items.length > 0 && (!navigator.onLine || err.status === 0 || err.status === undefined)) e._offline = true;
+    else showToast(t('errors.loadFailed'));
   } finally {
     state.loading.events = false;
     e.loading_more = false;

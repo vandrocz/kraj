@@ -124,6 +124,19 @@
       }
       case 'close-lightbox': closeLightbox(); break;
       case 'lightbox-prev': lightboxPrev(); break;
+      case 'wishlist-open-map': wishlistOpenMap(); break;
+      case 'trip-new': openTripNew(); break;
+      case 'trip-delete': tripDelete(el.dataset.id); break;
+      case 'trip-open-photo': openLightbox((el.dataset.urls || '').split('|'), +el.dataset.idx || 0, el.dataset.caption || ''); break;
+      case 'trip-open-map': tripOpenOnMap(el.dataset.lat, el.dataset.lng); break;
+      case 'trips-more': loadUserTrips(el.dataset.id, true); break;
+      case 'trip-pick-photos': { const f = document.getElementById('trip-file'); if (f) f.click(); break; }
+      case 'trip-remove-photo': tripRemovePhoto(+el.dataset.idx); break;
+      case 'trip-choose-place': tripChoosePlace(+el.dataset.i); break;
+      case 'trip-clear-place': state._tripDraft.place = null; renderApp(); break;
+      case 'trip-pick-on-map': tripPickOnMap(); break;
+      case 'trip-use-gps': tripUseGps(); break;
+      case 'trip-submit': tripSubmit(); break;
       case 'lightbox-toggle-comments': cycleLightboxPanelState(); break;
       case 'thread-menu': toggleThreadMenu(); break;
       case 'thread-block': threadBlockUser(); break;

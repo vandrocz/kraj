@@ -1610,6 +1610,7 @@ window.vmBmSync = async function (force) {
 };
 
 window._bmGoLogin = () => { try { if (typeof switchTab === 'function') switchTab('account'); } catch {} };
+document.addEventListener('click', (e) => { const a = e.target.closest && e.target.closest('[data-bm-login]'); if (a) { e.preventDefault(); window._bmGoLogin(); } });
 
 // ── Přenos uložených míst mezi zařízeními ────────────────────────
 // Seznamy přihlášeného uživatele se synchronizují s účtem (viz vmBmSync).
@@ -1825,7 +1826,7 @@ window._bmPickerToggleList = (lat, lng, listId, checked) => {
   if (!list) return;
   const place = window._bmCurrentPickerPlace || _bmResolvePlace(lat, lng);
   const idx = list.items.findIndex(i => Math.abs(i.lat - lat) < 0.0001 && Math.abs(i.lng - lng) < 0.0001);
-  if (checked && idx < 0) list.items.unshift({ lat:+lat, lng:+lng, nazov:place.nazov||place.name||'Místo', kategoria:place.kategoria||'', podkategoria:place.podkategoria||'', foto_main:place.foto_main||'', osm_type: place.osm_type||'', wikidata: place.wikidata||'', wikipedia: place.wikipedia||'' });
+  if (checked && idx < 0) list.items.unshift({ lat:+lat, lng:+lng, typ:_bmTypeOf(place), nazov:place.nazov||place.name||'Místo', kategoria:place.kategoria||'', podkategoria:place.podkategoria||'', foto_main:place.foto_main||'', osm_type: place.osm_type||'', wikidata: place.wikidata||'', wikipedia: place.wikipedia||'' });
   if (!checked && idx >= 0) list.items.splice(idx, 1);
   _bmSave(d);
   _refreshPlacesLayer();
@@ -1844,56 +1845,150 @@ window._bmInlineNewList = (lat, lng) => {
   if (box) box.innerHTML = _bmRenderPickerContent(lat, lng);
 };
 
+// ── Uložená místa se dělí podle typu: Vandro místa, Gastro, Ubytování, Organizace ──
+const BM_TYPES = [['vandro', 'Vandro místa'], ['gastro', 'Gastro'], ['ubytovani', 'Ubytování'], ['organizace', 'Organizace']];
+let _bmTypeFilter = 'all';
+function _bmTypeOf(item) {
+  if (item && item.typ) return item.typ;
+  const k = ((item && item.kategoria) || '') + ' ' + ((item && item.podkategoria) || '');
+  if (/gastro|restaur|reštaur|kav[aá]rn|kaviarn|bist|pivn|pivár|vin[aá]rn|cukr[aá]rn|čajov/i.test(k)) return 'gastro';
+  if (/ubytov|hotel|penzi|chat[aay]|chalup|kemp|apart|hostel|glamp/i.test(k)) return 'ubytovani';
+  if (/organiz|asoci|infocentr|kancel|agent[uú]r/i.test(k)) return 'organizace';
+  return 'vandro';
+}
+function _bmEsc(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
+
+// „Chci navštívit“ (podniky z profilů) je propojené se seznamy míst: zobrazí se tu stejně jako uložená místa
+window._wishCache = null;
+let _wishLoadedAt = 0;
+async function _wishLoad() {
+  if (!_bmUserId()) { window._wishCache = []; _wishLoadedAt = Date.now(); return; }
+  try {
+    const r = await apiGet('/api/wishlist/me');
+    window._wishCache = (r.wishlist || []).map(w => {
+      const kind = w.business_kind;
+      const biz = ((typeof _vmBizData !== 'undefined' && _vmBizData[kind]) || []).find(b => String(b.id) === String(w.business_id));
+      return {
+        kind, id: w.business_id, name: w.business_name || 'Podnik', image: w.business_image || '', city: w.city || '',
+        typ: kind === 'restaurants' ? 'gastro' : kind === 'accommodation' ? 'ubytovani' : 'organizace',
+        lat: biz ? +biz.lat : null, lng: biz ? +biz.lng : null,
+      };
+    });
+  } catch { window._wishCache = []; }
+  _wishLoadedAt = Date.now();
+}
+window._wishOpen = (kind, id) => {
+  const it = (window._wishCache || []).find(x => x.kind === kind && x.id === id);
+  if (it && isFinite(it.lat) && isFinite(it.lng) && typeof map !== 'undefined' && map) map.flyTo({ center: [it.lng, it.lat], zoom: Math.max(map.getZoom(), 14), speed: 1.3 });
+  try { vmOpenBizProfile(kind, id); } catch (e) { console.warn('wishOpen', e); }
+};
+window._wishRemove = async (kind, id) => {
+  try {
+    await apiPost('/api/wishlist', { business_id: id, business_kind: kind });
+    window._wishCache = (window._wishCache || []).filter(x => !(x.kind === kind && x.id === id));
+    openBookmarksPanel();
+  } catch (e) { console.warn('wishRemove', e); }
+};
+window._bmSetTypeFilter = (t) => { _bmTypeFilter = t; openBookmarksPanel(); };
+
 function openBookmarksPanel() {
   const isMobile = window.innerWidth <= 768;
   const titleStr = `<i class="fa-solid fa-bookmark" style="color:var(--primary);margin-right:8px"></i>Moje seznamy míst`;
   const d = _bmLoad();
 
+  // „Chci navštívit“ se načte (nejvýše jednou za minutu) a panel se po načtení překreslí
+  if (_bmUserId() && (window._wishCache === null || Date.now() - _wishLoadedAt > 60000)) {
+    _wishLoad().then(() => { if (document.querySelector('.bm-list-items, .bm-empty, .bm-type-chips')) openBookmarksPanel(); });
+  }
+  const _wish = window._wishCache || [];
+
   function _renderBmPanel() {
-    if (!d.lists.some(l => l.items.length)) {
-      return `<div class="bm-empty"><i class="fa-regular fa-bookmark"></i><p>Zatím žádná uložená místa.</p><p style="font-size:11px;color:#aaa">Místa ukládejte tlačítkem „Uložit" v detailu místa.</p></div>`;
+    const hasAny = d.lists.some(l => l.items.length) || _wish.length;
+    if (!hasAny) {
+      return `<div class="bm-empty"><i class="fa-regular fa-bookmark"></i><p>Zatím žádná uložená místa.</p><p style="font-size:11px;color:#aaa">Místa ukládejte tlačítkem „Uložit" v detailu místa, podniky srdíčkem „Chci navštívit" v jejich profilu.</p></div>`;
     }
     const localStorageNote = _bmUserId()
       ? `<div class="bm-storage-note"><i class="fa-solid fa-cloud"></i> Seznamy jsou uložené u vašeho účtu a synchronizují se mezi zařízeními.</div>`
-      : `<div class="bm-storage-note"><i class="fa-solid fa-circle-info"></i> Místa jsou uložena jen v tomto prohlížeči. <a href="#" onclick="event.preventDefault();window._bmGoLogin()" style="color:var(--primary);font-weight:600">Přihlaste se</a>, aby se uložila k vašemu účtu.</div>`;
+      : `<div class="bm-storage-note"><i class="fa-solid fa-circle-info"></i> Místa jsou uložena jen v tomto prohlížeči. <a href="#" data-bm-login="1" style="color:var(--primary);font-weight:600">Přihlaste se</a>, aby se uložila k vašemu účtu.</div>`;
+
+    const allItems = d.lists.flatMap(l => l.items);
+    const counts = { vandro: 0, gastro: 0, ubytovani: 0, organizace: 0 };
+    allItems.forEach(i => { counts[_bmTypeOf(i)]++; });
+    _wish.forEach(w => { counts[w.typ]++; });
+    const chips = `<div class="bm-type-chips">
+      <button class="bm-type-chip${_bmTypeFilter === 'all' ? ' active' : ''}" onclick="window._bmSetTypeFilter('all')">Vše</button>
+      ${BM_TYPES.map(([k, label]) => `<button class="bm-type-chip${_bmTypeFilter === k ? ' active' : ''}" onclick="window._bmSetTypeFilter('${k}')">${label} <span>${counts[k]}</span></button>`).join('')}
+    </div>`;
+
+    const matches = (typ) => _bmTypeFilter === 'all' || _bmTypeFilter === typ;
+    const itemHtml = (list, item, ii) => `
+          <div class="bm-item" draggable="true" data-list-id="${_bmEsc(list.id)}" data-idx="${ii}" data-grp="${_bmTypeOf(item)}" onclick="window._bmOpenItem(${+item.lat},${+item.lng})">
+            <span class="bm-drag-handle" title="Přesunout" onclick="event.stopPropagation()"><i class="fa-solid fa-grip-vertical"></i></span>
+            ${item.foto_main ? `<img src="${_bmEsc(item.foto_main)}" class="bm-thumb" alt="">` : `<div class="bm-thumb-placeholder">${getIconForKategoria(item.kategoria,item.podkategoria)||vmIconSvg('pin')}</div>`}
+            <div class="bm-item-body">
+              <div class="bm-item-name">${_bmEsc(item.nazov||'Místo')}</div>
+              <div class="bm-item-cat">${_bmEsc(item.podkategoria||item.kategoria||'')}</div>
+            </div>
+            <button class="bm-remove" onclick="event.stopPropagation();window._bmRemoveItem('${_bmEsc(list.id)}',${ii})"><i class="fa-solid fa-xmark"></i></button>
+          </div>`;
+
     const listsHtml = d.lists.map((list) => {
       const visible = list.visibleOnMap !== false;
-      // Přepínač viditelnosti — zobrazí/skryje celý seznam na mapě (jemný
-      // oranžový halo pod ikonami bodů tohoto seznamu). Nezobrazujeme ho pro
-      // prázdné seznamy (nemá co skrývat).
       const visToggle = list.items.length ? `
         <label class="bm-list-visibility" title="${visible?'Skrýt seznam na mapě':'Zobrazit seznam na mapě'}">
-          <input type="checkbox" ${visible?'checked':''} onchange="window._bmToggleListVisible('${list.id}',this.checked)">
+          <input type="checkbox" ${visible?'checked':''} onchange="window._bmToggleListVisible('${_bmEsc(list.id)}',this.checked)">
           <span class="bm-vis-track"></span>
         </label>` : '';
-      if (!list.items.length) return `<div class="bm-list-header">
-        <span class="bm-list-name">${list.name}</span>
+      const delBtn = list.id !== 'default' ? `<button class="bm-delete-list" onclick="window._bmDeleteList('${_bmEsc(list.id)}')"><i class="fa-solid fa-trash"></i></button>` : '';
+      if (!list.items.length) {
+        if (_bmTypeFilter !== 'all') return '';
+        return `<div class="bm-list-header">
+        <span class="bm-list-name">${_bmEsc(list.name)}</span>
         <span class="bm-list-count">Prázdný</span>
-        ${list.id !== 'default' ? `<button class="bm-delete-list" onclick="window._bmDeleteList('${list.id}')"><i class="fa-solid fa-trash"></i></button>` : ''}
+        ${delBtn}
       </div>`;
+      }
+      const groups = {};
+      list.items.forEach((item, ii) => { const g = _bmTypeOf(item); if (matches(g)) (groups[g] = groups[g] || []).push([item, ii]); });
+      const shown = BM_TYPES.filter(([k]) => groups[k]);
+      if (!shown.length) return '';
+      const inner = shown.map(([k, label]) => `
+        <div class="bm-type-head">${label} <span>${groups[k].length}</span></div>
+        ${groups[k].map(([item, ii]) => itemHtml(list, item, ii)).join('')}`).join('');
       return `<div class="bm-list-block">
         <div class="bm-list-header${visible?'':' bm-list-hidden'}">
-          <span class="bm-list-name">${list.name}</span>
+          <span class="bm-list-name">${_bmEsc(list.name)}</span>
           <span class="bm-list-count">${list.items.length} míst</span>
           ${visToggle}
-          ${list.id !== 'default' ? `<button class="bm-delete-list" onclick="window._bmDeleteList('${list.id}')"><i class="fa-solid fa-trash"></i></button>` : ''}
+          ${delBtn}
         </div>
-        <div class="bm-list-items" data-list-id="${list.id}">
-        ${list.items.map((item, ii) => `
-          <div class="bm-item" draggable="true" data-list-id="${list.id}" data-idx="${ii}" onclick="window._bmOpenItem(${item.lat},${item.lng})">
-            <span class="bm-drag-handle" title="Přesunout" onclick="event.stopPropagation()"><i class="fa-solid fa-grip-vertical"></i></span>
-            ${item.foto_main ? `<img src="${item.foto_main}" class="bm-thumb" alt="">` : `<div class="bm-thumb-placeholder">${getIconForKategoria(item.kategoria,item.podkategoria)||vmIconSvg('pin')}</div>`}
-            <div class="bm-item-body">
-              <div class="bm-item-name">${item.nazov||'Místo'}</div>
-              <div class="bm-item-cat">${item.podkategoria||item.kategoria||''}</div>
-            </div>
-            <button class="bm-remove" onclick="event.stopPropagation();window._bmRemoveItem('${list.id}',${ii})"><i class="fa-solid fa-xmark"></i></button>
-          </div>`).join('')}
+        <div class="bm-list-items" data-list-id="${_bmEsc(list.id)}">${inner}
         </div>
       </div>`;
     }).join('');
 
-    return `${localStorageNote}${listsHtml}
+    const wishShown = _wish.filter(w => matches(w.typ));
+    const wishHtml = !wishShown.length ? '' : `<div class="bm-list-block">
+        <div class="bm-list-header">
+          <span class="bm-list-name"><i class="fa-solid fa-heart" style="color:#e5484d;margin-right:6px"></i>Chci navštívit</span>
+          <span class="bm-list-count">${wishShown.length}</span>
+        </div>
+        <div class="bm-list-items">
+        ${BM_TYPES.filter(([k]) => k !== 'vandro' && wishShown.some(w => w.typ === k)).map(([k, label]) => `
+          <div class="bm-type-head">${label} <span>${wishShown.filter(w => w.typ === k).length}</span></div>
+          ${wishShown.filter(w => w.typ === k).map(w => `
+          <div class="bm-item" onclick="window._wishOpen('${_bmEsc(w.kind)}','${_bmEsc(w.id)}')">
+            ${w.image ? `<img src="${_bmEsc(w.image)}" class="bm-thumb" alt="">` : `<div class="bm-thumb-placeholder">${vmIconSvg('pin')}</div>`}
+            <div class="bm-item-body">
+              <div class="bm-item-name">${_bmEsc(w.name)}</div>
+              <div class="bm-item-cat">${_bmEsc(w.city)}</div>
+            </div>
+            <button class="bm-remove" title="Odebrat" onclick="event.stopPropagation();window._wishRemove('${_bmEsc(w.kind)}','${_bmEsc(w.id)}')"><i class="fa-solid fa-xmark"></i></button>
+          </div>`).join('')}`).join('')}
+        </div>
+      </div>`;
+
+    return `${localStorageNote}${chips}${wishHtml}${listsHtml}
       <button class="bm-new-list-btn-main" onclick="window._bmNewList()"><i class="fa-solid fa-plus"></i> Nový seznam</button>
       <div class="bm-transfer-section">
         <p class="bm-transfer-note">Chcete si uložená místa přenést do jiného telefonu/prohlížeče? Stáhněte si zálohu a na druhém zařízení ji nahrajte zpět.</p>
@@ -1914,7 +2009,7 @@ function openBookmarksPanel() {
   function _attachBmDragHandlers() {
     document.querySelectorAll('.bm-item').forEach(el => {
       el.addEventListener('dragstart', (e) => {
-        _bmDragSrc = { listId: el.dataset.listId, idx: +el.dataset.idx };
+        _bmDragSrc = { listId: el.dataset.listId, idx: +el.dataset.idx, grp: el.dataset.grp };
         el.classList.add('bm-dragging');
         e.dataTransfer.effectAllowed = 'move';
       });
@@ -1923,7 +2018,7 @@ function openBookmarksPanel() {
         document.querySelectorAll('.bm-item').forEach(x => x.classList.remove('bm-drag-over-top','bm-drag-over-bottom'));
       });
       el.addEventListener('dragover', (e) => {
-        if (!_bmDragSrc || _bmDragSrc.listId !== el.dataset.listId) return; // len v rámci rovnakého zoznamu
+        if (!_bmDragSrc || _bmDragSrc.listId !== el.dataset.listId || _bmDragSrc.grp !== el.dataset.grp) return; // len v rámci rovnakého zoznamu a typu
         e.preventDefault();
         const rect = el.getBoundingClientRect();
         const before = (e.clientY - rect.top) < rect.height / 2;
@@ -1934,7 +2029,7 @@ function openBookmarksPanel() {
       el.addEventListener('drop', (e) => {
         e.preventDefault();
         el.classList.remove('bm-drag-over-top','bm-drag-over-bottom');
-        if (!_bmDragSrc || _bmDragSrc.listId !== el.dataset.listId) { _bmDragSrc = null; return; }
+        if (!_bmDragSrc || _bmDragSrc.listId !== el.dataset.listId || _bmDragSrc.grp !== el.dataset.grp) { _bmDragSrc = null; return; }
         const toIdx = +el.dataset.idx;
         const rect = el.getBoundingClientRect();
         const before = (e.clientY - rect.top) < rect.height / 2;
@@ -3216,14 +3311,17 @@ function _renderGalleryHtml(galeria) {
   return `<p class="section-title">Galerie</p><div class="panel-gallery">${galeria.map(img => `<a href="${img}" class="glightbox"><img src="${img}" class="gal-item" alt="" loading="lazy"></a>`).join('')}</div>`;
 }
 
+window._vmToggleClamp = (btn) => {
+  const d = btn.previousElementSibling;
+  if (!d) return;
+  const clamped = d.classList.toggle('clamp-text');
+  btn.textContent = clamped ? 'Zobrazit více' : 'Zobrazit méně';
+};
+
 function _renderDescriptionHtml(popis) {
   if (!popis) return '';
   return `<div class="panel-description clamp-text" data-desc>${popis}</div>
-    <button class="btn-show-more" data-desc-toggle onclick="
-      const d=this.previousElementSibling;
-      const clamped=d.classList.toggle('clamp-text');
-      this.textContent = clamped ? 'Zobrazit více' : 'Zobrazit méně';
-    ">Zobrazit více</button>`;
+    <button class="btn-show-more" data-desc-toggle onclick="window._vmToggleClamp(this)">Zobrazit více</button>`;
 }
 // Po vložení do DOM skryjeme tlačidlo "Zobrazit více" pri textoch, ktoré sa
 // aj tak celé zmestia (orezanie by inak nemalo žiadny efekt).
@@ -7089,6 +7187,8 @@ window.vmapInit = function () {
     ['loadRouteFromHash', () => { if (location.hash.includes('#route=')) loadRouteFromHash(); }],
     ['vmLayersInit', () => { if (typeof vmLayersInit === 'function') vmLayersInit(); }],
     ['vmBmSync', () => { if (typeof window.vmBmSync === 'function') window.vmBmSync(true); }],
+    ['pendingFocus', () => { const f = window._vmapPendingFocus; if (f && typeof map !== 'undefined' && map && isFinite(f.lat) && isFinite(f.lng)) { window._vmapPendingFocus = null; map.flyTo({ center: [f.lng, f.lat], zoom: 14, speed: 1.4 }); } }],
+    ['openSavedPanel', () => { if (window._vmapOpenSavedOnShow) { window._vmapOpenSavedOnShow = false; setTimeout(openBookmarksPanel, 600); } }],
   ];
   steps.forEach(([name, fn]) => {
     try { fn(); }
@@ -7098,3 +7198,18 @@ window.vmapInit = function () {
     }
   });
 };
+
+
+// Při posouvání bočního panelu se dočasně pozastaví pulzující animace nad mapou (plynulejší scroll)
+(function vmScrollPause() {
+  let t = null;
+  document.addEventListener('scroll', (e) => {
+    const el = e.target;
+    if (!el || !el.closest || !el.closest('#desktop-sidebar')) return;
+    const root = document.getElementById('vmap-root');
+    if (!root) return;
+    root.classList.add('vm-scrolling');
+    clearTimeout(t);
+    t = setTimeout(() => root.classList.remove('vm-scrolling'), 160);
+  }, { capture: true, passive: true });
+})();

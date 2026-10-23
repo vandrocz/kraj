@@ -13,9 +13,47 @@ function getPostHtmlLang(post) {
   return (post && (post.html || post.text || post.text_content)) || '';
 }
 
+// ============================================================
+// OFFLINE FEEDY — posledních 30 příspěvků každého feedu se uloží do zařízení
+// (zobrazí se hned po otevření a fungují bez připojení, podobně jako u jiných sítí)
+// ============================================================
+const FEED_PAGE_SIZE = 30;
+const FEED_CACHE_PREFIX = 'vandro_feedcache_v1:';
+
+function feedCacheable(f) { return !f.search && !f.region && !f.district && !f.type && !f.cuisine && (!f.sort || f.sort === 'for_you'); }
+function readFeedCache(name) {
+  try {
+    const raw = localStorage.getItem(FEED_CACHE_PREFIX + name);
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    return c && Array.isArray(c.items) ? c : null;
+  } catch { return null; }
+}
+function writeFeedCache(name, items, nextCursor) {
+  try {
+    localStorage.setItem(FEED_CACHE_PREFIX + name, JSON.stringify({ t: Date.now(), items: items.slice(0, FEED_PAGE_SIZE), next_cursor: nextCursor || null }));
+  } catch {
+    // plné úložiště → zahodíme staré cache feedů a zkusíme znovu jen s polovinou
+    try {
+      Object.keys(localStorage).filter(k => k.startsWith(FEED_CACHE_PREFIX) && k !== FEED_CACHE_PREFIX + name).forEach(k => localStorage.removeItem(k));
+      localStorage.setItem(FEED_CACHE_PREFIX + name, JSON.stringify({ t: Date.now(), items: items.slice(0, 15), next_cursor: nextCursor || null }));
+    } catch {}
+  }
+}
+window.addEventListener('online', () => {
+  if (state.tab && state.socialFeeds && state.socialFeeds[state.tab] && state.socialFeeds[state.tab]._offline) loadSocialFeed(state.tab);
+  if (state.tab === 'events' && state.events && state.events._offline) loadEvents();
+});
+window.addEventListener('offline', () => { try { renderApp(); } catch {} });
+
+function renderOfflineBanner() {
+  return `<div class="offline-banner" role="status">${icon('cloudOff', { size: 15 })} ${escapeHtml(t('feed.offlineBanner'))}</div>`;
+}
+
 function buildFeedQuery(feedKey) {
   const f = state.socialFeeds[feedKey];
   const params = new URLSearchParams();
+  params.set('limit', String(FEED_PAGE_SIZE));
   if (f.search) params.set('search', f.search);
   if (f.region) params.set('region', f.region);
   if (f.district) params.set('district', f.district);
@@ -32,6 +70,12 @@ async function loadSocialFeed(feedKey, loadMore = false) {
   if (loadMore) f.loading_more = true;
   else state.loading[feedKey] = true;
 
+  // Hned po otevření ukážeme uloženou verzi (zatímco se načítá čerstvá)
+  if (!loadMore && f.items.length === 0 && feedCacheable(f)) {
+    const cached = readFeedCache(feedKey);
+    if (cached) { f.items = cached.items; f.next_cursor = cached.next_cursor || null; f._fromCache = true; renderApp(); }
+  }
+
   try {
     const q = buildFeedQuery(feedKey);
     const url = `/api/feed/${feedKey}${q ? `?${q}` : ''}${loadMore && f.next_cursor ? `${q ? '&' : '?'}cursor=${encodeURIComponent(f.next_cursor)}` : ''}`;
@@ -39,9 +83,15 @@ async function loadSocialFeed(feedKey, loadMore = false) {
     if (loadMore) f.items = [...f.items, ...(data.feed || [])];
     else f.items = data.feed || [];
     f.next_cursor = data.next_cursor || null;
+    f._offline = false; f._fromCache = false;
+    if (!loadMore && feedCacheable(f)) writeFeedCache(feedKey, f.items, f.next_cursor);
   } catch (err) {
     console.error(`Feed ${feedKey}:`, err.message);
-    showToast(t('errors.loadPostsFailed'));
+    if (f.items.length > 0 && (!navigator.onLine || err.status === 0 || err.status === undefined)) {
+      f._offline = true;           // nemáme spojení → ukazujeme uložené příspěvky
+    } else {
+      showToast(t('errors.loadPostsFailed'));
+    }
   } finally {
     state.loading[feedKey] = false;
     f.loading_more = false;
@@ -310,6 +360,7 @@ function renderFeedPage(feedKey, typeOptions, showCuisine) {
       ${typeof renderBannerSlot === 'function' ? renderBannerSlot() : ''}
       ${renderStoriesBar(feedKey)}
       ${renderFilterBar(feedKey, typeOptions, showCuisine)}
+      ${(!navigator.onLine || state.socialFeeds[feedKey]._offline) ? renderOfflineBanner() : ''}
       ${renderSocialFeedBody(feedKey)}
     </div>`;
 }

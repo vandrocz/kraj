@@ -8,7 +8,11 @@ const RECAPTCHA_SITE_KEY = '6LeXt8UtAAAAAOOSYTkbrpC4gaotPw9-SUPEuvDo';
 
 function getToken() { return localStorage.getItem('naskraj_token'); }
 function setToken(t) { localStorage.setItem('naskraj_token', t); }
-function clearToken() { localStorage.removeItem('naskraj_token'); }
+function clearToken() {
+  localStorage.removeItem('naskraj_token');
+  // uložené feedy obsahují osobní stav (lajky apod.), na sdíleném zařízení je po odhlášení smažeme
+  try { Object.keys(localStorage).filter(k => k.startsWith('vandro_feedcache_v1:')).forEach(k => localStorage.removeItem(k)); } catch {}
+}
 function getStoredUser() { try { return JSON.parse(localStorage.getItem('naskraj_user') || 'null'); } catch { return null; } }
 function setStoredUser(u) { localStorage.setItem('naskraj_user', JSON.stringify(u)); }
 function clearStoredUser() { localStorage.removeItem('naskraj_user'); }
@@ -54,10 +58,46 @@ async function apiFetch(path, options = {}) {
     const err = new Error((data && data.error) || `Chyba API (${res.status})`);
     err.status = res.status;
     err.data = data;
+    // Vypršené nebo neplatné přihlášení: odhlásíme a řekneme to uživateli (místo tichých chyb v celé aplikaci)
+    if (res.status === 401 && token && !path.startsWith('/api/auth/login') && !path.startsWith('/api/auth/register')) {
+      handleSessionExpired();
+    }
     throw err;
   }
   return data == null ? {} : data;   // ← NIKDY nevracaj null!
 }
+
+let _sessionExpiredShown = false;
+function handleSessionExpired() {
+  if (_sessionExpiredShown) return;
+  _sessionExpiredShown = true;
+  try { clearToken(); clearStoredUser(); } catch {}
+  try { if (typeof state !== 'undefined') state.user = null; } catch {}
+  try { if (typeof showToast === 'function') showToast('Přihlášení vypršelo. Přihlas se prosím znovu.'); } catch {}
+  try { if (typeof switchTab === 'function') switchTab('account'); else if (typeof renderApp === 'function') renderApp(); } catch {}
+  setTimeout(() => { _sessionExpiredShown = false; }, 5000);
+}
+
+// Přihlášení platí 30 dní a obnovuje se při používání (nový token, když zbývá méně než 20 dní)
+function _tokenExpiry(tok) {
+  try {
+    const payload = JSON.parse(atob(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return Number(payload.exp) || 0;
+  } catch { return 0; }
+}
+async function maybeRefreshToken() {
+  const tok = getToken();
+  if (!tok) return;
+  const exp = _tokenExpiry(tok);
+  const left = exp - Math.floor(Date.now() / 1000);
+  if (!exp || left <= 0 || left > 60 * 60 * 24 * 20) return;
+  try {
+    const r = await apiFetch('/api/auth/refresh', { method: 'POST', body: JSON.stringify({}) });
+    if (r && r.token) setToken(r.token);
+  } catch { /* offline apod. — zkusí se příště */ }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) maybeRefreshToken(); });
+window.addEventListener('load', () => setTimeout(maybeRefreshToken, 2000));
 function apiGet(path) { return apiFetch(path, { method: 'GET' }); }
 function apiPost(path, body) { return apiFetch(path, { method: 'POST', body: body instanceof FormData ? body : JSON.stringify(body ?? {}) }); }
 function apiPatch(path, body) { return apiFetch(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) }); }

@@ -2091,3 +2091,21 @@ body.vm-sheet-open .bottom-nav--collapsed { display: none; }
 
 /* Plugin MapLibre — ovládací prvky v kořeni nesmí zdědit styl hlavního webu */
 #vmap-root .maplibregl-popup-content { font-family: inherit; }
+
+
+/* Uložená místa: přepínač typů a nadpisy skupin */
+#vmap-root .bm-type-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+#vmap-root .bm-type-chip { border: 1px solid var(--border, #d5ead9); background: #fff; color: #3d4f45; border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+#vmap-root .bm-type-chip span { opacity: .6; margin-left: 3px; font-weight: 500; }
+#vmap-root .bm-type-chip.active { background: var(--primary, #1B8F52); border-color: var(--primary, #1B8F52); color: #fff; }
+#vmap-root .bm-type-head { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #7a8a81; margin: 10px 0 4px; padding: 0 2px; }
+#vmap-root .bm-type-head span { opacity: .7; }
+
+/* Plynulé posouvání bočního panelu na počítači:
+   - rozostření pozadí přes WebGL mapu se přepočítává při každém snímku → u tlačítek stačí téměř plná bílá
+   - panel i obsah mají vlastní vrstvu a izolované překreslování
+   - nekonečné pulzující animace značek se při posouvání panelu pozastaví */
+#vmap-root .control-btn, #vmap-root .compass-btn { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: rgba(255,255,255,0.98); }
+#vmap-root #desktop-sidebar { will-change: transform; contain: layout style; }
+#vmap-root .panel-content { contain: content; overscroll-behavior: contain; transform: translateZ(0); }
+#vmap-root.vm-scrolling .gps-dot-pulse, #vmap-root.vm-scrolling .temp-pin-pulse { animation-play-state: paused; }

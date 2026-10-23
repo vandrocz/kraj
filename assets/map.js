@@ -147,6 +147,14 @@ function vmapShow() {
     _vmapObserveSheet();
     _vmapUpdateSheetClass();
     try { if (typeof saveMapState === 'function') saveMapState(); } catch (e) {}
+    if (window._vmapPendingFocus) {
+      const f = window._vmapPendingFocus; window._vmapPendingFocus = null;
+      try { if (typeof map !== 'undefined' && map && isFinite(f.lat) && isFinite(f.lng)) map.flyTo({ center: [f.lng, f.lat], zoom: 14, speed: 1.4 }); } catch (e) {}
+    }
+    if (window._vmapOpenSavedOnShow) {
+      window._vmapOpenSavedOnShow = false;
+      try { if (typeof openBookmarksPanel === 'function') setTimeout(openBookmarksPanel, 400); } catch (e) {}
+    }
     // Seznamy míst patří k účtu: při každém zobrazení mapy zkontrolovat přihlášení a synchronizovat
     try { if (typeof window.vmBmSync === 'function') window.vmBmSync(); } catch (e) {}
   }

@@ -408,6 +408,7 @@ function renderApp() {
   else if (state.overlay?.type === 'bookmarks') pageHtml = renderBookmarksOverlay();
   else if (state.overlay?.type === 'nearby') pageHtml = renderNearbyOverlay();
   else if (state.overlay?.type === 'wishlist') pageHtml = renderWishlistOverlay();
+  else if (state.overlay?.type === 'trip-new') pageHtml = renderTripNewOverlay();
   else if (state.overlay?.type === 'badges') pageHtml = renderBadgesOverlay();
   else if (state.overlay?.type === 'user-checkins') pageHtml = renderUserCheckinsOverlay();
   else if (state.overlay?.type === 'business-checkins') pageHtml = renderBusinessCheckinsOverlay();
@@ -1087,7 +1088,7 @@ async function openNotification(notifId) {
   }
 
   if (t2 === 'dm' && entType === 'thread' && entId) { renderApp(); openThreadById(entId); return; }
-  if ((t2 === 'follow' || t2 === 'story_reply' || t2 === 'story_like') && n.actor_id) { renderApp(); openProfile('user', n.actor_id); return; }
+  if ((t2 === 'follow' || t2 === 'story_reply' || t2 === 'story_like' || t2 === 'trip_post') && n.actor_id) { renderApp(); openProfile('user', n.actor_id); return; }
   if (t2 === 'verification_approved' || t2 === 'verification_rejected') { renderApp(); switchTab('account'); return; }
   renderApp();
 }
